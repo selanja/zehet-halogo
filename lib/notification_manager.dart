@@ -1,0 +1,132 @@
+// notification_manager.dart
+// התראות מקומיות (Local Notifications) - נשלחות ישירות מהמכשיר עצמו,
+// בלי שרת/פוש חיצוני. כרגע משמש רק לתזכורת אחת: "בונוס 15 המטבעות
+// תמורת פרסומת זמין שוב" - 3 שעות אחרי שנלקח (אותו Cooldown בדיוק
+// כמו ב-shop_screen.dart).
+//
+// ⚠️ התקנה חד-פעמית נדרשת (לא קורית אוטומטית):
+// 1. pubspec.yaml: הוספתי כבר flutter_local_notifications + timezone.
+//    צריך להריץ פעם אחת: flutter pub get
+// 2. אנדרואיד (android/app/src/main/AndroidManifest.xml) - לוודא שיש
+//    את ההרשאות הבאות בתוך <manifest>:
+//      <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+//      <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+//    🆕 בכוונה בלי SCHEDULE_EXACT_ALARM - ראו הסבר למטה.
+// 3. iOS - אין צורך בשינוי ידני נוסף, הבקשה מוצגת אוטומטית ב-init().
+//
+// 🆕 תוקן: הוסרה ההסתמכות על AndroidScheduleMode.exactAllowWhileIdle
+// (שדרשה הרשאת SCHEDULE_EXACT_ALARM) ועברנו ל-inexactAllowWhileIdle.
+// ההרשאה הזו מיועדת בפועל לאפליקציות שעון מעורר/יומן, וגוגל פליי דורש
+// עליה טופס הצהרה ייעודי בזמן פרסום - ואין קטגוריה מתאימה למשחק כמו
+// שלנו. תזכורת "המטבעות שלך מחכות" לא חייבת להיות מדויקת לשנייה - היא
+// יכולה להגיע כמה דקות אחרי 3 השעות בלי שום בעיה, אז אין שום צורך
+// אמיתי בהרשאה הזו. חשוב: צריך גם למחוק ידנית את השורה
+// <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+// מ-AndroidManifest.xml אם היא כבר שם - אחרת גוגל פליי עדיין ידרוש
+// את ההצהרה גם אם הקוד לא באמת צריך אותה.
+import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz_data;
+
+class NotificationManager {
+  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  static bool _initialized = false;
+
+  // 🆕 מתג "התראות" במסך ההגדרות (לפי המוקאפ, מסך 11) - שולט אך ורק
+  // על התזכורת המקומית של בונוס המטבעות (scheduleFreeCoinsReminder
+  // למטה) - לא על הרשאת המערכת עצמה (זו נשארת כמו שהיא, נשאלת פעם
+  // אחת ב-init).
+  static bool notificationsEnabled = true;
+
+  static Future<void> loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
+    } catch (_) {}
+  }
+
+  /// הפעלה/כיבוי של התראות (מהתפריט הגדרות) + שמירה. כיבוי מבטל מיד
+  /// גם תזכורת שכבר מתוזמנת, כדי שלא תישלח אחרי שהמשתמש כיבה.
+  static Future<void> setNotificationsEnabled(bool value) async {
+    notificationsEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('notificationsEnabled', value);
+    } catch (_) {}
+    if (!value) await cancelFreeCoinsReminder();
+  }
+
+  /// מזהה קבוע להתראת בונוס המטבעות - כל תזמון חדש מבטל את הקודם,
+  /// כדי שלא יצטברו כמה התראות כפולות אם המשתמש צופה בכמה פרסומות ברצף.
+  static const int _coinsBonusNotificationId = 1001;
+
+  static Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
+    await loadSettings();
+    try {
+      tz_data.initializeTimeZones();
+
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
+      await _plugin.initialize(settings);
+
+      // אנדרואיד 13+ ו-iOS דורשים בקשת הרשאה מפורשת מהמשתמש
+      await _plugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+      await _plugin
+          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
+    } catch (e) {
+      debugPrint('NOTIFICATIONS INIT ERROR: $e');
+    }
+  }
+
+  /// מתזמן תזכורת בעוד [delay] (ברירת מחדל 3 שעות - תואם לזמן ה-Cooldown
+  /// של הבונוס בחנות) שהבונוס זמין שוב. אם כבר יש תזכורת מתוזמנת - היא
+  /// מבוטלת ומוחלפת בחדשה, כדי שתמיד תהיה בדיוק אחת פעילה.
+  static Future<void> scheduleFreeCoinsReminder({Duration delay = const Duration(hours: 3)}) async {
+    if (!notificationsEnabled) return;
+    try {
+      await _plugin.cancel(_coinsBonusNotificationId);
+      final scheduledDate = tz.TZDateTime.now(tz.local).add(delay);
+      await _plugin.zonedSchedule(
+        _coinsBonusNotificationId,
+        'המטבעות שלך מחכות! 🎁',
+        '15 מטבעות חינם זמינים עכשיו - בוא תיקח אותן',
+        scheduledDate,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'coins_bonus_channel',
+            'תזכורות מטבעות',
+            channelDescription: 'תזכורת כשבונוס המטבעות תמורת פרסומת זמין שוב',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (e) {
+      debugPrint('SCHEDULE NOTIFICATION ERROR: $e');
+    }
+  }
+
+  /// מבטל את תזכורת בונוס המטבעות אם קיימת (למשל אם רוצים להימנע ממנה
+  /// כשיש למשתמש מנוי ללא-פרסומות, או בכל מקרה אחר)
+  static Future<void> cancelFreeCoinsReminder() async {
+    try {
+      await _plugin.cancel(_coinsBonusNotificationId);
+    } catch (_) {}
+  }
+}

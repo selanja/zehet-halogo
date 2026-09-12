@@ -1,0 +1,186 @@
+// presence_admin_screen.dart
+//
+// 🆕 מסך מעקב יזמי (לך בלבד - לא ל-users רגילים) - "כמה שחקנים מחוברים
+// עכשיו בפועל ומה הם עושים" (איזה מוד: דו-קרב/מירוץ). נפתח דרך מסך
+// הדיבאג הקיים (DebugLogScreen - כבר מוסתר מאחורי לחיצה ארוכה על מספר
+// הגרסה/הגדרות, ראה main_menu_screen.dart / settings_screen.dart).
+//
+// ⚠️ מבוסס על אותה תשתית presence שכבר קיימת (presence_service.dart) -
+// לא נוסף שום כתיבה/עלות חדשה ל-Firebase, רק שאילתת קריאה חדשה
+// (listActive) שמופעלת רק כל עוד המסך הזה פתוח (כל 10 שניות), לא ברקע.
+// ⚠️ אותה מגבלה ידועה כמו שאר המקומות שמשתמשים ב-presence: שחקן שכבר
+// בתוך DuelRoomScreen בפועל (הקובץ המוגן) לא נספר - רק מי שבלובי/מחפש/
+// בספירה לאחור. זו הערכה סבירה, לא ספירה מדויקת של כולם.
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'presence_service.dart';
+
+class PresenceAdminScreen extends StatefulWidget {
+  const PresenceAdminScreen({super.key});
+
+  @override
+  State<PresenceAdminScreen> createState() => _PresenceAdminScreenState();
+}
+
+class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
+  List<Map<String, dynamic>> _entries = [];
+  bool _loading = true;
+  DateTime? _lastRefresh;
+  Timer? _autoRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    // 🆕 מתרענן אוטומטית כל 10 שניות כל עוד המסך פתוח - כדי שהמעקב
+    // ירגיש "חי" בלי צורך ללחוץ רענון ידני כל הזמן.
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final entries = await PresenceService.listActive();
+    if (!mounted) return;
+    setState(() {
+      _entries = entries;
+      _loading = false;
+      _lastRefresh = DateTime.now();
+    });
+  }
+
+  Map<String, int> get _countsByMode {
+    final counts = <String, int>{};
+    for (final e in _entries) {
+      final mode = e['mode'] as String? ?? '?';
+      counts[mode] = (counts[mode] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  String _modeLabel(String mode) {
+    switch (mode) {
+      case 'duel':
+        return 'דו-קרב';
+      case 'race':
+        return 'מירוץ';
+      default:
+        return mode;
+    }
+  }
+
+  Color _modeColor(String mode) {
+    switch (mode) {
+      case 'duel':
+        return const Color(0xFFF43F5E);
+      case 'race':
+        return const Color(0xFF38BDF8);
+      default:
+        return Colors.white54;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = _countsByMode;
+    final total = _entries.length;
+    return Scaffold(
+      backgroundColor: const Color(0xFF12081F),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF12081F),
+        title: const Text("מעקב שחקנים אונליין", style: TextStyle(color: Colors.white, fontSize: 16)),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: () { setState(() => _loading = true); _load(); }),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // 🆕 שורת סיכום - סה"כ + פירוט לפי מוד, בדיוק המידע
+                // שביקשת ("כמה שחקנים מחוברים ברגע זה, איזה מוד").
+                Row(
+                  children: [
+                    Expanded(child: _summaryCard("סה״כ מחוברים", '$total', Colors.white)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _summaryCard("דו-קרב", '${counts['duel'] ?? 0}', _modeColor('duel'))),
+                    const SizedBox(width: 10),
+                    Expanded(child: _summaryCard("מירוץ", '${counts['race'] ?? 0}', _modeColor('race'))),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (_lastRefresh != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'עודכן לפני ${DateTime.now().difference(_lastRefresh!).inSeconds} שניות · מתרענן אוטומטית כל 10 שניות',
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                if (_entries.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 40),
+                    child: Text(
+                      "אף אחד לא מחובר כרגע (או שאין רשת) ⚠️ שים לב: שחקנים שכבר בתוך משחק דו-קרב פעיל (לא בלובי) לא נספרים - מגבלה ידועה, ראו הערה ב-presence_service.dart",
+                      textAlign: TextAlign.center,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5),
+                    ),
+                  )
+                else
+                  ..._entries.map((e) => _deviceRow(e)),
+              ],
+            ),
+    );
+  }
+
+  Widget _summaryCard(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.white.withValues(alpha: 0.05)),
+      child: Column(
+        children: [
+          Text(value, style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 4),
+          Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _deviceRow(Map<String, dynamic> e) {
+    final deviceId = e['deviceId'] as String;
+    final mode = e['mode'] as String? ?? '?';
+    final updatedAt = e['updatedAt'] as DateTime?;
+    final agoSec = updatedAt == null ? null : DateTime.now().difference(updatedAt).inSeconds;
+    final shortId = deviceId.length > 10 ? '${deviceId.substring(0, 10)}…' : deviceId;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: Colors.white.withValues(alpha: 0.04)),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: _modeColor(mode))),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$shortId · ${_modeLabel(mode)}',
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (agoSec != null)
+            Text('לפני ${agoSec}s', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}

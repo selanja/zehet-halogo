@@ -1,0 +1,81 @@
+name: flutter_application_2
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.2.0+4
+
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  audioplayers: ^6.0.0
+  http: ^1.2.2
+  google_mobile_ads: ^6.0.0
+  in_app_purchase: ^3.3.0
+  shared_preferences: ^2.3.5
+  cupertino_icons: ^1.0.8
+  url_launcher: ^6.3.2
+  # 🔥 טבלה ארצית - Firebase Firestore במקום Google Sheets/Apps Script
+  firebase_core: ^3.6.0
+  cloud_firestore: ^5.4.4
+  # 🔔 התראות מקומיות (תזכורת בונוס מטבעות) + בדיקת גרסה מותקנת (עדכון חובה)
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.9.4
+  package_info_plus: ^8.1.2
+  in_app_review: ^2.0.9
+  share_plus: ^10.0.0
+  app_tracking_transparency: ^2.0.6
+  firebase_app_check: ^0.3.2+10
+  screen_protector: ^1.5.3
+  firebase_messaging: ^15.2.10
+  facebook_app_events: ^0.30.5
+  firebase_auth: ^5.3.1
+  google_sign_in: ^6.2.2
+  sign_in_with_apple: ^6.1.4
+  crypto: ^3.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  # יוצר את אייקוני האפליקציה לכל הגדלים מתמונה אחת
+  flutter_launcher_icons: ^0.14.1
+
+
+# הגדרות אייקון האפליקציה
+# אחרי כל שינוי כאן: flutter pub get ואז dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  # אייקון אדפטיבי לאנדרואיד מודרני: רקע סגול מלא + התג במרכז.
+  # ככה האייקון ממלא את כל העיגול בלי מסגרת לבנה.
+  adaptive_icon_background: "#201040"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/          # התיקייה הראשית - כאן יושב logo.png!
+    - assets/images/level1/
+    - assets/images/level2/
+    - assets/images/level3/
+    - assets/images/level4/
+    - assets/images/level5/
+    - assets/images/level6/
+    - assets/images/level7/
+    - assets/images/level8/
+    - assets/images/level9/
+    - assets/images/level10/
+    - assets/images/level11/
+    - assets/images/level12/
+    - assets/images/level13/
+    - assets/images/level14/
+    - assets/images/level15/
+    - assets/images/level16/
+    - assets/icon/
+    - assets/audio/

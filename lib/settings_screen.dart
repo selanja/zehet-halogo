@@ -13,7 +13,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'app_background.dart';
 import 'audio_manager.dart';
-import 'debug_log_screen.dart';
 import 'leaderboard.dart';
 import 'device_id.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - גם כאן, לא רק במסך הבית
@@ -172,10 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 Center(
-                  child: GestureDetector(
-                    onLongPress: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const DebugLogScreen())),
-                    child: Text("גרסה 1.2.0 · © כל הזכויות שמורות", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11, fontWeight: FontWeight.w500)),
-                  ),
+                  child: Text("גרסה 1.2.0 · © כל הזכויות שמורות", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11, fontWeight: FontWeight.w500)),
                 ),
               ],
             ),

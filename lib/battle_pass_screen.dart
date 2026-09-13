@@ -708,17 +708,29 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
             const SizedBox(width: 7),
             // 🩹 תג מספר-השלב - עכשיו באמצע השורה (בין שתי הגלולות),
             // בדיוק מעל קו-המסלול (rail) שעובר באמצע האופקי המוחלט.
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
-                boxShadow: badgeShadow,
-                border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
-              ),
-              alignment: Alignment.center,
-              child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
+                    boxShadow: badgeShadow,
+                    border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
+                  ),
+                  alignment: Alignment.center,
+                  child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
+                ),
+                // 🆕 כמה כוכבים (נקודות) צריך כדי להגיע לשלב הזה - לפי
+                // בקשה מפורשת. לא מוצג בשלב 1 (פתוח מההתחלה, "0⭐" לא
+                // אומר כלום שם).
+                if (def.pointsRequired > 0) ...[
+                  const SizedBox(height: 3),
+                  Text('${def.pointsRequired}⭐', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9, fontWeight: FontWeight.w700)),
+                ],
+              ],
             ),
             const SizedBox(width: 7),
             // עמודת "פרימיום" - עכשיו הילד האחרון (RTL => צד שמאל).

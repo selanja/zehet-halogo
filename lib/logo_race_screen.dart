@@ -13,7 +13,6 @@
 // מתחלפים, כרטיס "תנאי המרוץ") - כדי שהתחושה תהיה עקבית עם שאר המשחק.
 
 import 'dart:async';
-import 'debug_log.dart'; // 🩹 DebugLog.reportError - דיווח שגיאות matchmaking אמיתיות ל-Firestore לצורך אבחון
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart'; // 🆕 כפתור "שיתוף" במסך התוצאה - בדיוק כמו ב-duel_room_screen.dart
@@ -27,6 +26,7 @@ import 'energy_service.dart';
 import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשיו" - פעימת חיים בזמן שהמסך הזה פעיל
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי כל שינוי מטבעות/XP - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר (אותו תיקון כמו duel_room_screen.dart)
 import 'logo_race_service.dart';
+import 'opponent_found_widgets.dart'; // 🆕 מסך "נמצא יריב!" - זהה בדיוק לזה שבדו-קרב (ראו הערה בקובץ)
 
 class LogoRaceScreen extends StatefulWidget {
   final String username;
@@ -55,9 +55,6 @@ const List<String> _raceSearchingTips = [
 
 class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStateMixin {
   _Phase _phase = _Phase.connecting;
-  // 🩹 שגיאה טכנית אמיתית אחרונה מ-findMatch (למשל permission-denied/
-  // אינדקס חסר) - לצורך אבחון, ראו _buildMessageScreen.
-  String? _lastErrorDetail;
   final LogoRaceService _service = LogoRaceService();
   String? _raceId;
   String _myDeviceId = '';
@@ -244,15 +241,6 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       case RaceSearchStatus.cancelled:
         break;
       case RaceSearchStatus.error:
-        // 🩹 עד עכשיו כל שגיאה (גם permission-denied/אינדקס חסר/App Check
-        // ולא רק ניתוק אמיתי מהאינטרנט) הוצגה למשתמש בתור "בדוק את החיבור
-        // לאינטרנט" - הודעה מטעה שגם מנעה מאיתנו לדעת מה הבעיה האמיתית.
-        // עכשיו: מדפיסים ל-console (רואים ב-Xcode/Android Studio) את השגיאה
-        // האמיתית לצורך אבחון, וגם שומרים אותה כדי שאפשר יהיה להציג אותה
-        // בלחיצה ארוכה (ראו _buildMessageScreen למטה).
-        debugPrint('🩹 LogoRace findMatch error: ${result.errorMessage}');
-        _lastErrorDetail = result.errorMessage;
-        DebugLog.reportError('LogoRace.findMatch', result.errorMessage ?? '(ללא הודעה)');
         setState(() => _phase = result.errorMessage == 'אין מספיק אנרגיה' ? _Phase.noEnergy : _Phase.error);
         break;
     }
@@ -613,17 +601,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 🩹 לחיצה ארוכה על האייקון מציגה את פרטי השגיאה הטכנית
-                  // האמיתית (אם יש) - לצורך אבחון בעיות חיבור/הרשאות, בלי
-                  // להציף את רוב המשתמשים בטקסט טכני מיותר.
-                  GestureDetector(
-                    onLongPress: _lastErrorDetail == null
-                        ? null
-                        : () => ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(_lastErrorDetail!, textDirection: TextDirection.rtl), duration: const Duration(seconds: 6)),
-                            ),
-                    child: Icon(icon, color: const Color(0xFFFB7185), size: 64),
-                  ),
+                  Icon(icon, color: const Color(0xFFFB7185), size: 64),
                   const SizedBox(height: 18),
                   Text(title, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
@@ -1113,6 +1091,13 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       );
     }
     final oppName = race.opponentNameFor(_myDeviceId);
+    const blueInner = [Color(0xFF7DD3FC), Color(0xFF38BDF8)];
+    const blueGlow = Color(0xFF38BDF8);
+    // 🆕 מסך "נמצא יריב!" - עכשיו בדיוק אותו מבנה כמו בדו-קרב (ראו
+    // opponent_found_widgets.dart): באדג' ירוק, שני כרטיסי שחקן + מפריד
+    // VS, כרטיס "תנאי המרוץ", ואז טבעת ספירה-לאחור - רק בלי שורות
+    // סטטיסטיקה (מקום/XP/ניצחונות) כי אלה לא קיימות במרוץ, ובצבעי התכלת
+    // של המרוץ במקום הזהב/ורוד של הדו-קרב.
     return Column(
       children: [
         _buildTopBar(),
@@ -1123,58 +1108,55 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.5)),
-                      color: const Color(0xFF34D399).withValues(alpha: 0.16),
-                    ),
+                  foundOpponentBadge(),
+                  const SizedBox(height: 22),
+                  IntrinsicHeight(
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      textDirection: TextDirection.rtl,
-                      children: const [
-                        Icon(Icons.check_rounded, color: Color(0xFF6EE7B7), size: 14),
-                        SizedBox(width: 7),
-                        Text("נמצא יריב!", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: foundPlayerCard(
+                            name: widget.username,
+                            label: "אתה",
+                            borderColor: const Color(0xFF7DD3FC),
+                            nameColor: const Color(0xFF7DD3FC),
+                            innerColors: blueInner,
+                            ringColors: blueInner,
+                            glowColor: blueGlow,
+                          ),
+                        ),
+                        foundVsDivider(),
+                        Expanded(
+                          child: foundPlayerCard(
+                            name: oppName,
+                            label: "היריב",
+                            borderColor: Colors.white,
+                            nameColor: Colors.white,
+                            innerColors: const [Color(0xFF0C2A3D), Color(0xFF0C2A3D)],
+                            ringColors: blueInner,
+                            glowColor: blueGlow,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _avatarCircle(widget.username),
-                            const SizedBox(height: 7),
-                            Text(widget.username, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text('VS', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 14, fontWeight: FontWeight.w900)),
-                      ),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _avatarCircle(oppName),
-                            const SizedBox(height: 7),
-                            Text(oppName, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
-                          ],
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 14),
+                  gameTermsCard(
+                    title: "תנאי המרוץ",
+                    emoji: "🏁",
+                    accent: const Color(0xFF7DD3FC),
+                    stake: race.stake,
+                    logos: LogoRaceService.stagesForStake(race.stake),
+                    winnerReward: race.stake * 2,
                   ),
-                  const SizedBox(height: 30),
-                  Text(
-                    _countdownLeft > 0 ? '$_countdownLeft' : 'צאו!',
-                    style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 56, fontWeight: FontWeight.w900),
+                  const SizedBox(height: 28),
+                  Text("המרוץ מתחיל בעוד", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 14),
+                  readyCountdownRing(
+                    value: _countdownLeft,
+                    color: const Color(0xFF7DD3FC),
+                    label: _countdownLeft > 0 ? null : 'צאו!',
                   ),
-                  const SizedBox(height: 8),
-                  _buildRaceConditionsGrid(race.stake),
                   const SizedBox(height: 20),
                 ],
               ),

@@ -14,7 +14,6 @@ import 'audio_manager.dart';
 import 'leaderboard.dart';
 import 'device_id.dart';
 import 'package:share_plus/share_plus.dart';
-import 'debug_log_screen.dart';
 import 'missions_service.dart';
 import 'level_data.dart'; // 🆕 levelsCounts/gameLevels גלובליים - לחישוב התקדמות שלבים בכרטיס הבית
 import 'energy_service.dart'; // 🆕 אנרגיה לדו-קרב - עכשיו מוצגת גם במסך הבית
@@ -897,21 +896,17 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               ),
             ),
             // 🆕 כיתוב גרסה תחתון - כמו במוקאפ מסך "ספלאש"
-            // 🩺 לחיצה ארוכה כאן פותחת מסך אבחון זמני (debug log) - ראו
-            // debug_log.dart/debug_log_screen.dart. להסיר אחרי שהבאג נמצא.
+            // 🩹 מסך אבחון זמני (debug log) הוסר לפי בקשה מפורשת - לא היה
+            // אמור להיות נגיש למשתמשי קצה, ולחיצה ארוכה בטעות (למשל כשאין
+            // אינטרנט והמשתמש מנסה שוב ושוב) הייתה חושפת אותו.
             Positioned(
               left: 0,
               right: 0,
               bottom: 30,
-              child: GestureDetector(
-                onLongPress: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const DebugLogScreen()));
-                },
-                child: const Text(
-                  "גרסה 1‪.‬2‪.‬0 · © כל הזכויות שמורות",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.w500),
-                ),
+              child: const Text(
+                "גרסה 1.1.1 · © כל הזכויות שמורות",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.w500),
               ),
             ),
           ],
@@ -1037,10 +1032,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     // הכולל שלהם יתאים בדיוק לכל שאר התוכן במסך, לא נוגע
                     // בקצוות המסך. שני הכרטיסים עצמם נשארים זהים בגודל
                     // (Expanded עם flex שווה בתוך _buildModesGrid).
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 3, child: _buildModesGrid()),
-                    ),
+                    // 🩹 תוקן לפי בקשה מפורשת: הכרטיסים צריכים להגיע עד קצוות
+                    // המסך ("שחק מול אחרים" עד הקצה הימני, "אתגר רנדומלי" עד
+                    // הקצה השמאלי), לא לעצור עם ריווח כמו שאר הכרטיסים - לכן
+                    // בלי ה-Padding(18) שעוטף את שאר התוכן במסך הזה.
+                    _FadeSlideIn(index: 3, child: _buildModesGrid()),
                     const SizedBox(height: 10),
                     // 🩹 כרטיס "מרוץ לוגואים" הנפרד הוסר מהבית לפי בקשה מפורשת -
                     // "מרוץ לוגואים" עבר להיות אחד משני המודים בתוך "שחק מול
@@ -1092,9 +1088,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           // המשתמש לשורה אחת עם שלוש נקודות - כך שכפתורי ההגדרות/מתנה
           // תמיד יישארו גלויים במלואם, גם עם שם ארוך.
           Flexible(
-            child: GestureDetector(
-              onLongPress: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const DebugLogScreen())),
-              child: Container(
+            child: Container(
                 // 🩹 "רק הגדלת את הבועה אבל לא שינית את הנראות" - עיצוב
                 // אמיתי הפעם, לא רק ריפוד: מסגרת עדינה + צל שנותן עומק
                 // (בועה "מרחפת" במקום כתם שטוח), האווטאר קיבל טבעת זהב
@@ -1156,7 +1150,6 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                   ],
                 ),
               ),
-            ),
           ),
           const SizedBox(width: 8),
           Row(
@@ -2897,6 +2890,19 @@ class _ModeCard extends StatelessWidget {
           // Column זורם רגיל (בלי Stack/Positioned) + maxLines/ellipsis על
           // הטקסטים כדי שלעולם לא יגדלו מעבר לשטח שהוקצה להם, וגובה מעט
           // גדול יותר (136 במקום 120) כדי שיהיה רווח נשימה אמיתי.
+          // 🩹 זה היה הבאג האמיתי מאחורי "שחק מול אחרים קטן יותר מאתגר
+          // רנדומלי ומופיע באמצע": ל-Container הזה לא היה width בכלל, אז
+          // הוא התכווץ לפי רוחב התוכן שלו (Column) בלבד - וכיוון שהוא ילד
+          // לא-Positioned בתוך Stack (שנותן לילדים שלו אילוצים רופפים/
+          // loose, גם אם ל-Stack עצמו יש רוחב נוקשה מ-Expanded למעלה),
+          // כרטיס עם טקסט ארוך יותר ("אתגר רנדומלי" + התת-כותרת הארוכה
+          // "לוגו אקראי · שומר על הרצף") יצא רחב יותר בפועל מכרטיס עם
+          // טקסט קצר ("שחק מול אחרים" + "דו־קרב · מירוץ") - למרות ששניהם
+          // אמורים לתפוס בדיוק חצי-חצי. width: double.infinity מכריח את
+          // ה-Container למלא את כל הרוחב שהוקצה לו (מה-Expanded), בלי
+          // קשר לאורך הטקסט בפנים - קורה בכל מכשיר/פלטפורמה, לא קשור
+          // לאייפון בכלל.
+          width: double.infinity,
           height: height,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(

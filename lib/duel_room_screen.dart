@@ -30,7 +30,7 @@ import 'player_sync.dart';
 import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon - אימוג'י במקום אייקון וקטורי
 import 'ads_manager.dart'; // 🆕 פרסומת אחרי סיום דו-קרב + איפוס מונה "גלישה בלי לשחק"
 import 'level_override_service.dart'; // 🆕 תיקוני שלבים מרחוק - חייב לחול גם בדו-קרב, לא רק במשחק הרגיל
-import 'debug_log.dart'; // 🩹 DebugLog.reportError - דיווח שגיאות watchMatch אמיתיות ל-Firestore לצורך אבחון "נתקע באייפון" (אישור מפורש מ-ofek - שינוי יחיד בקובץ הזה, רק שורה זו)
+import 'battle_pass_service.dart'; // 🆕 נקודות "באטל פאס" על ניצחון בדו-קרב
 
 class DuelRoomScreen extends StatefulWidget {
   final String matchId;
@@ -82,6 +82,16 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   bool _initializedGuess = false;
   bool _showCorrectFeedback = false;
 
+  // 🆕 באנר "מישהו ענה נכון" בולט לשני הצדדים - לפי בקשה מפורשת ("שני
+  // השחקנים ידעו שמישהו ענה, לא רק וי קטן"). הבאנר "תשובה נכונה!" הקיים
+  // (_showCorrectFeedback) מקומי בלבד ומוצג רק אצל מי שממש הקליד את
+  // התשובה. כאן עוקבים אחרי ההתקדמות (כמה תשובות נכונות) של היריב -
+  // ברגע שהיא עולה, מציגים באנר דומה גם אצלי, עם השם שלו. _prevOppCorrect
+  // מתחיל כ-null כדי שלא "יורה" בטעות בעדכון הראשון (לפני שממש היה שינוי).
+  int? _prevOppCorrect;
+  bool _showOpponentAnsweredBanner = false;
+  Timer? _opponentAnsweredBannerTimer;
+
   // 🆕 זיהוי ניתוק אמיתי של היריב (לא יציאה מבוקרת) - ראו הסבר מלא ליד
   // DuelService.updateHeartbeat/opponentDisconnectTimeoutSeconds. שני
   // הצדדים כותבים "פעימת חיים" כל כמה שניות; אם היריב שלי שותק יותר
@@ -121,13 +131,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     super.initState();
     _waitingSpinController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
     _loadCoins();
-    // 🩹 onError היה שותק לגמרי (_) {} - אם ה-stream זורק שגיאה (למשל
-    // permission-denied), המסך נשאר תקוע לנצח על ה-loading spinner בלי
-    // שום סימן למה. עכשיו לפחות מדווחים את השגיאה ל-Firestore לאבחון -
-    // שינוי יחיד בקובץ הזה, לא נוגע בשום דבר אחר (אישור מפורש התקבל).
-    _sub = DuelService.watchMatch(widget.matchId).listen(_onMatchUpdate, onError: (e) {
-      DebugLog.reportError('DuelRoom.watchMatch', e.toString());
-    });
+    _sub = DuelService.watchMatch(widget.matchId).listen(_onMatchUpdate, onError: (_) {});
     // 🆕 recordDuelEntered (לא recordGameEntered הרגיל) - כדי ש-AdsManager
     // ידע גם אם "דפדפנו הרבה ואז לחצנו על דו-קרב" (משפיע על onDuelFinished).
     AdsManager.recordDuelEntered();
@@ -197,8 +201,24 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       _goToRematch(match.rematchMatchId!);
     }
 
+    // 🆕 זיהוי "היריב ענה נכון" - ראו הערה ליד _prevOppCorrect למעלה.
+    final newOppCorrect = match.opponentCorrectFor(widget.myDeviceId);
+    if (_prevOppCorrect != null && newOppCorrect > _prevOppCorrect!) {
+      _flashOpponentAnsweredBanner();
+    }
+    _prevOppCorrect = newOppCorrect;
+
     _prevStatus = match.status;
     setState(() => _match = match);
+  }
+
+  void _flashOpponentAnsweredBanner() {
+    _opponentAnsweredBannerTimer?.cancel();
+    setState(() => _showOpponentAnsweredBanner = true);
+    _opponentAnsweredBannerTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (!mounted) return;
+      setState(() => _showOpponentAnsweredBanner = false);
+    });
   }
 
   // 🆕 סוגר כל דיאלוג פתוח (מסך התוצאה) ומחליף את המסך הזה בדו-קרב
@@ -668,9 +688,10 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       AudioManager.playLose();
     }
 
-    // 🩹 הבאטל פאס עולה רק ממשימות/אתגר יומי (החלטת עיצוב) - לא מניצחון
-    // בדו-קרב רגיל. ראה missions_service.dart.
-    if (iWon) _grantWinXp(_winXpReward); // לא מחכים לזה - לא צריך לחסום את הדיאלוג
+    if (iWon) {
+      _grantWinXp(_winXpReward); // לא מחכים לזה - לא צריך לחסום את הדיאלוג
+      BattlePassService.addPoints(_winXpReward); // 🆕 נקודות "באטל פאס" על ניצחון בדו-קרב
+    }
     _settleCoinsAfterMatch(iWon: iWon, isDraw: isDraw);
     // 🆕 סטטיסטיקות "ניצחונות"/"מאזן ראש-בראש" למסך "נמצא יריב" הבא -
     // בטוח לקרוא משני המכשירים בו-זמנית (ראה recordMatchResultOnce).
@@ -1067,6 +1088,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     _logoTimer?.cancel();
     _heartbeatTimer?.cancel();
     _disconnectCheckTimer?.cancel();
+    _opponentAnsweredBannerTimer?.cancel();
     _waitingSpinController.dispose();
     // אם עוזבים באמצע דו-קרב פעיל בלי לעבור דרך _confirmExit (למשל
     // סוגרים את כל האפליקציה) - היריב עדיין מוכרז מנצח אוטומטית וגם
@@ -1191,6 +1213,17 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         _buildHeader(),
         const SizedBox(height: 6),
         _buildProgressHeader(oppName, oppCorrect, match.totalQuestions),
+        // 🆕 באנר "[שם היריב] ענה/תה נכון!" - ראו _flashOpponentAnsweredBanner.
+        // AnimatedSize+AnimatedOpacity כדי שהבאנר "יגדל"/ייכנס במקום לקפוץ
+        // פתאום ולדחוף את שאר התוכן בבת אחת.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          child: AnimatedOpacity(
+            opacity: _showOpponentAnsweredBanner ? 1 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: _showOpponentAnsweredBanner ? _buildOpponentAnsweredBanner(oppName) : const SizedBox(width: double.infinity),
+          ),
+        ),
         const SizedBox(height: 14),
         if (iAmWaiting)
           Expanded(child: _buildWaitingForOpponent())
@@ -1419,6 +1452,38 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                 const SizedBox(width: 4),
                 Text('$_coins', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 13, fontWeight: FontWeight.w900)),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🆕 באנר בולט "[שם] ענה/תה נכון!" - זהה בסגנונו לבאנר המקביל במרוץ
+  // (ראו _buildRoundResultBanner ב-logo_race_screen.dart), כדי שהתחושה
+  // תהיה עקבית: שני הצדדים תמיד יודעים ברגע שמישהו ענה, לא רק מי שענה.
+  Widget _buildOpponentAnsweredBanner(String oppName) {
+    const color = Color(0xFFFB7185);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: color.withValues(alpha: 0.22),
+        border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5),
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.flash_on_rounded, color: color, size: 18),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              '$oppName ענה/תה נכון! ⚡',
+              textDirection: TextDirection.rtl,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900),
             ),
           ),
         ],

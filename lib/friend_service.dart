@@ -25,7 +25,18 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart';
 
-enum AddFriendResult { success, invalidCode, notFound, ownCode, alreadyFriends, error }
+// 🆕 requestSent/alreadyRequested נוספו לפי בקשה מפורשת: הוספת חבר לפי
+// קוד כבר לא הופכת אתכם לחברים מיד - היא רק שולחת בקשה, וצריך שהצד השני
+// יאשר (ראו sendFriendRequest/acceptFriendRequest/declineFriendRequest
+// למטה). success נשאר לתאימות היסטורית אך לא נזרק יותר מ-sendFriendRequest.
+enum AddFriendResult { success, requestSent, alreadyRequested, invalidCode, notFound, ownCode, alreadyFriends, error }
+
+/// 🆕 בקשת חברות ממתינה שקיבלתי ממישהו - עד שאני מאשר או דוחה אותה.
+class FriendRequestInfo {
+  final String id; // מזהה השולח
+  final String name;
+  const FriendRequestInfo({required this.id, required this.name});
+}
 
 class FriendInfo {
   final String id;
@@ -92,8 +103,10 @@ class FriendService {
     throw Exception('לא הצלחנו ליצור קוד חברים');
   }
 
-  /// מוסיף חבר לפי הקוד שלו - הדדי (גם אני נוסף אצלו, גם הוא אצלי).
-  static Future<AddFriendResult> addFriendByCode(String rawCode, {required String myName}) async {
+  /// 🆕 שולח בקשת חברות לפי קוד - לא הופך אתכם לחברים מיד, רק כותב
+  /// רשומה תחת players/{friendId}/friendRequests/{myId} - הצד השני צריך
+  /// לאשר (acceptFriendRequest) כדי שהחברות תיווצר בפועל אצל שניכם.
+  static Future<AddFriendResult> sendFriendRequest(String rawCode, {required String myName}) async {
     final code = rawCode.trim().toUpperCase();
     if (code.length != codeLength) return AddFriendResult.invalidCode;
     try {
@@ -106,21 +119,66 @@ class FriendService {
       final already = await _players.doc(myIdVal).collection('friendsList').doc(friendId).get();
       if (already.exists) return AddFriendResult.alreadyFriends;
 
-      final friendPlayerDoc = await _players.doc(friendId).get();
-      final friendName = (friendPlayerDoc.data()?['username'] as String?) ?? 'שחקן';
+      final existingRequest = await _players.doc(friendId).collection('friendRequests').doc(myIdVal).get();
+      if (existingRequest.exists) return AddFriendResult.alreadyRequested;
 
-      await _players.doc(myIdVal).collection('friendsList').doc(friendId).set({
-        'name': friendName,
+      await _players.doc(friendId).collection('friendRequests').doc(myIdVal).set({
+        'name': myName,
+        'sentAt': FieldValue.serverTimestamp(),
+      });
+      return AddFriendResult.requestSent;
+    } catch (e) {
+      debugPrint('SEND FRIEND REQUEST ERROR: $e');
+      return AddFriendResult.error;
+    }
+  }
+
+  /// 🆕 בקשות חברות ממתינות שקיבלתי - מוצג ב-friends_screen.dart עם
+  /// כפתורי אישור/דחייה.
+  static Future<List<FriendRequestInfo>> fetchPendingRequests() async {
+    try {
+      final myIdVal = await myId();
+      final snap = await _players.doc(myIdVal).collection('friendRequests').orderBy('sentAt', descending: true).get();
+      return snap.docs.map((doc) {
+        final name = (doc.data()['name'] as String?) ?? 'שחקן';
+        return FriendRequestInfo(id: doc.id, name: name);
+      }).toList();
+    } catch (e) {
+      debugPrint('FETCH FRIEND REQUESTS ERROR: $e');
+      return [];
+    }
+  }
+
+  /// 🆕 מאשר בקשת חברות ממתינה - רק עכשיו נוצרת החברות ההדדית בפועל
+  /// (בדיוק כמו ההתנהגות הישנה של addFriendByCode), ומוחקים את הבקשה.
+  static Future<bool> acceptFriendRequest(String requesterId, {required String requesterName, required String myName}) async {
+    try {
+      final myIdVal = await myId();
+      await _players.doc(myIdVal).collection('friendsList').doc(requesterId).set({
+        'name': requesterName,
         'addedAt': FieldValue.serverTimestamp(),
       });
-      await _players.doc(friendId).collection('friendsList').doc(myIdVal).set({
+      await _players.doc(requesterId).collection('friendsList').doc(myIdVal).set({
         'name': myName,
         'addedAt': FieldValue.serverTimestamp(),
       });
-      return AddFriendResult.success;
+      await _players.doc(myIdVal).collection('friendRequests').doc(requesterId).delete();
+      return true;
     } catch (e) {
-      debugPrint('ADD FRIEND ERROR: $e');
-      return AddFriendResult.error;
+      debugPrint('ACCEPT FRIEND REQUEST ERROR: $e');
+      return false;
+    }
+  }
+
+  /// 🆕 דוחה בקשת חברות ממתינה - רק מוחק אותה, לא נוצרת חברות.
+  static Future<bool> declineFriendRequest(String requesterId) async {
+    try {
+      final myIdVal = await myId();
+      await _players.doc(myIdVal).collection('friendRequests').doc(requesterId).delete();
+      return true;
+    } catch (e) {
+      debugPrint('DECLINE FRIEND REQUEST ERROR: $e');
+      return false;
     }
   }
 

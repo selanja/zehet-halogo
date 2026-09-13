@@ -42,6 +42,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
   bool _loadingFriends = true;
   int _myXp = 0; // 🆕 ל"מי מוביל בין החברים שלך" - נטען פעם אחת מ-SharedPreferences
 
+  // 🆕 בקשות חברות ממתינות (ראו friend_service.dart) - לפי בקשה מפורשת:
+  // הוספת חבר לפי קוד כבר לא הופכת אתכם לחברים מיד, אלא שולחת בקשה
+  // שהצד השני צריך לאשר. _respondingTo מונע לחיצה כפולה על אישור/דחייה
+  // של אותה בקשה בזמן שהיא כבר בטיפול.
+  List<FriendRequestInfo> _pendingRequests = [];
+  bool _loadingRequests = true;
+  final Set<String> _respondingTo = {};
+
   final TextEditingController _addCodeController = TextEditingController();
   bool _addingFriend = false;
   String? _addFriendError;
@@ -52,6 +60,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     _loadMyCode();
     _loadFriends();
     _loadMyXp();
+    _loadPendingRequests();
   }
 
   Future<void> _loadMyXp() async {
@@ -88,6 +97,38 @@ class _FriendsScreenState extends State<FriendsScreen> {
       _friends = friends;
       _loadingFriends = false;
     });
+  }
+
+  Future<void> _loadPendingRequests() async {
+    setState(() => _loadingRequests = true);
+    final requests = await FriendService.fetchPendingRequests();
+    if (!mounted) return;
+    setState(() {
+      _pendingRequests = requests;
+      _loadingRequests = false;
+    });
+  }
+
+  Future<void> _respondToRequest(FriendRequestInfo request, {required bool accept}) async {
+    setState(() => _respondingTo.add(request.id));
+    final ok = accept
+        ? await FriendService.acceptFriendRequest(request.id, requesterName: request.name, myName: widget.username)
+        : await FriendService.declineFriendRequest(request.id);
+    if (!mounted) return;
+    setState(() {
+      _respondingTo.remove(request.id);
+      if (ok) _pendingRequests.removeWhere((r) => r.id == request.id);
+    });
+    if (ok && accept) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("אתם חברים עכשיו! 🎉", textDirection: TextDirection.rtl)),
+      );
+      _loadFriends();
+    } else if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("משהו השתבש - נסה שוב", textDirection: TextDirection.rtl)),
+      );
+    }
   }
 
   String get _inviteText =>
@@ -150,16 +191,19 @@ class _FriendsScreenState extends State<FriendsScreen> {
       _addingFriend = true;
       _addFriendError = null;
     });
-    final result = await FriendService.addFriendByCode(code, myName: widget.username);
+    final result = await FriendService.sendFriendRequest(code, myName: widget.username);
     if (!mounted) return;
     setState(() => _addingFriend = false);
     switch (result) {
-      case AddFriendResult.success:
+      case AddFriendResult.requestSent:
+      case AddFriendResult.success: // תאימות היסטורית - לא אמור להיזרק בפועל יותר
         _addCodeController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("נוסף לרשימת החברים! 🎉", textDirection: TextDirection.rtl)),
+          const SnackBar(content: Text("בקשת חברות נשלחה! ⏳ נחכה שהוא יאשר", textDirection: TextDirection.rtl)),
         );
-        _loadFriends();
+        break;
+      case AddFriendResult.alreadyRequested:
+        setState(() => _addFriendError = "כבר שלחת לו בקשה - ממתין לאישור");
         break;
       case AddFriendResult.alreadyFriends:
         setState(() => _addFriendError = "כבר חברים איתו");
@@ -210,7 +254,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   Expanded(
                     child: RefreshIndicator(
                       onRefresh: () async {
-                        await Future.wait([_loadMyCode(), _loadFriends(), _loadMyXp()]);
+                        await Future.wait([_loadMyCode(), _loadFriends(), _loadMyXp(), _loadPendingRequests()]);
                       },
                       color: const Color(0xFFA7F3D0),
                       backgroundColor: const Color(0xFF241a4f),
@@ -225,6 +269,12 @@ class _FriendsScreenState extends State<FriendsScreen> {
                             _buildMyCodeCard(),
                             const SizedBox(height: 14),
                             _buildAddFriendCard(),
+                            // 🆕 בקשות חברות ממתינות - מוצג רק אם יש כאלה
+                            // (ראה _pendingRequests/_loadPendingRequests).
+                            if (!_loadingRequests && _pendingRequests.isNotEmpty) ...[
+                              const SizedBox(height: 22),
+                              _buildPendingRequestsSection(),
+                            ],
                             const SizedBox(height: 22),
                             _buildFriendsListSection(),
                             // 🆕 "תוסיף איזה משהו מעניין שיהיה אפשר לעשות
@@ -470,6 +520,95 @@ class _FriendsScreenState extends State<FriendsScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  // 🆕 בקשות חברות ממתינות - לפי בקשה מפורשת: הוספת חבר לפי קוד לא
+  // הופכת אתכם לחברים מיד, הצד השני צריך לאשר קודם. כל שורה מציגה את
+  // שם השולח + כפתורי אישור (✓ ירוק, יוצר חברות הדדית) ודחייה (✕ אדום,
+  // רק מוחק את הבקשה).
+  Widget _buildPendingRequestsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            const Text("בקשות חברות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: const Color(0xFFFB7185).withValues(alpha: 0.25)),
+              child: Text("${_pendingRequests.length}", style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 12, fontWeight: FontWeight.w900)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ..._pendingRequests.map((request) {
+          final busy = _respondingTo.contains(request.id);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              color: Colors.white.withValues(alpha: 0.05),
+            ),
+            child: Row(
+              textDirection: TextDirection.rtl,
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: const Color(0xFFA7F3D0).withValues(alpha: 0.25),
+                  child: Text(
+                    request.name.isNotEmpty ? request.name.substring(0, 1).toUpperCase() : "?",
+                    style: const TextStyle(color: Color(0xFFA7F3D0), fontWeight: FontWeight.w900),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    request.name,
+                    textDirection: TextDirection.rtl,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (busy)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white54)),
+                  )
+                else ...[
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _respondToRequest(request, accept: true),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF34D399).withValues(alpha: 0.22)),
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.check_rounded, color: Color(0xFF6EE7B7), size: 19),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _respondToRequest(request, accept: false),
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFFB7185).withValues(alpha: 0.18)),
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.close_rounded, color: Color(0xFFFDA4AF), size: 19),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 

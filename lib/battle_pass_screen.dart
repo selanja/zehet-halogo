@@ -726,9 +726,17 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 // 🆕 כמה כוכבים (נקודות) צריך כדי להגיע לשלב הזה - לפי
                 // בקשה מפורשת. לא מוצג בשלב 1 (פתוח מההתחלה, "0⭐" לא
                 // אומר כלום שם).
+                // 🩹 תוקן: קו-המסלול (rail) עובר בדיוק באמצע האופקי, ממש
+                // מתחת לטקסט הזה - טקסט לבן שקוף (0.45) עליו היה כמעט
+                // בלתי קריא. עטפתי ברקע כהה אטום משלו (כמו שאר התגים
+                // הקטנים באפליקציה) כדי שיהיה קריא בכל מצב.
                 if (def.pointsRequired > 0) ...[
                   const SizedBox(height: 3),
-                  Text('${def.pointsRequired}⭐', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9, fontWeight: FontWeight.w700)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), color: const Color(0xFF1B1033)),
+                    child: Text('${def.pointsRequired}⭐', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                  ),
                 ],
               ],
             ),

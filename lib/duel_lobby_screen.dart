@@ -24,7 +24,6 @@ import 'audio_manager.dart'; // 🆕 צליל "נמצא יריב" + הנמכת �
 import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשיו" - נקודה ירוקה+מספר בתפריט הראשי
 import 'reward_popups.dart'; // 🆕 פופאפ "קיבלת אנרגיה" החדש (מסך מלא, לפי המוקאפ)
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית
-import 'debug_log.dart'; // 🩹 DebugLog.reportError - דיווח שגיאות matchmaking אמיתיות ל-Firestore לצורך אבחון
 
 enum _LobbyState { checking, banned, notEnoughEnergy, notEnoughCoins, selectingStake, searching, found, noPlayers, error }
 
@@ -330,7 +329,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         break;
       case DuelSearchStatus.error:
         await EnergyService.refundSearchEnergy();
-        DebugLog.reportError('Duel.findMatch', result.errorMessage ?? '(ללא הודעה)');
         if (!mounted) return;
         setState(() {
           _state = _LobbyState.error;
@@ -365,10 +363,9 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       });
       _loadFoundStats(deviceId, oppId); // ברקע - לא חוסם את הכניסה לדו-קרב
       _startReadyCountdown(matchId, deviceId);
-    } catch (e) {
+    } catch (_) {
       // אם משום מה לא הצלחנו לשלוף את פרטי המשחק - לא נתקעים, פשוט
       // ממשיכים ישר לחדר בלי מסך "נמצא!" (עדיף מלהישאר תקוע).
-      DebugLog.reportError('Duel.showFoundThenEnter', e.toString());
       _foundMatchId = matchId;
       await Future.delayed(const Duration(milliseconds: 900));
       if (!mounted || _foundMatchId == null) return;

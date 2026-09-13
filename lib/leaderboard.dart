@@ -14,6 +14,12 @@ class LeaderboardService {
   static final CollectionReference<Map<String, dynamic>> _players =
       FirebaseFirestore.instance.collection('leaderboard');
 
+  // 🆕 אבחון זמני - שומר את השגיאה האמיתית מ-Firestore (permission-denied,
+  // unavailable וכו') כדי שמסך הטבלה יוכל להציג אותה במקום ההודעה
+  // הגנרית "בדקו חיבור לאינטרנט" שמופיעה גם כשהבעיה לא קשורה לאינטרנט
+  // בכלל. להסיר אחרי שהתקלה נמצאת ותוקנה.
+  static String? lastError;
+
   // כתובת הגיליון הישן - נשארת כאן רק כדי שההעברה החד-פעמית של הנתונים
   // הקיימים תוכל לקרוא ממנה. אפשר למחוק את השורה הזו אחרי שההעברה בוצעה
   // ווידאת שכל השחקנים מופיעים ב-Firestore.
@@ -42,6 +48,7 @@ class LeaderboardService {
       }).toList();
     } catch (e) {
       debugPrint("LEADERBOARD ERROR: $e");
+      lastError = e.toString();
       return [];
     }
   }
@@ -67,6 +74,7 @@ class LeaderboardService {
       }).toList();
     } catch (e) {
       debugPrint("LEADERBOARD STREAK ERROR: $e");
+      lastError = e.toString();
       return [];
     }
   }

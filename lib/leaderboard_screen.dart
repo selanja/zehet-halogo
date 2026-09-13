@@ -70,7 +70,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       entries = data;
       isLoading = false;
       if (data.isEmpty) {
-        error = "לא הצלחנו לטעון את הטבלה. בדקו חיבור לאינטרנט ונסו שוב.";
+        // 🆕 אבחון זמני - מציג את השגיאה האמיתית מ-Firestore (אם נתפסה)
+        // בסוגריים, במקום רק את ההודעה הגנרית. להסיר אחרי שהתקלה נמצאת.
+        final real = LeaderboardService.lastError;
+        error = real == null
+            ? "לא הצלחנו לטעון את הטבלה. בדקו חיבור לאינטרנט ונסו שוב."
+            : "לא הצלחנו לטעון את הטבלה.\n\nשגיאה טכנית (אבחון זמני):\n$real";
       }
     });
 

@@ -9,7 +9,7 @@
 // המסך הזה רק מציג ומפעיל אותה.
 //
 // 🩹 עוצב מחדש בדיוק לפי New_Screens.html ("10 · באטל פאס") לגבי בלוק
-// דרגה+שם עונה מתחת לסרגל, כפתור מידע 'i' בסרגל העליון, ושורת כיתוב
+// דרגה+שם עונה מתחת לסרגל, כפתור מידע 'i' בסרגל העליון, ושורת כיתובש
 // "עוד X לדרגה הבאה" מתחת לפס ההתקדמות - כל אלה נשארים.
 //
 // 🩹 בוטל מתג הטאבים "חינם"/"פרימיום": לפי בקשת המשתמש אחרי בדיקה,
@@ -702,43 +702,29 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 claimed: freeClaimed,
                 canClaim: freeCanClaim,
                 isPremium: false,
+                pointsRequired: def.pointsRequired,
                 onTap: () => _claim(def.tier, premium: false),
               ),
             ),
             const SizedBox(width: 7),
-            // 🩹 תג מספר-השלב - עכשיו באמצע השורה (בין שתי הגלולות),
-            // בדיוק מעל קו-המסלול (rail) שעובר באמצע האופקי המוחלט.
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
-                    boxShadow: badgeShadow,
-                    border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
-                ),
-                // 🆕 כמה כוכבים (נקודות) צריך כדי להגיע לשלב הזה - לפי
-                // בקשה מפורשת. לא מוצג בשלב 1 (פתוח מההתחלה, "0⭐" לא
-                // אומר כלום שם).
-                // 🩹 תוקן: קו-המסלול (rail) עובר בדיוק באמצע האופקי, ממש
-                // מתחת לטקסט הזה - טקסט לבן שקוף (0.45) עליו היה כמעט
-                // בלתי קריא. עטפתי ברקע כהה אטום משלו (כמו שאר התגים
-                // הקטנים באפליקציה) כדי שיהיה קריא בכל מצב.
-                if (def.pointsRequired > 0) ...[
-                  const SizedBox(height: 3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), color: const Color(0xFF1B1033)),
-                    child: Text('${def.pointsRequired}⭐', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
-                  ),
-                ],
-              ],
+            // 🩹 תג מספר-השלב - באמצע השורה (בין שתי הגלולות), בדיוק מעל
+            // קו-המסלול (rail) שעובר באמצע האופקי המוחלט.
+            // 🩹 תוקן שוב: ניסיון קודם הוסיף כאן מתחת לתג גם "כמה כוכבים
+            // צריך" - אבל זה בדיוק האזור שהקו עובר בו, ונראה עמוס/מוזר
+            // גם עם רקע אטום. המספר עבר במקום זה *לתוך* גלולת הפרס עצמה
+            // (_rewardPill, מציג עכשיו X⭐ במקום מנעול כשהשלב עוד נעול) -
+            // רחוק מהקו לגמרי, ובדיוק "על הפריט עצמו" כמו שביקשת.
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
+                boxShadow: badgeShadow,
+                border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
+              ),
+              alignment: Alignment.center,
+              child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
             ),
             const SizedBox(width: 7),
             // עמודת "פרימיום" - עכשיו הילד האחרון (RTL => צד שמאל).
@@ -750,6 +736,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 claimed: premiumClaimed,
                 canClaim: premiumCanClaim,
                 isPremium: true,
+                pointsRequired: def.pointsRequired,
                 onTap: () => _claim(def.tier, premium: true),
               ),
             ),
@@ -773,6 +760,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     required bool claimed,
     required bool canClaim,
     required bool isPremium,
+    required int pointsRequired,
     required VoidCallback onTap,
   }) {
     final bool hasReward = coins > 0 || energy > 0;
@@ -848,6 +836,11 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(7), color: const Color(0xFFFFD979)),
                   child: const Text('אסוף', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF40170F), fontSize: 9.5, fontWeight: FontWeight.w900)),
                 )
+              // 🆕 עוד לא הגעת לשלב הזה (לא עניין של פרימיום) - מציגים
+              // כמה כוכבים חסרים במקום מנעול סתמי, ישר על הפרס עצמו
+              // (לא ליד קו-המסלול בשום מקום - ראו הערה ב-_buildTierRow).
+              else if (!unlocked)
+                Text('$pointsRequired⭐', style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 9.5, fontWeight: FontWeight.w800))
               else
                 Icon(Icons.lock_rounded, color: Colors.white.withValues(alpha: 0.35), size: 13),
             ],

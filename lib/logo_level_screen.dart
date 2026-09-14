@@ -18,6 +18,7 @@ import 'missions_service.dart';
 import 'app_icons.dart'; // 🆕 CoinIcon - אימוג'י מטבע במקום אייקון וקטורי
 import 'level_override_service.dart'; // 🆕 תיקוני שלבים מרחוק (Firestore) בלי לפרסם גרסה חדשה
 import 'battle_pass_service.dart'; // 🆕 נקודות "באטל פאס" על פתרון שלבים
+import 'screenshot_guard_service.dart'; // 🆕 ענישה על צילום מסך חוזר - ראו _onRepeatedScreenshot
 
 class LevelData {
   final String answer;
@@ -933,6 +934,9 @@ void initState() {
   // בפעם הבאה שהוא פותח את האפליקציה מחדש.
   PlayerSyncService.remoteCoinsUpdate.addListener(_onRemoteCoinsUpdate);
   PlayerSyncService.remoteResetSignal.addListener(_onRemoteReset);
+  // 🆕 ענישה על צילום מסך חוזר (לפי בקשה מפורשת: "בפעם הראשונה התראה,
+  // בפעם השנייה מעביר שלב בלי אופציה לחזור") - ראו _onRepeatedScreenshot.
+  ScreenshotGuardService.onRepeatedScreenshot = _onRepeatedScreenshot;
   AdsManager.recordGameEntered(); // 🆕 נכנסים למשחק בפועל - מאפס את מונה "גלישה בלי לשחק"
   DebugLog.add("LogoLevelScreen.initState: listeners attached, calling _checkConnectivityAndStart");
   _checkConnectivityAndStart();
@@ -1836,8 +1840,35 @@ void initState() {
     _stuckTipOverlayEntry = null;
     PlayerSyncService.remoteCoinsUpdate.removeListener(_onRemoteCoinsUpdate);
     PlayerSyncService.remoteResetSignal.removeListener(_onRemoteReset);
+    // 🆕 חשוב לנקות - אחרת מסך הזה שכבר נסגר יישאר "רשום" כמאזין הגלובלי
+    // היחיד (ראו onRepeatedScreenshot ב-screenshot_guard_service.dart)
+    // וצילום מסך שיילקח אחר כך במסך אחר לגמרי ינסה (בשקט, בלי לקרוס) לקרוא
+    // ל-setState על מסך שכבר לא קיים.
+    if (ScreenshotGuardService.onRepeatedScreenshot == _onRepeatedScreenshot) {
+      ScreenshotGuardService.onRepeatedScreenshot = null;
+    }
     super.dispose();
     DebugLog.add("LogoLevelScreen.dispose END");
+  }
+
+  // 🆕 צילום מסך שני (ואילך) בזמן שהשלב הזה פעיל - מעבירים בכוח לשלב
+  // הבא (בדיוק כמו התקדמות רגילה - _goToNextLevel, בלי לזרוק שום פרס
+  // נוסף) ומראים הודעה ברורה שזו הסיבה. אין "לחזור לשלב הקודם" כי אין
+  // כאן ניווט בכלל - currentPuzzleId פשוט מתקדם באותו מסך.
+  void _onRepeatedScreenshot() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          "זוהה צילום מסך נוסף - עוברים לשלב הבא 🚫📸",
+          textDirection: TextDirection.rtl,
+          textAlign: TextAlign.right,
+        ),
+        backgroundColor: Color(0xFFB91C1C),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    _goToNextLevel();
   }
 
   void _goToNextLevel() {

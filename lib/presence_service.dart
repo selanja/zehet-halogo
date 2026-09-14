@@ -78,20 +78,23 @@ class PresenceService {
   }
 
   /// כמה שחקנים "פעילים" (פעימה טרייה בתוך activeWindow) נמצאים כרגע
-  /// במצב הזה. שאילתת .count() - עולה קריאה בודדת ולא תלויה בכמות
-  /// המסמכים התואמים. ⚠️ שאילתה משולבת (mode + updatedAt) - כמו כל
-  /// שאילתה משולבת אחרת בפרויקט, Firestore ידרוש אינדקס מורכב (ויציג
-  /// קישור ישיר ליצירתו בשגיאת FAILED_PRECONDITION הראשונה בלוג).
+  /// במצב הזה.
+  /// 🩹 תוקן: הגרסה הקודמת שילבה שני תנאים בשאילתה אחת (mode + updatedAt),
+  /// מה שדורש אינדקס מורכב ב-Firestore שאף פעם לא נוצר בפועל בקונסולה -
+  /// כל קריאה נכשלה בשקט עם FAILED_PRECONDITION (נבלע ע"י ה-catch למטה)
+  /// והחזירה 0 תמיד, בדיוק התסמין שדווח ("כמות המחוברים לא עובדת"). עכשיו,
+  /// בדיוק כמו listActive למטה, מסננים שרת-צד רק לפי updatedAt (שדה יחיד -
+  /// לא דורש אינדקס מורכב) וסופרים לפי mode בצד הלקוח - בלי שום תלות
+  /// בהגדרה ידנית בקונסולה של Firebase.
   static Future<int> countActive(String mode) async {
     try {
       final cutoff = Timestamp.fromDate(DateTime.now().subtract(activeWindow));
       final snap = await _db
           .collection(_collection)
-          .where('mode', isEqualTo: mode)
           .where('updatedAt', isGreaterThan: cutoff)
-          .count()
+          .limit(500)
           .get();
-      return snap.count ?? 0;
+      return snap.docs.where((d) => d.data()['mode'] == mode).length;
     } catch (_) {
       return 0;
     }

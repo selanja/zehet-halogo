@@ -26,6 +26,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// true כל עוד יש הקלטת מסך פעילה כרגע - ValueNotifier גלובלי כדי
 /// ש-AppLifecycleManager (ב-main.dart) יוכל "לדרוש" טשטוש גם מהמקור
@@ -43,6 +44,14 @@ class ScreenshotGuardService {
   /// נרשם ל-debug log ותו לא. ראו main.dart לחיבור בפועל.
   static VoidCallback? onScreenshotTaken;
 
+  /// 🆕 callback נוסף - רץ רק מהצילום *השני* ואילך (לא מהראשון), לפי
+  /// בקשה מפורשת: "בפעם הראשונה התראה, בפעם השנייה מעביר שלב בלי אופציה
+  /// לחזור". מחובר ב-logo_level_screen.dart (המסך היחיד שבו "שלב" רלוונטי) -
+  /// אם אף מסך לא מאזין כרגע (למשל השחקן בתפריט), פשוט לא קורה כלום.
+  static VoidCallback? onRepeatedScreenshot;
+
+  static const _keyScreenshotCount = 'screenshotWarningCount';
+
   /// לקרוא פעם אחת ב-main.dart. לא עושה כלום באנדרואיד (מחזיר מיד).
   static void init() {
     if (_initialized || !Platform.isIOS) return;
@@ -52,6 +61,10 @@ class ScreenshotGuardService {
         case 'screenshotTaken':
           debugPrint('ScreenshotGuard: זוהה צילום מסך');
           onScreenshotTaken?.call();
+          final prefs = await SharedPreferences.getInstance();
+          final count = (prefs.getInt(_keyScreenshotCount) ?? 0) + 1;
+          await prefs.setInt(_keyScreenshotCount, count);
+          if (count >= 2) onRepeatedScreenshot?.call();
           break;
         case 'recordingChanged':
           isScreenRecordingNow.value = (call.arguments as bool?) ?? false;

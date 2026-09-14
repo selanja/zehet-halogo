@@ -182,6 +182,27 @@ class FriendService {
     }
   }
 
+  /// 🆕 מסיר חברות - הדדי (נמחק גם אצלי וגם אצלו), בדיוק כמו שההוספה
+  /// הייתה הדדית. אם אחת משתי המחיקות נכשלת (למשל אין אינטרנט) - עדיין
+  /// מנסים את השנייה, כדי לא להישאר עם מצב "חצי מחוק" יותר מהנדרש.
+  static Future<bool> removeFriend(String friendId) async {
+    final myIdVal = await myId();
+    bool ok = true;
+    try {
+      await _players.doc(myIdVal).collection('friendsList').doc(friendId).delete();
+    } catch (e) {
+      debugPrint('REMOVE FRIEND ERROR (mine): $e');
+      ok = false;
+    }
+    try {
+      await _players.doc(friendId).collection('friendsList').doc(myIdVal).delete();
+    } catch (e) {
+      debugPrint('REMOVE FRIEND ERROR (theirs): $e');
+      ok = false;
+    }
+    return ok;
+  }
+
   /// רשימת החברים של השחקן הזה - שם עדכני + מצב "מחובר" (פעיל ב-3
   /// הדקות האחרונות, ראו touchPresence).
   static Future<List<FriendInfo>> fetchFriends() async {
@@ -237,6 +258,11 @@ class FriendService {
     required String fromName,
     required String code,
     required int stake,
+    // 🆕 "אתגר חבר" עכשיו תומך גם במרוץ - הקוד עצמו נכתב לאוסף שונה
+    // לגמרי (duelInvites/logoRaceInvites, ראו friend_challenge_screen.dart),
+    // אז חייבים לצרף את המוד כאן כדי שההתראה הנכנסת אצל החבר (main.dart -
+    // _showIncomingInviteDialog) תדע איפה בכלל לחפש את הקוד.
+    required bool isDuel,
   }) async {
     try {
       await _players.doc(friendId).set({
@@ -245,6 +271,7 @@ class FriendService {
           'fromName': fromName,
           'code': code,
           'stake': stake,
+          'isDuel': isDuel,
           'sentAt': FieldValue.serverTimestamp(),
         },
       }, SetOptions(merge: true));

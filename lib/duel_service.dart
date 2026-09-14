@@ -586,7 +586,13 @@ class DuelService {
   // 🆕 כל כמה שניות נחשב "עדיין בחיים" - ראו player1LastSeen/player2LastSeen
   // ב-DuelMatch ו-_maybeForfeitDisconnectedOpponent ב-duel_room_screen.dart.
   static const int heartbeatIntervalSeconds = 4;
-  static const int opponentDisconnectTimeoutSeconds = 10;
+  // 🐛 תוקן: היה 10 שניות (רק 2-3 פעימות שהוחמצו) - מספיק שהתראת מערכת,
+  // מסך הרשאה, או מעבר קצר לאפליקציה אחרת (בדיוק המצבים שבהם Flutter
+  // "מקפיא" טיימרים ברקע) יגרמו להכרזת "ניתוק" על שחקן שכלל לא באמת
+  // עזב. הועלה ל-20 שניות - עדיין מספיק מהיר כדי לא להשאיר את הצד השני
+  // תקוע יותר מדי זמן על ניתוק אמיתי, אבל נותן שולי טעות סבירים יותר
+  // להפרעות קצרות ולגיטימיות.
+  static const int opponentDisconnectTimeoutSeconds = 20;
 
   /// כתיבת "פעימת חיים" - נקרא כל כמה שניות מ-DuelRoomScreen כל עוד
   /// השחקן בפועל במסך. כתיבה קלה (לא Transaction) לשדה נפרד משדות
@@ -623,15 +629,25 @@ class DuelService {
   // ביותר בשרת, כך שרק הקריאה שמגיעה ראשונה בפועל (מבחינת השרת, לא
   // מבחינת מי שהתחיל להריץ קודם מקומית) מצליחה לקבוע מנצח - הקריאה
   // השנייה "נופלת" בשקט (status כבר finished) ולא דורסת שום דבר.
-  static Future<void> forfeitMatch(String matchId, String leavingDeviceId) async {
+  // 🐛 תוקן: עכשיו מחזיר bool - true רק אם הקריאה הזו *בפועל* קבעה מנצח
+  // (המשחק עוד לא היה finished כשהיא רצתה בשרת), false אם זו הייתה
+  // no-op כי מישהו כבר הכריע קודם. חשוב במיוחד ב-_maybeForfeitDisconnectedOpponent
+  // (duel_room_screen.dart): אם שני הצדדים חושבים בו-זמנית שהשני התנתק
+  // (למשל הפרעת רשת רגעית משותפת), רק קריאה אחת מהן באמת "מנצחת" בשרת -
+  // בלי הערך המוחזר הזה, הצד שהקריאה שלו נפלה (כי הוא בעצם *הפסיד*)
+  // עדיין היה ממשיך ולהעניש בטעות את המנצח האמיתי דרך applyForfeitPenalty.
+  static Future<bool> forfeitMatch(String matchId, String leavingDeviceId) async {
     final matchRef = _db.collection(_duelsCollection).doc(matchId);
+    bool applied = false;
     await _db.runTransaction((tx) async {
       final snap = await tx.get(matchRef);
       final d = snap.data();
       if (d == null || d['status'] == 'finished') return;
       final opponentId = d['player1Id'] == leavingDeviceId ? d['player2Id'] : d['player1Id'];
       tx.update(matchRef, {'status': 'finished', 'winnerId': opponentId});
+      applied = true;
     });
+    return applied;
   }
 
   /// קורא את מצב האזהרות/חסימה הנוכחי של שחקן (לפי מכשיר) - בלי לשנות

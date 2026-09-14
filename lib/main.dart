@@ -16,6 +16,7 @@ import 'player_sync.dart';
 import 'friend_service.dart'; // 🆕 "החברים שלי" - פעימת נוכחות ("מחובר") + הזמנות דו-קרב נכנסות
 import 'friend_challenge_screen.dart'; // 🆕 מסך קבלת הזמנה נכנסת מחבר
 import 'duel_service.dart'; // 🆕 declineInvite - מודיעים למזמין בזמן אמת שההזמנה נדחתה
+import 'logo_race_service.dart'; // 🆕 הזמנות חברים נכנסות עכשיו יכולות להיות גם למרוץ, לא רק לדו-קרב
 import 'energy_service.dart'; // 🆕 דיאלוג "הזמנה מחבר" מציג כמה אנרגיה יש למשתמש
 import 'notification_manager.dart';
 import 'notification_service.dart'; // 🆕 התראות מקומיות: אנרגיה מלאה, משימות חדשות, חזרה למשחק
@@ -378,7 +379,12 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
     final fromName = (invite['fromName'] as String?) ?? 'חבר';
     final code = invite['code'] as String?;
     if (code == null || code.isEmpty) return;
-    final stake = (invite['stake'] as int?) ?? DuelService.stakeOptions.first;
+    // 🆕 "אתגר חבר" עכשיו תומך גם במרוץ - ההזמנה הנכנסת חייבת לדעת לאיזה
+    // מוד היא שייכת (ראו FriendService.notifyFriendOfInvite), כי הקוד
+    // חי באוסף Firestore שונה לגמרי לכל מוד. ברירת מחדל true (דו-קרב)
+    // לתאימות עם הזמנות ישנות שנשלחו לפני התוספת הזו.
+    final isDuel = (invite['isDuel'] as bool?) ?? true;
+    final stake = (invite['stake'] as int?) ?? (isDuel ? DuelService.stakeOptions.first : LogoRaceService.stakeOptions.first);
     DateTime sentAt;
     try {
       sentAt = (invite['sentAt'] as dynamic).toDate() as DateTime;
@@ -396,13 +402,18 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
         fromName: fromName,
         stake: stake,
         sentAt: sentAt,
+        isDuel: isDuel,
         onDecline: () async {
           Navigator.pop(dialogContext);
           await FriendService.clearIncomingInvite(myId);
           // 🆕 מודיעים למזמין מיד (לא רק מנקים אצלנו) - כדי שהוא יראה
           // "החבר דחה את ההזמנה" במקום לחכות סתם עד שהקוד פג תוקף אחרי
           // 15 דקות (ראה friend_challenge_screen.dart - _listenToMyInvite).
-          await DuelService.declineInvite(code);
+          if (isDuel) {
+            await DuelService.declineInvite(code);
+          } else {
+            await LogoRaceService.declineInvite(code);
+          }
         },
         onLater: () {
           // 🆕 "אחר כך" - רק סוגר את הדיאלוג, בלי לדחות ובלי לנקות את
@@ -416,7 +427,7 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
           final prefs = await SharedPreferences.getInstance();
           final username = prefs.getString('username') ?? '';
           rootNavigatorKey.currentState?.push(
-            MaterialPageRoute(builder: (_) => FriendChallengeScreen(username: username, prefillJoinCode: code)),
+            MaterialPageRoute(builder: (_) => FriendChallengeScreen(username: username, prefillJoinCode: code, isDuel: isDuel)),
           );
         },
       ),
@@ -522,6 +533,10 @@ class _IncomingInviteDialog extends StatefulWidget {
   final VoidCallback onAccept;
   final VoidCallback onDecline;
   final VoidCallback onLater;
+  // 🆕 "אתגר חבר" עכשיו תומך גם במרוץ - קובע אם להציג ספירת "לוגואים"/
+  // מאזן ראש-בראש בנוסחה של דו-קרב (DuelService) או של מרוץ
+  // (LogoRaceService, שאין לו כרגע מעקב ראש-בראש - מוצג מסר כללי במקום).
+  final bool isDuel;
   const _IncomingInviteDialog({
     required this.myId,
     required this.fromId,
@@ -531,6 +546,7 @@ class _IncomingInviteDialog extends StatefulWidget {
     required this.onAccept,
     required this.onDecline,
     required this.onLater,
+    required this.isDuel,
   });
 
   @override
@@ -548,7 +564,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
   void initState() {
     super.initState();
     final elapsed = DateTime.now().difference(widget.sentAt);
-    _remaining = DuelService.inviteExpiry - elapsed;
+    _remaining = (widget.isDuel ? DuelService.inviteExpiry : LogoRaceService.inviteExpiry) - elapsed;
     if (_remaining.isNegative) _remaining = Duration.zero;
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) {
@@ -571,9 +587,14 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
     // אצל משתמש שלא חיבר חשבון effectiveId==deviceId וזה מדויק; אצל
     // משתמש מחובר זה עשוי לא להתאים למאזן ה"אמיתי" - תיעוד מכוון, לא
     // תוקן לעומק כדי לא לגעת בלוגיקת ההתאמה של הדו-קרב עצמה.
-    DuelService.getHeadToHead(widget.myId, widget.fromId).then((v) {
-      if (mounted) setState(() => _h2h = v);
-    });
+    // 🆕 מאזן ראש-בראש קיים רק לדו-קרב (DuelService.getHeadToHead) - למרוץ
+    // אין כרגע מעקב כזה בכלל, אז פשוט לא טוענים כלום (h2hText למטה כבר
+    // יודע להציג הודעה כללית כשאין _h2h).
+    if (widget.isDuel) {
+      DuelService.getHeadToHead(widget.myId, widget.fromId).then((v) {
+        if (mounted) setState(() => _h2h = v);
+      });
+    }
     EnergyService.getCurrentEnergy().then((v) {
       if (mounted) setState(() {
         _energy = v;
@@ -590,15 +611,15 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final questions = DuelService.questionsForStake(widget.stake);
+    final questions = widget.isDuel ? DuelService.questionsForStake(widget.stake) : LogoRaceService.stagesForStake(widget.stake);
     final prize = widget.stake * 2;
-    final total = DuelService.inviteExpiry.inSeconds;
+    final total = (widget.isDuel ? DuelService.inviteExpiry : LogoRaceService.inviteExpiry).inSeconds;
     final progress = total == 0 ? 0.0 : (_remaining.inSeconds / total).clamp(0.0, 1.0);
     final min = _remaining.inMinutes;
     final sec = _remaining.inSeconds % 60;
 
-    String h2hText = "עדיין לא שיחקתם דו-קרב אחד נגד השני";
-    if (_h2h != null) {
+    String h2hText = widget.isDuel ? "עדיין לא שיחקתם דו-קרב אחד נגד השני" : "מוזמן למרוץ לוגואים 1 על 1";
+    if (widget.isDuel && _h2h != null) {
       final mine = _h2h!['mine'] ?? 0;
       final theirs = _h2h!['theirs'] ?? 0;
       if (mine > 0 || theirs > 0) {
@@ -701,7 +722,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                       ),
                       child: Column(
                         children: [
-                          const Text("מקבל את האתגר ⚔", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900)),
+                          Text(widget.isDuel ? "מקבל את האתגר ⚔" : "מקבל את האתגר 🏁", textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900)),
                           const SizedBox(height: 2),
                           Text(
                             _loadedEnergy ? "עולה ${EnergyService.duelCost} ⚡ · יש לך $_energy" : "עולה ${EnergyService.duelCost} ⚡",

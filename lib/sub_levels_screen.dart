@@ -47,6 +47,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
       if (worldCursor > effectiveMax) effectiveMax = worldCursor;
     }
 
+    if (!mounted) return;
     setState(() {
       maxUnlockedLevel = effectiveMax;
     });

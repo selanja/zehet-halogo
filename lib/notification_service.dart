@@ -82,8 +82,8 @@ class NotificationService {
     try {
       await _plugin.zonedSchedule(
         _energyFullNotificationId,
-        'האנרגיה שלך התמלאה!',
-        'בוא תשחק עוד דו-קרב ב"זהה את הלוגו!"',
+        'האנרגיה שלך מלאה',
+        'יריב חדש מחכה - בואו נראה מי מכיר יותר לוגואים ב"זהה את הלוגו!"',
         scheduledDate,
         const NotificationDetails(android: _androidDetails, iOS: DarwinNotificationDetails()),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -115,9 +115,9 @@ class NotificationService {
   // תישלח (הפונקציה שמבטלת ומתזמנת מחדש נקראת בכל פתיחה, ראו
   // scheduleComeBackReminders למטה).
   static const List<Map<String, dynamic>> _comeBackSchedule = [
-    {'days': 1, 'title': 'מתגעגעים אליך!', 'body': 'לוגואים חדשים מחכים לך ב"זהה את הלוגו!" - בוא תמשיך מאיפה שעצרת'},
-    {'days': 3, 'title': 'האנרגיה שלך כבר מלאה', 'body': 'זמן מצוין לדו-קרב אחד קטן ולהרוויח כמה מטבעות'},
-    {'days': 7, 'title': 'לא ראינו אותך כבר שבוע', 'body': 'שחקנים אחרים כבר קרובים אליך בטבלת השיאים - בוא תחזיר לעצמך את המקום'},
+    {'days': 1, 'title': 'מתגעגעים אליך', 'body': 'לוגואים חדשים מחכים לך ב"זהה את הלוגו!" - בוא תמשיך בדיוק מאיפה שעצרת'},
+    {'days': 3, 'title': 'האנרגיה שלך כבר מלאה', 'body': 'זה הזמן המושלם לדו-קרב קצר ולהרוויח עוד כמה מטבעות'},
+    {'days': 7, 'title': 'שבוע שלם בלעדיך', 'body': 'שחקנים אחרים כבר מתקרבים אליך בטבלת השיאים - בוא תחזיר לעצמך את המקום'},
   ];
 
   /// לקרוא בכל פתיחת אפליקציה (main.dart, אחרי init()) - מבטל תזכורות
@@ -173,8 +173,8 @@ class NotificationService {
     try {
       await _plugin.zonedSchedule(
         _dailyResetNotificationId,
-        'משימות חדשות מחכות לך!',
-        'יש לך משימות יומיות חדשות והאתגר היומי מחכה לך ב"זהה את הלוגו!"',
+        'משימות חדשות מחכות לך',
+        'האתגר היומי ומשימות חדשות כבר פתוחות ב"זהה את הלוגו!" - בוא תבדוק מה מחכה לך',
         nextReminder,
         const NotificationDetails(android: _dailyResetAndroidDetails, iOS: DarwinNotificationDetails()),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

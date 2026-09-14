@@ -20,7 +20,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'device_id.dart';
+import 'account_service.dart';
 
 class PushNotificationService {
   PushNotificationService._();
@@ -67,7 +67,14 @@ class PushNotificationService {
   static Future<void> _saveTokenToFirestore() async {
     final token = await _messaging.getToken();
     if (token == null) return;
-    final deviceId = await DeviceId.get();
+    // 🐛 תוקן: היה נשמר תמיד תחת DeviceId.get() (מזהה המכשיר הגולמי) -
+    // אבל כל שאר המערכת (friend_service.dart, player_sync.dart) עברה
+    // להשתמש ב-AccountService.effectiveId() כמזהה המסמך "האמיתי" של
+    // השחקן (הופך ל-uid המקושר אחרי קישור חשבון Google/Apple). שחקן
+    // עם חשבון מקושר היה מקבל את ה-fcmToken כתוב על players/{deviceId}
+    // הישן שאף אחד כבר לא קורא ממנו - כל פוש ממוקד (לפי מסמך השחקן
+    // הפעיל) פשוט לא היה מוצא טוקן ולא מגיע אליו.
+    final deviceId = await AccountService.effectiveId();
     await FirebaseFirestore.instance.collection('players').doc(deviceId).set(
       {'fcmToken': token, 'fcmTokenUpdatedAt': FieldValue.serverTimestamp()},
       SetOptions(merge: true),

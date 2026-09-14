@@ -112,12 +112,20 @@ class EnergyService {
     await _syncFullEnergyNotification(newEnergy);
   }
 
+  /// 🐛 תוקן (אותו באג בדיוק כמו ב-refundSearchEnergy למעלה, שתוקן שם
+  /// אבל נשכח כאן): התקרה הייתה maxEnergy קבוע - למי שיש יותר מ-8
+  /// אנרגיה בפועל (רכישה/פרס גדול), כל זיכוי נוסף (אפילו +1 מבונוס
+  /// יומי) היה "גוזם" אותו בחזרה ל-8, הורס עודף ששולם עליו בכסף אמיתי.
+  /// עכשיו התקרה היא maxEnergy כרגיל - חוץ ממצב שבו כבר יש יותר מזה
+  /// (עודף מרכישה), ואז שומרים על העודף הקיים כתקרה במקום להרוס אותו.
+  static int _capFor(int currentEnergy) => currentEnergy > maxEnergy ? energyPurchaseCap : maxEnergy;
+
   /// 🆕 זיכוי אנרגיה בכמות כלשהי (למשל בונוס יומי) - כללי יותר מ-
   /// addFromAd (שתמיד מזכה בדיוק adRewardAmount).
   static Future<void> addAmount(int amount) async {
     final energy = await getCurrentEnergy();
     final prefs = await SharedPreferences.getInstance();
-    final newEnergy = (energy + amount).clamp(0, maxEnergy);
+    final newEnergy = (energy + amount).clamp(0, _capFor(energy));
     await prefs.setInt(_keyEnergy, newEnergy);
     await _syncFullEnergyNotification(newEnergy);
   }
@@ -128,7 +136,7 @@ class EnergyService {
   static Future<void> addFromAd() async {
     final energy = await getCurrentEnergy();
     final prefs = await SharedPreferences.getInstance();
-    final newEnergy = (energy + adRewardAmount).clamp(0, maxEnergy);
+    final newEnergy = (energy + adRewardAmount).clamp(0, _capFor(energy));
     await prefs.setInt(_keyEnergy, newEnergy);
     await prefs.setInt(_keyLastAdMs, DateTime.now().millisecondsSinceEpoch);
     await _syncFullEnergyNotification(newEnergy);

@@ -14,6 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart'; // 🆕 כפתור "שתף קוד" נפרד מהעתקה, בדיוק כמו במוקאפ
 import 'duel_service.dart';
 import 'duel_room_screen.dart';
+import 'logo_race_service.dart'; // 🆕 "אתגר חבר" עכשיו תומך גם במרוץ, לא רק בדו-קרב - ראו isDuel
+import 'logo_race_screen.dart';
 import 'level_data.dart';
 import 'device_id.dart';
 import 'app_background.dart';
@@ -35,6 +37,18 @@ enum _FCState {
   expired,
   declined, // 🆕 החבר לחץ "דחה" על ההזמנה - ראו _listenToMyInvite/declineInvite
   error,
+}
+
+// 🆕 תוצאת הצטרפות מאוחדת - DuelService.joinInvite מחזיר JoinInviteStatus
+// ו-LogoRaceService.joinInvite מחזיר RaceJoinInviteStatus (טיפוסים שונים,
+// אותם ערכים בדיוק) - _FriendChallengeScreenState._joinInvite ממפה את
+// שניהם לכאן כדי ששאר המסך יוכל להתייחס לתוצאה בלי לדעת איזה מוד רץ.
+enum _JoinCode { matched, notFound, expired, ownCode, alreadyUsed, error }
+
+class _JoinOutcome {
+  final _JoinCode code;
+  final String? matchId;
+  const _JoinOutcome(this.code, {this.matchId});
 }
 
 // 🆕 טיפים מתחלפים למסך "ממתין לחבר" - אותו רעיון בדיוק כמו הטיפים
@@ -59,12 +73,16 @@ class FriendChallengeScreen extends StatefulWidget {
   // הקוד מוזן ונבדק אוטומטית מיד עם הכניסה למסך, בלי שהמשתמש יצטרך
   // להקליד אותו בעצמו.
   final String? prefillJoinCode;
+  // 🆕 לפי בקשה מפורשת - אתגר חבר עכשיו זמין גם לדו-קרב וגם למרוץ, לא
+  // רק לדו-קרב. true (ברירת מחדל) = דו-קרב, בדיוק כמו ההתנהגות המקורית.
+  final bool isDuel;
   const FriendChallengeScreen({
     super.key,
     required this.username,
     this.targetFriendId,
     this.targetFriendName,
     this.prefillJoinCode,
+    this.isDuel = true,
   });
 
   @override
@@ -72,6 +90,63 @@ class FriendChallengeScreen extends StatefulWidget {
 }
 
 class _FriendChallengeScreenState extends State<FriendChallengeScreen> with TickerProviderStateMixin {
+  // 🆕 עוזרי מוד - כל מקום שהיה קורא ל-DuelService ישירות עכשיו בודק
+  // את אלה. שם/אימוג'י המוד לטקסטים, שאר הפונקציות בגוף הקובץ.
+  bool get _isDuel => widget.isDuel;
+  String get _modeLabel => _isDuel ? 'דו-קרב' : 'מרוץ';
+  List<int> get _stakeOptions => _isDuel ? DuelService.stakeOptions : LogoRaceService.stakeOptions;
+  int _questionsForStake(int stake) => _isDuel ? DuelService.questionsForStake(stake) : LogoRaceService.stagesForStake(stake);
+  Duration get _inviteExpiry => _isDuel ? DuelService.inviteExpiry : LogoRaceService.inviteExpiry;
+  int get _inviteCodeLength => _isDuel ? DuelService.inviteCodeLength : LogoRaceService.inviteCodeLength;
+
+  Future<String> _createInvite({required String deviceId, required String username, required int stake}) {
+    return _isDuel
+        ? DuelService.createInvite(deviceId: deviceId, username: username, stake: stake)
+        : LogoRaceService.createInvite(deviceId: deviceId, username: username, stake: stake);
+  }
+
+  Stream<Map<String, dynamic>?> _watchInvite(String code) => _isDuel ? DuelService.watchInvite(code) : LogoRaceService.watchInvite(code);
+
+  Future<void> _cancelInvite(String code) => _isDuel ? DuelService.cancelInvite(code) : LogoRaceService.cancelInvite(code);
+
+  Future<Map<String, dynamic>?> _getInvite(String code) => _isDuel ? DuelService.getInvite(code) : LogoRaceService.getInvite(code);
+
+  Future<_JoinOutcome> _joinInvite({required String code, required String deviceId, required String username, required List<int> allLevelIds}) async {
+    if (_isDuel) {
+      final r = await DuelService.joinInvite(code: code, deviceId: deviceId, username: username, allLevelIds: allLevelIds);
+      final mapped = switch (r.status) {
+        JoinInviteStatus.matched => _JoinCode.matched,
+        JoinInviteStatus.notFound => _JoinCode.notFound,
+        JoinInviteStatus.expired => _JoinCode.expired,
+        JoinInviteStatus.ownCode => _JoinCode.ownCode,
+        JoinInviteStatus.alreadyUsed => _JoinCode.alreadyUsed,
+        JoinInviteStatus.error => _JoinCode.error,
+      };
+      return _JoinOutcome(mapped, matchId: r.matchId);
+    } else {
+      final r = await LogoRaceService.joinInvite(code: code, deviceId: deviceId, username: username, allLevelIds: allLevelIds);
+      final mapped = switch (r.status) {
+        RaceJoinInviteStatus.matched => _JoinCode.matched,
+        RaceJoinInviteStatus.notFound => _JoinCode.notFound,
+        RaceJoinInviteStatus.expired => _JoinCode.expired,
+        RaceJoinInviteStatus.ownCode => _JoinCode.ownCode,
+        RaceJoinInviteStatus.alreadyUsed => _JoinCode.alreadyUsed,
+        RaceJoinInviteStatus.error => _JoinCode.error,
+      };
+      return _JoinOutcome(mapped, matchId: r.matchId);
+    }
+  }
+
+  // 🆕 בריכת הלוגואים האפשריים להימור נבחר - בדו-קרב מוגבלת לפי עולמות
+  // (DuelService.stakeWorlds), במרוץ תמיד כל הלוגואים (ראה logo_race_screen.dart -
+  // _startSearch, אותה בריכה בדיוק במצב החיפוש הרגיל).
+  List<int> _poolForStake(int stake) {
+    if (!_isDuel) return gameLevels.keys.toList();
+    final worlds = DuelService.stakeWorlds[stake];
+    final ids = worlds != null ? logoIdsForWorlds(worlds) : gameLevels.keys.toList();
+    return ids.isEmpty ? gameLevels.keys.toList() : ids;
+  }
+
   _FCState _state = _FCState.checking;
   String? _errorText;
   String? _myDeviceId;
@@ -83,12 +158,15 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   String? _myCode;
   StreamSubscription<Map<String, dynamic>?>? _inviteSub;
   Timer? _expiryTimer;
-  Duration _timeLeft = DuelService.inviteExpiry;
+  // 🩹 שני השדות למטה מקבלים ברירת מחדל ספרותית פשוטה (לא _inviteExpiry/
+  // _stakeOptions - אלה getters של המופע, ואי אפשר להשתמש בהם באתחול
+  // שדה ב-Dart) - הערך האמיתי נקבע ב-_loadRequirements ברגע שידוע isDuel.
+  Duration _timeLeft = const Duration(minutes: 15);
   bool _energySpentForCreate = false;
   int? _selectedStakeForCreate; // 🆕 להצגת "תנאי הדו-קרב" במסך ההמתנה
   // 🆕 עיצוב מחדש - ההימור נבחר בתפריט המאוחד עצמו (צ'יפים קומפקטיים),
   // לא במסך ניווט נפרד יותר - ראו _buildMenu/_stakeChip.
-  int _selectedStake = DuelService.stakeOptions.first;
+  int _selectedStake = 5;
   // 🩹 הגנה מפני לחיצה כפולה מהירה על אפשרות הימור: setState לא מרענן
   // את המסך מיידית (רק בפריים הבא), כך שלחיצה כפולה מהירה יכולה להפעיל
   // את _onCreateStakeSelected פעמיים כמעט בו-זמנית - שתי קריאות מקבילות
@@ -151,7 +229,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       _energySpentForCreate = false;
       EnergyService.refundSearchEnergy();
       final code = _myCode;
-      if (code != null) DuelService.cancelInvite(code);
+      if (code != null) _cancelInvite(code);
     }
     if (_energySpentForJoin) {
       _energySpentForJoin = false;
@@ -164,15 +242,21 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     setState(() => _state = _FCState.checking);
     final deviceId = await DeviceId.get();
     _myDeviceId = deviceId;
+    _selectedStake = _stakeOptions.first; // 🆕 עכשיו שידוע isDuel - ראו הערה ליד _selectedStake
     if (!mounted) return;
-    final forfeitStatus = await DuelService.getForfeitStatus(deviceId);
-    if (!mounted) return;
-    if (DuelService.isBanned(forfeitStatus)) {
-      setState(() {
-        _banUntil = DateTime.fromMillisecondsSinceEpoch(forfeitStatus['banUntilMs'] as int);
-        _state = _FCState.banned;
-      });
-      return;
+    // 🆕 חסימה על עזיבה-באמצע קיימת רק בדו-קרב (DuelService.applyForfeitPenalty) -
+    // במרוץ אין מנגנון קנס/חסימה כזה בכלל (forfeitRace לא קורא לשום
+    // penalty), אז אין טעם לבדוק או לחסום לפיו.
+    if (_isDuel) {
+      final forfeitStatus = await DuelService.getForfeitStatus(deviceId);
+      if (!mounted) return;
+      if (DuelService.isBanned(forfeitStatus)) {
+        setState(() {
+          _banUntil = DateTime.fromMillisecondsSinceEpoch(forfeitStatus['banUntilMs'] as int);
+          _state = _FCState.banned;
+        });
+        return;
+      }
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -188,17 +272,11 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       setState(() => _state = _FCState.notEnoughEnergy);
       return;
     }
-    if (coins < DuelService.stakeOptions.first) {
+    if (coins < _stakeOptions.first) {
       setState(() => _state = _FCState.notEnoughCoins);
       return;
     }
     setState(() => _state = _FCState.menu);
-  }
-
-  List<int> _poolForStake(int stake) {
-    final worlds = DuelService.stakeWorlds[stake];
-    final ids = worlds != null ? logoIdsForWorlds(worlds) : gameLevels.keys.toList();
-    return ids.isEmpty ? gameLevels.keys.toList() : ids;
   }
 
   // ================================================================
@@ -216,10 +294,10 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     try {
       await EnergyService.spendForDuel();
       _energySpentForCreate = true;
-      final code = await DuelService.createInvite(deviceId: deviceId, username: widget.username, stake: stake);
+      final code = await _createInvite(deviceId: deviceId, username: widget.username, stake: stake);
       if (!mounted) return;
       _myCode = code;
-      _timeLeft = DuelService.inviteExpiry;
+      _timeLeft = _inviteExpiry;
       _startExpiryCountdown();
       _listenToMyInvite(code, deviceId);
       // 🆕 אם הגענו מרשימת "החברים שלי" (הוזמן חבר ספציפי) - שולחים לו
@@ -236,6 +314,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
             fromName: widget.username,
             code: code,
             stake: stake,
+            isDuel: _isDuel,
           );
         });
       }
@@ -280,7 +359,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     _tipTimer?.cancel();
     _inviteSub?.cancel();
     final code = _myCode;
-    if (code != null) DuelService.cancelInvite(code);
+    if (code != null) _cancelInvite(code);
     _energySpentForCreate = false;
     EnergyService.refundSearchEnergy();
     if (!mounted) return;
@@ -289,7 +368,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
 
   void _listenToMyInvite(String code, String deviceId) {
     _inviteSub?.cancel();
-    _inviteSub = DuelService.watchInvite(code).listen((data) {
+    _inviteSub = _watchInvite(code).listen((data) {
       if (!mounted || _state != _FCState.waitingForFriend) return;
       if (data == null) return; // בוטל
       if (data['status'] == 'matched' && data['matchId'] != null) {
@@ -311,7 +390,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
         _inviteSub?.cancel();
         _energySpentForCreate = false;
         EnergyService.refundSearchEnergy();
-        DuelService.cancelInvite(code);
+        _cancelInvite(code);
         setState(() => _state = _FCState.declined);
       }
     }, onError: (_) {});
@@ -326,7 +405,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     _tipTimer?.cancel();
     _inviteSub?.cancel();
     final code = _myCode;
-    if (code != null) await DuelService.cancelInvite(code);
+    if (code != null) await _cancelInvite(code);
     _energySpentForCreate = false;
     await EnergyService.refundSearchEnergy();
     _myCode = null;
@@ -351,7 +430,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     if (code == null) return;
     HapticFeedback.lightImpact();
     try {
-      await Share.share("בוא נשחק דו-קרב ב\"זהה את הלוגו!\" 🔗 הקוד שלי: $code", subject: "אתגר דו-קרב");
+      await Share.share("בוא נשחק $_modeLabel ב\"זהה את הלוגו!\" 🔗 הקוד שלי: $code", subject: "אתגר $_modeLabel");
     } catch (_) {}
   }
 
@@ -361,14 +440,14 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   Future<void> _checkCode() async {
     final code = _codeController.text.trim().toUpperCase();
     setState(() => _joinCodeError = null);
-    if (code.length != DuelService.inviteCodeLength) {
-      setState(() => _joinCodeError = "קוד חייב להיות בן ${DuelService.inviteCodeLength} תווים");
+    if (code.length != _inviteCodeLength) {
+      setState(() => _joinCodeError = "קוד חייב להיות בן $_inviteCodeLength תווים");
       return;
     }
     final myId = _myDeviceId;
     if (myId == null) return;
     setState(() => _state = _FCState.joining);
-    final invite = await DuelService.getInvite(code);
+    final invite = await _getInvite(code);
     if (!mounted) return;
     if (invite == null) {
       setState(() {
@@ -396,14 +475,14 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     try {
       createdDate = createdAt?.toDate();
     } catch (_) {}
-    if (createdDate != null && DateTime.now().difference(createdDate) > DuelService.inviteExpiry) {
+    if (createdDate != null && DateTime.now().difference(createdDate) > _inviteExpiry) {
       setState(() {
         _state = _FCState.enterCode;
         _joinCodeError = "הקוד הזה כבר פג תוקף";
       });
       return;
     }
-    final stake = (invite['stake'] ?? DuelService.stakeOptions.first) as int;
+    final stake = (invite['stake'] ?? _stakeOptions.first) as int;
     if (_coins < stake) {
       setState(() {
         _state = _FCState.enterCode;
@@ -425,20 +504,20 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     final invite = _previewInvite;
     final myId = _myDeviceId;
     if (code == null || invite == null || myId == null) return;
-    final stake = (invite['stake'] ?? DuelService.stakeOptions.first) as int;
+    final stake = (invite['stake'] ?? _stakeOptions.first) as int;
     _joiningInvite = true;
     setState(() => _state = _FCState.joining);
     try {
       await EnergyService.spendForDuel();
       _energySpentForJoin = true;
-      final result = await DuelService.joinInvite(
+      final result = await _joinInvite(
         code: code,
         deviceId: myId,
         username: widget.username,
         allLevelIds: _poolForStake(stake),
       );
       if (!mounted) return;
-      if (result.status == JoinInviteStatus.matched && result.matchId != null) {
+      if (result.code == _JoinCode.matched && result.matchId != null) {
         _energySpentForJoin = false;
         HapticFeedback.heavyImpact();
         AudioManager.playOpponentFound();
@@ -448,28 +527,28 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       _energySpentForJoin = false;
       await EnergyService.refundSearchEnergy();
       if (!mounted) return;
-      _finishJoinWithError(result.status);
+      _finishJoinWithError(result.code);
     } finally {
       _joiningInvite = false;
     }
   }
 
-  void _finishJoinWithError(JoinInviteStatus status) {
+  void _finishJoinWithError(_JoinCode status) {
     setState(() {
       _state = _FCState.enterCode;
       _previewInvite = null;
       _previewCode = null;
       switch (status) {
-        case JoinInviteStatus.notFound:
+        case _JoinCode.notFound:
           _joinCodeError = "לא נמצא קוד כזה";
           break;
-        case JoinInviteStatus.expired:
+        case _JoinCode.expired:
           _joinCodeError = "הקוד הזה כבר פג תוקף";
           break;
-        case JoinInviteStatus.ownCode:
+        case _JoinCode.ownCode:
           _joinCodeError = "זה הקוד שלך";
           break;
-        case JoinInviteStatus.alreadyUsed:
+        case _JoinCode.alreadyUsed:
           _joinCodeError = "מישהו כבר הצטרף לקוד הזה";
           break;
         default:
@@ -483,11 +562,16 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => DuelRoomScreen(
-          matchId: matchId,
-          myDeviceId: deviceId,
-          myUsername: widget.username,
-        ),
+        builder: (_) => _isDuel
+            ? DuelRoomScreen(
+                matchId: matchId,
+                myDeviceId: deviceId,
+                myUsername: widget.username,
+              )
+            : LogoRaceScreen(
+                username: widget.username,
+                initialRaceId: matchId,
+              ),
       ),
     );
   }
@@ -619,7 +703,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
         const Text("אין מספיק אנרגיה", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "כל דו-קרב עולה ${EnergyService.duelCost} אנרגיות. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.",
+          "כל $_modeLabel עולה ${EnergyService.duelCost} אנרגיות. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.",
           textAlign: TextAlign.center,
           textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
@@ -639,7 +723,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
         const Text("אין מספיק מטבעות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "צריך לפחות ${DuelService.stakeOptions.first} מטבעות כדי להתחיל דו-קרב.",
+          "צריך לפחות ${_stakeOptions.first} מטבעות כדי להתחיל $_modeLabel.",
           textAlign: TextAlign.center,
           textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
@@ -656,7 +740,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // מטבעות מסתכנים וכמה שאלות יהיו בדו-קרב) - רק הפכה לצ'יפים קומפקטיים
   // בתוך אותו מסך, עם ברירת מחדל נבחרת מראש (_selectedStake).
   Widget _buildMenu() {
-    final stakeOptions = DuelService.stakeOptions;
+    final stakeOptions = _stakeOptions;
     if (!stakeOptions.contains(_selectedStake)) _selectedStake = stakeOptions.first;
     final canAffordSelected = _coins >= _selectedStake;
     // 🆕 כשמגיעים לכאן מלחיצה על "הזמן למשחק" על חבר ספציפי מתוך רשימת
@@ -673,7 +757,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           const Text('🔗', style: TextStyle(fontSize: 46)),
           const SizedBox(height: 14),
           Text(
-            isDirectInvite ? "הזמנת ${friendName ?? 'חבר'} לדו-קרב" : "אתגר חבר לדו-קרב",
+            isDirectInvite ? "הזמנת ${friendName ?? 'חבר'} ל$_modeLabel" : "אתגר חבר ל$_modeLabel",
             textDirection: TextDirection.rtl,
             style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
           ),
@@ -719,7 +803,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
                 controller: _codeController,
                 textAlign: TextAlign.center,
                 textCapitalization: TextCapitalization.characters,
-                maxLength: DuelService.inviteCodeLength,
+                maxLength: _inviteCodeLength,
                 style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 5),
                 decoration: InputDecoration(
                   counterText: '',
@@ -750,7 +834,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   Widget _stakeChip(int stake) {
     final selected = _selectedStake == stake;
     final canAfford = _coins >= stake;
-    final bool isBlitz = stake == 5; // 🆕 רמת ההימור הזולה/מהירה ביותר - ראו DuelService.stakeLogoTimeoutSeconds
+    final bool isBlitz = _isDuel && stake == 5; // 🆕 רמת ההימור הזולה/מהירה ביותר - ראו DuelService.stakeLogoTimeoutSeconds
     final Color accent = isBlitz ? const Color(0xFF38BDF8) : const Color(0xFFFFD86B);
     return Opacity(
       opacity: canAfford ? 1 : 0.4,
@@ -1015,7 +1099,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // תזכורת "תנאי הדו-קרב" - זהה בעיקרון ל-_buildDuelConditionsGrid בלובי
   // הרגיל, משוכפלת כאן כי היא פרטית לשם.
   Widget _duelConditionsGrid(int stake) {
-    final questions = DuelService.questionsForStake(stake);
+    final questions = _questionsForStake(stake);
     final prize = stake * 2;
     Widget stat(String value, String label, Color color, Color bg) => Expanded(
           child: Container(
@@ -1041,10 +1125,10 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
         children: [
           Row(
             textDirection: TextDirection.rtl,
-            children: const [
-              Text('⚔️', style: TextStyle(fontSize: 13)),
-              SizedBox(width: 8),
-              Text('תנאי הדו־קרב', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
+            children: [
+              Text(_isDuel ? '⚔️' : '🏁', style: const TextStyle(fontSize: 13)),
+              const SizedBox(width: 8),
+              Text('תנאי ה$_modeLabel', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 12),
@@ -1065,12 +1149,12 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   Widget _buildPreview() {
     final invite = _previewInvite;
     if (invite == null) return const SizedBox.shrink();
-    final stake = (invite['stake'] ?? DuelService.stakeOptions.first) as int;
+    final stake = (invite['stake'] ?? _stakeOptions.first) as int;
     final creatorName = (invite['creatorName'] ?? '?') as String;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('⚔️', style: TextStyle(fontSize: 44)),
+        Text(_isDuel ? '⚔️' : '🏁', style: const TextStyle(fontSize: 44)),
         const SizedBox(height: 12),
         Text("אתגר מ-$creatorName", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
         const SizedBox(height: 16),
@@ -1088,12 +1172,12 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
               const SizedBox(width: 6),
               Text('$stake מטבעות', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
               const SizedBox(width: 14),
-              Text('${DuelService.questionsForStake(stake)} לוגואים', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5)),
+              Text('${_questionsForStake(stake)} לוגואים', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5)),
             ],
           ),
         ),
         const SizedBox(height: 22),
-        _bigActionButton("הצטרף לדו-קרב ⚔️", onTap: _confirmJoin),
+        _bigActionButton("הצטרף ל$_modeLabel ${_isDuel ? "⚔️" : "🏁"}", onTap: _confirmJoin),
         const SizedBox(height: 12),
         _textButton("ביטול", onTap: () => setState(() {
               _state = _FCState.enterCode;

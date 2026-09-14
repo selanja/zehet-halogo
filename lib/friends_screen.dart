@@ -726,9 +726,59 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
           ),
+          // 🆕 הסרת חברות - לפי בקשה מפורשת. עם דיאלוג אישור (לא מחיקה
+          // מיידית בלחיצה אחת) כי זו פעולה הדדית שלא ניתן לבטל בקלות.
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => _confirmRemoveFriend(friend),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.person_remove_rounded, color: Colors.white.withValues(alpha: 0.35), size: 18),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmRemoveFriend(FriendInfo friend) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF241a4f),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("להסיר מהחברים?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(
+          "${friend.name} יוסר מרשימת החברים שלך, ואתה תוסר מהרשימה שלו. אפשר להתחבר שוב בעתיד עם קוד חדש.",
+          textDirection: TextDirection.rtl,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("הסר", style: TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final ok = await FriendService.removeFriend(friend.id);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _friends.removeWhere((f) => f.id == friend.id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("${friend.name} הוסר/ה מהחברים", textDirection: TextDirection.rtl)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("משהו השתבש - נסה שוב", textDirection: TextDirection.rtl)),
+      );
+    }
   }
 
   // 🆕 "מי מוביל בין החברים שלך" - כולל אותך, ממוין לפי XP (יורד). כל

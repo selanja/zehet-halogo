@@ -279,8 +279,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     if (silentFor < Duration(seconds: DuelService.opponentDisconnectTimeoutSeconds)) return;
     _disconnectForfeitTriggered = true;
     final opponentId = match.opponentIdFor(widget.myDeviceId);
-    await DuelService.forfeitMatch(widget.matchId, opponentId);
-    await DuelService.applyForfeitPenalty(opponentId);
+    // 🐛 תוקן: applyForfeitPenalty רץ עכשיו רק אם forfeitMatch באמת קבע
+    // אותי כמנצח (ראו הערה מפורטת ליד forfeitMatch ב-duel_service.dart) -
+    // אם זה החזיר false (היריב כבר הכריע את המשחק לפניי, כלומר בעצם
+    // *אני* זה שניתקתי מבחינתו), לא מענישים אותו בטעות על מה שלא קרה.
+    final iWon = await DuelService.forfeitMatch(widget.matchId, opponentId);
+    if (iWon) await DuelService.applyForfeitPenalty(opponentId);
   }
 
   // הספירה לאחור (3..2..1) מוצגת מקומית אצל שני השחקנים בערך באותו זמן
@@ -383,12 +387,33 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     }
 
     // מדווחים לשרת ברקע - לא חוסם את המסך.
-    DuelService.advanceLogo(
-      matchId: widget.matchId,
-      isPlayer1: _isPlayer1,
-      newProgress: _myProgress,
-      gotItRight: gotItRight,
-    );
+    // 🐛 תוקן: הקריאה רצה בלי await/טיפול בשגיאה בכלל - אם היא נכשלת
+    // (הפרעת רשת רגעית), השדה progressField בשרת עדיין "מתעדכן" (נקבע,
+    // לא נצבר) מהקריאה הבאה, אבל correctField (מונה התשובות הנכונות,
+    // כן נצבר ב-+1 בכל קריאה) פשוט מפספס לצמיתות את התשובה הנכונה
+    // מהקריאה שנכשלה - למרות שהמסך שלי מציג אותה כתשובה נכונה. זה יכול
+    // להפוך תוצאה צמודה, בלי סימן חיצוני לשחקן שנפגע. עכשיו מנסים שוב
+    // עד 3 פעמים עם השהיה קצרה בין ניסיונות, ברקע, בלי לחסום את המסך.
+    _reportAdvanceWithRetry(newProgress: _myProgress, gotItRight: gotItRight);
+  }
+
+  Future<void> _reportAdvanceWithRetry({required int newProgress, required bool gotItRight, int attempt = 0}) async {
+    try {
+      await DuelService.advanceLogo(
+        matchId: widget.matchId,
+        isPlayer1: _isPlayer1,
+        newProgress: newProgress,
+        gotItRight: gotItRight,
+      );
+    } catch (e) {
+      if (attempt >= 2) {
+        debugPrint('ADVANCE LOGO FAILED (giving up after ${attempt + 1} attempts): $e');
+        return;
+      }
+      await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+      if (!mounted) return;
+      await _reportAdvanceWithRetry(newProgress: newProgress, gotItRight: gotItRight, attempt: attempt + 1);
+    }
   }
 
   // 🆕 תמונת השלב בדו-קרב - תמונת רשת (imageUrl) אם הוגדר תיקון אדמין

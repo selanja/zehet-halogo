@@ -252,12 +252,46 @@ class IapManager {
     }
   }
 
+  // 🐛 תוקן: _grant() רץ תמיד ללא שום בדיקת אידמפוטנטיות, לכל אירוע
+  // purchased/restored - אבל אם completePurchase() לא מספיק להסתיים
+  // (קריסה/סגירת אפליקציה בדיוק בין _grant() להשלמה, או פשוט
+  // restorePurchases() שחוזר על אותה עסקה שוב), החנות (Play/App Store)
+  // "מחזירה" את אותה רכישה שוב באתחול הבא - ו-_grant() רץ שוב על אותה
+  // עסקה בדיוק, מזכה מטבעות/אנרגיה/קרדיט-פתיחת-רמה פעמיים על תשלום
+  // אמיתי אחד. עכשיו שומרים סט של purchaseID-ים שכבר טופלו ומדלגים על
+  // grant חוזר לאותו מזהה (ה-completePurchase עדיין רץ כרגיל, כדי
+  // שהחנות תפסיק להחזיר את העסקה).
+  static const _keyProcessedPurchaseIds = 'iapProcessedPurchaseIds';
+
+  static Future<bool> _alreadyGranted(String? purchaseId) async {
+    if (purchaseId == null || purchaseId.isEmpty) return false; // אין מזהה - אי אפשר לזהות כפילות, ממשיכים כרגיל
+    final prefs = await SharedPreferences.getInstance();
+    final processed = prefs.getStringList(_keyProcessedPurchaseIds) ?? [];
+    return processed.contains(purchaseId);
+  }
+
+  static Future<void> _markGranted(String? purchaseId) async {
+    if (purchaseId == null || purchaseId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final processed = prefs.getStringList(_keyProcessedPurchaseIds) ?? [];
+    processed.add(purchaseId);
+    // מגבלת בטיחות - לא צריך להחזיק היסטוריה אינסופית, רק מספיק כדי
+    // למנוע כפילות קרובה בזמן (redelivery קורה כמעט תמיד תוך דקות/שעות).
+    final trimmed = processed.length > 200 ? processed.sublist(processed.length - 200) : processed;
+    await prefs.setStringList(_keyProcessedPurchaseIds, trimmed);
+  }
+
   static Future<void> _onPurchaseUpdates(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
       switch (purchase.status) {
         case PurchaseStatus.purchased:
         case PurchaseStatus.restored:
-          await _grant(purchase.productID);
+          if (await _alreadyGranted(purchase.purchaseID)) {
+            debugPrint('IAP: מדלג על grant כפול לעסקה ${purchase.purchaseID}');
+          } else {
+            await _grant(purchase.productID);
+            await _markGranted(purchase.purchaseID);
+          }
           // 🆕 מדווח למסך הקורא (אם רשם את עצמו) שהתמורה על המוצר הזה
           // ניתנה בפועל - כדי שיוכל להציג פופאפ "הרכישה הושלמה" עם
           // פרטי המוצר. לא רלוונטי ל-restored (שחזור רכישות ישנות בלי

@@ -1602,10 +1602,15 @@ void initState() {
   void _onStuckBubbleTap() {
     AudioManager.playClick();
     _hideStuckTipOverlay();
-    if (coins < 15 && !adHintUsedThisPuzzle) {
+    // 🐛 תוקן: הושוותה ל-20 (מחיר הרמז האמיתי בכל שאר הקוד - ראה
+    // hasEnoughCoins למעלה ו-_revealLetterHint למטה) - כאן נשאר בטעות
+    // הסף הישן (15) מלפני שמחיר הרמז הועלה, כך ששחקן עם 15-19 מטבעות
+    // ראה בבועה "פרסומת = רמז חינם" אבל בלחיצה בפועל נכנס לנתיב התשלום
+    // ונחסם מיד ב"אין מספיק מטבעות" - בלי שהפרסומת שהובטחה בכלל רצה.
+    if (coins < 20 && !adHintUsedThisPuzzle) {
       // אין מטבעות, ורמז-הפרסומת עוד לא נוצל בחידה הזו - קופצים ישר לפרסומת
       _watchRewardedAdForHint();
-    } else if (coins >= 15) {
+    } else if (coins >= 20) {
       // יש מטבעות - במקום לפתוח תפריט ולבקש עוד לחיצה, חושפים ישר את הרמז
       // ומראים לשחקן בדיוק איזו אות התגלתה
       _revealLetterHint();

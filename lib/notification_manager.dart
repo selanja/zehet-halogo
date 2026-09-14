@@ -60,7 +60,13 @@ class NotificationManager {
 
   /// מזהה קבוע להתראת בונוס המטבעות - כל תזמון חדש מבטל את הקודם,
   /// כדי שלא יצטברו כמה התראות כפולות אם המשתמש צופה בכמה פרסומות ברצף.
-  static const int _coinsBonusNotificationId = 1001;
+  // 🐛 תוקן: היה 1001 - בדיוק אותו מזהה כמו _energyFullNotificationId
+  // ב-notification_service.dart (מחלקה נפרדת לגמרי, אבל flutter_local_notifications
+  // מנהל את כל המזהים גלובלית בצד ה-native, לא לפי מופע Dart). שתי
+  // ההתראות התחרו על אותו slot - איזו שתוזמנה אחרונה ביטלה בשקט את
+  // השנייה, כך ששחקן שגם השלים אנרגיה וגם צפה בפרסומת למטבעות יכול
+  // היה לפספס אחת מהתזכורות לגמרי בלי שום שגיאה. הועבר לטווח נפרד (2xxx).
+  static const int _coinsBonusNotificationId = 2001;
 
   static Future<void> init() async {
     if (_initialized) return;
@@ -100,8 +106,8 @@ class NotificationManager {
       final scheduledDate = tz.TZDateTime.now(tz.local).add(delay);
       await _plugin.zonedSchedule(
         _coinsBonusNotificationId,
-        'המטבעות שלך מחכות! 🎁',
-        '15 מטבעות חינם זמינים עכשיו - בוא תיקח אותן',
+        'המטבעות שלך מחכות',
+        '15 מטבעות חינם זמינים עכשיו - בוא תיקח אותן ב"זהה את הלוגו!"',
         scheduledDate,
         const NotificationDetails(
           android: AndroidNotificationDetails(

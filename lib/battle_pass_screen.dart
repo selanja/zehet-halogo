@@ -9,7 +9,7 @@
 // המסך הזה רק מציג ומפעיל אותה.
 //
 // 🩹 עוצב מחדש בדיוק לפי New_Screens.html ("10 · באטל פאס") לגבי בלוק
-// דרגה+שם עונה מתחת לסרגל, כפתור מידע 'i' בסרגל העליון, ושורת כיתובש
+// דרגה+שם עונה מתחת לסרגל, כפתור מידע 'i' בסרגל העליון, ושורת כיתוב
 // "עוד X לדרגה הבאה" מתחת לפס ההתקדמות - כל אלה נשארים.
 //
 // 🩹 בוטל מתג הטאבים "חינם"/"פרימיום": לפי בקשת המשתמש אחרי בדיקה,
@@ -102,8 +102,18 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // תיבה נפתחת), ואם התביעה הזו חשפה שכבר יש דרגה נוספת שנפתחה (מספיק
   // נקודות) באותו נתיב ועדיין לא נתבעה - הפופאפ מציע להמשיך ולתבוע גם
   // אותה (שרשור: onClaimNext סוגר את הפופאפ הנוכחי וקורא שוב ל-_claim).
+  // 🐛 תוקן: claimTier (ב-battle_pass_service.dart) קורא-ואז-כותב ל-
+  // SharedPreferences עם כמה await ביניהם, בלי נעילה - לחיצה כפולה
+  // מהירה על "אסוף" (canClaim לא הופך ל-false עד שכל התהליך, כולל
+  // הפופאפ, מסתיים ו-_load() רץ מחדש) יכולה לגרום לשתי קריאות claimTier
+  // לעבור את בדיקת "האם כבר נאסף" לפני ששתיהן כתבו - ולזכות פעמיים
+  // באותו פרס. _claiming חוסם קריאה שנייה כל עוד הראשונה עדיין רצה.
+  bool _claiming = false;
   Future<void> _claim(int tier, {required bool premium}) async {
+    if (_claiming) return;
+    _claiming = true;
     final result = await BattlePassService.claimTier(tier, premium: premium);
+    _claiming = false;
     if (!mounted || result == null) return;
     final coins = result['coins'] ?? 0;
     final energy = result['energy'] ?? 0;
@@ -679,22 +689,28 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
       badgeTextColor = Colors.white.withValues(alpha: 0.5);
     }
 
-    return Opacity(
-      opacity: rowOpacity,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
-        // 🆕 קו מפריד עדין בין שורות השלבים - לא היה קיים כשהייתה שורה
-        // אחת פשוטה; עכשיו כשכל שורה "עמוסה" יותר (שתי עמודות) זה עוזר
-        // לעין להפריד בין שלב לשלב.
-        decoration: isLast ? null : BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)))),
-        child: Row(
-          textDirection: TextDirection.rtl,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // 🩹 עמודת "חינם" - עכשיו הילד הראשון (RTL => צד ימין),
-            // בדיוק כמו במוקאפ, ולא אחרי תג המספר.
-            Expanded(
+    // 🩹 תוקן: ה-Opacity(rowOpacity) עטף פעם *את כל השורה כולל תג
+    // המספר* - כך שבשלבים רחוקים (opacity עד 0.32) תג המספר עצמו נהיה
+    // כמעט שקוף, וקו-המסלול (rail, שמצויר מאחוריו ב-_buildTierListWithRail)
+    // "בעט" דרכו והצטייר כאילו הוא מעל המספר. עכשיו ה-Opacity עוטף רק את
+    // שתי גלולות הפרס - תג המספר עצמו נשאר תמיד ב-100% אטימות, כך שהוא
+    // תמיד מכסה לגמרי את הקו מאחוריו, לא משנה כמה רחוק השלב.
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      // 🆕 קו מפריד עדין בין שורות השלבים - לא היה קיים כשהייתה שורה
+      // אחת פשוטה; עכשיו כשכל שורה "עמוסה" יותר (שתי עמודות) זה עוזר
+      // לעין להפריד בין שלב לשלב.
+      decoration: isLast ? null : BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)))),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 🩹 עמודת "חינם" - עכשיו הילד הראשון (RTL => צד ימין),
+          // בדיוק כמו במוקאפ, ולא אחרי תג המספר.
+          Expanded(
+            child: Opacity(
+              opacity: rowOpacity,
               child: _rewardPill(
                 coins: def.freeCoins,
                 energy: def.freeEnergy,
@@ -706,29 +722,28 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 onTap: () => _claim(def.tier, premium: false),
               ),
             ),
-            const SizedBox(width: 7),
-            // 🩹 תג מספר-השלב - באמצע השורה (בין שתי הגלולות), בדיוק מעל
-            // קו-המסלול (rail) שעובר באמצע האופקי המוחלט.
-            // 🩹 תוקן שוב: ניסיון קודם הוסיף כאן מתחת לתג גם "כמה כוכבים
-            // צריך" - אבל זה בדיוק האזור שהקו עובר בו, ונראה עמוס/מוזר
-            // גם עם רקע אטום. המספר עבר במקום זה *לתוך* גלולת הפרס עצמה
-            // (_rewardPill, מציג עכשיו X⭐ במקום מנעול כשהשלב עוד נעול) -
-            // רחוק מהקו לגמרי, ובדיוק "על הפריט עצמו" כמו שביקשת.
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
-                boxShadow: badgeShadow,
-                border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
-              ),
-              alignment: Alignment.center,
-              child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
+          ),
+          const SizedBox(width: 7),
+          // 🩹 תג מספר-השלב - באמצע השורה (בין שתי הגלולות), בדיוק מעל
+          // קו-המסלול (rail) שעובר באמצע האופקי המוחלט. תמיד ב-100%
+          // אטימות (ראה הערה למעלה) כדי שיכסה את הקו לגמרי בכל מצב.
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
+              boxShadow: badgeShadow,
+              border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
             ),
-            const SizedBox(width: 7),
-            // עמודת "פרימיום" - עכשיו הילד האחרון (RTL => צד שמאל).
-            Expanded(
+            alignment: Alignment.center,
+            child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
+          ),
+          const SizedBox(width: 7),
+          // עמודת "פרימיום" - עכשיו הילד האחרון (RTL => צד שמאל).
+          Expanded(
+            child: Opacity(
+              opacity: rowOpacity,
               child: _rewardPill(
                 coins: def.premiumCoins,
                 energy: def.premiumEnergy,
@@ -740,8 +755,8 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 onTap: () => _claim(def.tier, premium: true),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

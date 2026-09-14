@@ -35,7 +35,12 @@ class LogoRaceScreen extends StatefulWidget {
   // ותקין (מופיע ב-LogoRaceService.stakeOptions ויש מספיק מטבעות),
   // מדלגים ישר לחיפוש יריב בלי להציג שוב את בורר ההימור של המסך הזה.
   final int? initialStake;
-  const LogoRaceScreen({super.key, required this.username, this.initialStake});
+  // 🆕 מגיעים לכאן ישירות עם מרוץ שכבר נוצר/הותאם (ראה friend_challenge_screen.dart,
+  // "אתגר חבר" למרוץ) - מדלגים לגמרי על בחירת הימור/חיפוש יריב ומאזינים
+  // ישר למסמך הקיים. דמי הכניסה עדיין נגבים כרגיל (ראה _payEntryFeeIfNeeded,
+  // מופעל אוטומטית ברגע שה-status של המרוץ הופך ל-countdown/playing).
+  final String? initialRaceId;
+  const LogoRaceScreen({super.key, required this.username, this.initialStake, this.initialRaceId});
 
   @override
   State<LogoRaceScreen> createState() => _LogoRaceScreenState();
@@ -125,6 +130,21 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   Future<void> _connect() async {
     _myDeviceId = await DeviceId.get();
     if (!mounted) return;
+    // 🆕 מרוץ עם חבר (initialRaceId) - המרוץ כבר קיים ב-Firestore (נוצר
+    // ב-LogoRaceService.joinInvite, או שאנחנו היוצר וחיכינו שהחבר יצטרף -
+    // ראו friend_challenge_screen.dart). מדלגים לגמרי על הימור/חיפוש,
+    // ומאזינים ישר לאותו מסמך - _onRaceUpdate כבר יודע להתמודד עם status
+    // 'countdown'/'playing' בלי קשר לאיך שהגענו לכאן, כולל גביית דמי
+    // הכניסה האוטומטית (_payEntryFeeIfNeeded).
+    final raceId = widget.initialRaceId;
+    if (raceId != null) {
+      await _loadCoinsAndEnergy();
+      if (!mounted) return;
+      _raceId = raceId;
+      PresenceService.startHeartbeat(_myDeviceId, 'race');
+      _raceSub = LogoRaceService.watchRace(raceId).listen(_onRaceUpdate);
+      return;
+    }
     await _loadCoinsAndEnergy();
     if (!mounted) return;
     if (_energy < EnergyService.duelCost) {
@@ -477,6 +497,46 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     }
   }
 
+  // 🐛 נוסף: בניגוד לדו-קרב (duel_room_screen.dart, _confirmExit), למירוץ
+  // לא הייתה בכלל התראה לפני יציאה - לחיצה אחת על "אחורה" באמצע ספירה
+  // לאחור/משחק פעיל הייתה מפסידה את ההימור מיד, בלי שום אזהרה. אותו סוג
+  // הימור בדיוק כמו בדו-קרב, אז ראוי לאותה הגנה.
+  bool _exitDialogShowing = false;
+  Future<void> _confirmExitRace() async {
+    if (_exitDialogShowing) return;
+    _exitDialogShowing = true;
+    final stake = _race?.stake ?? _selectedStake ?? 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF0C2A3D),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("לצאת מהמרוץ?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(
+          "אם תצא עכשיו היריב יוכרז מנצח ויקבל את כל הקופה ($stake שהימרת + $stake שלו) - המטבעות שכבר שילמת לא יוחזרו.",
+          textDirection: TextDirection.rtl,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceBetween,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text("להישאר", style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("צא בכל זאת", style: TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    _exitDialogShowing = false;
+    if (confirmed == true && mounted) {
+      _leaveIfNeeded();
+      Navigator.pop(context);
+    }
+  }
+
   @override
   void dispose() {
     _leaveIfNeeded();
@@ -493,9 +553,17 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    // 🐛 נוסף: לפני התיקון, כל יציאה (גם באמצע ספירה לאחור/משחק פעיל
+    // עם הימור על הפרק) פשוט יצאה מיד בלי שאלה - ראו _confirmExitRace.
+    final canPopNow = _phase != _Phase.countdown && _phase != _Phase.playing;
     return PopScope(
+      canPop: canPopNow,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _leaveIfNeeded();
+        if (didPop) {
+          _leaveIfNeeded();
+        } else {
+          _confirmExitRace();
+        }
       },
       child: AppBackground(
         child: Scaffold(

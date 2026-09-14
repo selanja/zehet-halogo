@@ -23,6 +23,7 @@ import 'logo_race_service.dart';
 import 'presence_service.dart';
 import 'duel_season_leaderboard_screen.dart';
 import 'friend_challenge_screen.dart';
+import 'friend_service.dart'; // 🆕 רשימת חברים כאן במסך עצמו - ראו _buildFriendsSection
 
 class PlayVsPersonModeScreen extends StatefulWidget {
   final String username;
@@ -37,10 +38,18 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
   int? _duelPlayersNow;
   int? _racePlayersNow;
 
+  // 🆕 "כשמישהו רוצה להזמין חבר בתוך שחק מול אחרים, שתופיע לו למטה
+  // רשימת החברים שלו" - לפי בקשה מפורשת. כל חבר מחובר מקבל כאן שני
+  // כפתורי הזמנה מהירים (דו-קרב/מירוץ) במקום שיצטרך לצאת למסך "חברים"
+  // הנפרד ולחזור.
+  List<FriendInfo> _friends = [];
+  bool _loadingFriends = true;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadFriends();
   }
 
   Future<void> _load() async {
@@ -53,6 +62,31 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
       _duelPlayersNow = results[0];
       _racePlayersNow = results[1];
     });
+  }
+
+  Future<void> _loadFriends() async {
+    final friends = await FriendService.fetchFriends();
+    if (!mounted) return;
+    setState(() {
+      _friends = friends;
+      _loadingFriends = false;
+    });
+  }
+
+  Future<void> _inviteFriend(FriendInfo friend, {required bool isDuel}) async {
+    AudioManager.playClick();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendChallengeScreen(
+          username: widget.username,
+          targetFriendId: friend.id,
+          targetFriendName: friend.name,
+          isDuel: isDuel,
+        ),
+      ),
+    );
+    if (mounted) _load();
   }
 
   int get _totalConnected => (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0);
@@ -135,11 +169,113 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 22),
+                  _buildFriendsSection(),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 🆕 "החברים שלי" - ישירות במסך הזה, כדי שאפשר יהיה להזמין חבר ספציפי
+  // למוד ספציפי (⚔ דו-קרב / 🏁 מירוץ) בלי לצאת למסך "חברים" הנפרד.
+  // רק חברים מחוברים ניתנים להזמנה, בדיוק כמו ב-friends_screen.dart.
+  Widget _buildFriendsSection() {
+    if (_loadingFriends) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 14),
+        child: Center(child: CircularProgressIndicator(color: Color(0xFFA7F3D0), strokeWidth: 2.4)),
+      );
+    }
+    if (_friends.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            const Text("הזמן חבר ישירות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 8),
+            Text("(${_friends.length})", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        for (final friend in _friends) ...[
+          _friendInviteRow(friend),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+
+  Widget _friendInviteRow(FriendInfo friend) {
+    final letter = friend.name.trim().isNotEmpty ? friend.name.trim().substring(0, 1).toUpperCase() : '?';
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.white.withValues(alpha: 0.05)),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFFB24D)])),
+                alignment: Alignment.center,
+                child: Text(letter, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14, fontWeight: FontWeight.w900)),
+              ),
+              Positioned(
+                bottom: -1,
+                left: -1,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: friend.online ? const Color(0xFF34D399) : Colors.white24,
+                    border: Border.all(color: const Color(0xFF1A1140), width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              friend.name,
+              textDirection: TextDirection.rtl,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800),
+            ),
+          ),
+          if (!friend.online)
+            Text("לא מחובר", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11.5, fontWeight: FontWeight.w700))
+          else ...[
+            _quickInviteButton(icon: '⚔', color: const Color(0xFFF43F5E), onTap: () => _inviteFriend(friend, isDuel: true)),
+            const SizedBox(width: 8),
+            _quickInviteButton(icon: '🏁', color: const Color(0xFF38BDF8), onTap: () => _inviteFriend(friend, isDuel: false)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _quickInviteButton({required String icon, required Color color, required VoidCallback onTap}) {
+    return Material(
+      color: color.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(11),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Text(icon, style: const TextStyle(fontSize: 15)),
+        ),
       ),
     );
   }

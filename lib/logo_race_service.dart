@@ -543,6 +543,148 @@ class LogoRaceService {
   }
 
   static String _normalize(String s) => s.trim().replaceAll(' ', '').toLowerCase();
+
+  // ================================================================
+  // 🆕 "אתגר חבר" למירוץ - זהה במבנה בדיוק ל-DuelService.createInvite/
+  // watchInvite/getInvite/cancelInvite/declineInvite/joinInvite (ראה שם
+  // להסברים המפורטים על כל שדה/החלטה), רק יוצר מסמך logoRaces במקום
+  // duels. אוסף Firestore נפרד (logoRaceInvites) כדי לא להתנגש עם קודי
+  // ההזמנה של הדו-קרב - אותו שחקן יכול תיאורטית ליצור קוד לכל מוד
+  // במקביל בלי שהם "יתנגשו" זה בזה.
+  //
+  //   קוד ההזמנה (מסמך ב-logoRaceInvites, מזהה = הקוד עצמו):
+  //   creatorId, creatorName, stake, status ('waiting'/'matched'/'declined'),
+  //   matchId (raceId אחרי שמישהו הצטרף), createdAt
+  // ================================================================
+  static const _invitesCollection = 'logoRaceInvites';
+  static const Duration inviteExpiry = Duration(minutes: 15);
+  static const int inviteCodeLength = 6;
+  static const String _inviteCodeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  static String _generateInviteCode() {
+    final rnd = Random();
+    return List.generate(inviteCodeLength, (_) => _inviteCodeChars[rnd.nextInt(_inviteCodeChars.length)]).join();
+  }
+
+  static Future<String> createInvite({
+    required String deviceId,
+    required String username,
+    required int stake,
+  }) async {
+    for (int attempt = 0; attempt < 5; attempt++) {
+      final code = _generateInviteCode();
+      final ref = _db.collection(_invitesCollection).doc(code);
+      try {
+        final existing = await ref.get();
+        if (existing.exists) continue;
+        await ref.set({
+          'creatorId': deviceId,
+          'creatorName': username,
+          'stake': stake,
+          'status': 'waiting',
+          'matchId': null,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        return code;
+      } catch (_) {
+        // ננסה שוב עם קוד חדש
+      }
+    }
+    throw Exception('לא הצלחנו ליצור קוד הזמנה - נסה שוב');
+  }
+
+  static Stream<Map<String, dynamic>?> watchInvite(String code) {
+    return _db.collection(_invitesCollection).doc(code).snapshots().map((s) => s.data());
+  }
+
+  static Future<void> cancelInvite(String code) async {
+    try {
+      await _db.collection(_invitesCollection).doc(code).delete();
+    } catch (_) {}
+  }
+
+  static Future<void> declineInvite(String code) async {
+    try {
+      await _db.collection(_invitesCollection).doc(code).update({'status': 'declined'});
+    } catch (_) {}
+  }
+
+  static Future<Map<String, dynamic>?> getInvite(String code) async {
+    try {
+      final snap = await _db.collection(_invitesCollection).doc(code.trim().toUpperCase()).get();
+      return snap.data();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<JoinRaceInviteResult> joinInvite({
+    required String code,
+    required String deviceId,
+    required String username,
+    required List<int> allLevelIds,
+  }) async {
+    final cleanCode = code.trim().toUpperCase();
+    if (cleanCode.length != inviteCodeLength) {
+      return const JoinRaceInviteResult(RaceJoinInviteStatus.notFound);
+    }
+    final ref = _db.collection(_invitesCollection).doc(cleanCode);
+    final preCheck = await ref.get();
+    if (!preCheck.exists) return const JoinRaceInviteResult(RaceJoinInviteStatus.notFound);
+    try {
+      return await _db.runTransaction<JoinRaceInviteResult>((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) return const JoinRaceInviteResult(RaceJoinInviteStatus.notFound);
+        final d = snap.data()!;
+        if (d['creatorId'] == deviceId) return const JoinRaceInviteResult(RaceJoinInviteStatus.ownCode);
+        if (d['status'] != 'waiting') return const JoinRaceInviteResult(RaceJoinInviteStatus.alreadyUsed);
+
+        final createdAt = (d['createdAt'] as Timestamp?)?.toDate();
+        if (createdAt != null && DateTime.now().difference(createdAt) > inviteExpiry) {
+          return const JoinRaceInviteResult(RaceJoinInviteStatus.expired);
+        }
+
+        final stake = (d['stake'] ?? stakeOptions.first) as int;
+        final totalStages = stagesForStake(stake);
+        final logoIds = DuelService.pickRandomLogoIds(allLevelIds, count: totalStages);
+        final raceRef = _db.collection(_racesCollection).doc();
+        tx.set(raceRef, {
+          'player1Id': d['creatorId'],
+          'player1Name': d['creatorName'],
+          'player2Id': deviceId,
+          'player2Name': username,
+          'status': 'countdown',
+          'logoIds': logoIds,
+          'stake': stake,
+          'totalStages': totalStages,
+          'currentStage': 0,
+          'stageStartAt': null,
+          'stageWinner': {},
+          'scores': {},
+          'messages': [],
+          'winnerId': null,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        tx.update(ref, {'status': 'matched', 'matchId': raceRef.id});
+        return JoinRaceInviteResult(RaceJoinInviteStatus.matched, matchId: raceRef.id);
+      });
+    } catch (e) {
+      return JoinRaceInviteResult(RaceJoinInviteStatus.error, errorMessage: e.toString());
+    }
+  }
+}
+
+/// תוצאה אפשרית מ-LogoRaceService.joinInvite - זהה בערכים ל-JoinInviteStatus
+/// בדו-קרב (duel_service.dart), אבל עם שם נפרד (RaceJoinInviteStatus/
+/// JoinRaceInviteResult) כדי לא להתנגש בשם הטיפוס כששני הקבצים
+/// מיובאים יחד (למשל ב-friend_challenge_screen.dart).
+enum RaceJoinInviteStatus { matched, notFound, expired, ownCode, alreadyUsed, error }
+
+class JoinRaceInviteResult {
+  final RaceJoinInviteStatus status;
+  final String? matchId;
+  final String? errorMessage;
+  const JoinRaceInviteResult(this.status, {this.matchId, this.errorMessage});
 }
 
 extension _FirstOrNull<T> on Iterable<T> {

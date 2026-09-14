@@ -284,12 +284,24 @@ class _ShopScreenState extends State<ShopScreen> {
 
   // 🆕 "העניין של הפרסומת תמורת 2 אנרגיה לא מופיעה" - נוסף כאן בתוך
   // "פעולות מהירות", ממש ליד בונוס הפרסומת הרגיל (מקום שאי אפשר לפספס),
-  // בנוסף לזה שכבר קיים במסך הבית. בלי קירור בכלל (בשונה מבונוס ה-15
-  // מטבעות) - זמין תמיד כל עוד האנרגיה לא מלאה, בדיוק כמו
-  // _watchAdForEnergyFromHome ב-main_menu_screen.dart (אותו מנגנון
-  // EnergyService.addFromAd).
+  // בנוסף לזה שכבר קיים במסך הבית.
+  // 🐛 תוקן: ההערה כאן טענה "בלי קירור בכלל... בדיוק כמו
+  // main_menu_screen.dart" - אבל זה לא נכון, main_menu_screen.dart כן
+  // בודק את EnergyService.timeUntilNextAdEnergy() (קירור 2 דקות בין
+  // פרסומות-לאנרגיה, לפי בקשה מפורשת בעבר) לפני שמציג את הפרסומת. כאן
+  // הבדיקה פשוט לא הייתה קיימת בפועל - כלומר משתמש יכול היה "לחלוב"
+  // אנרגיה הרבה יותר מהר מהמיועד, רק דרך מסך החנות, בלי שום הגבלה מלבד
+  // זמינות הפרסומת מה-SDK.
   Future<void> _watchAdForEnergyShop() async {
     AudioManager.playClick();
+    final adCooldown = await EnergyService.timeUntilNextAdEnergy();
+    if (adCooldown != null) {
+      if (!mounted) return;
+      final m = adCooldown.inMinutes;
+      final s = adCooldown.inSeconds % 60;
+      _toast("אפשר לצפות בפרסומת נוספת בעוד $m:${s.toString().padLeft(2, '0')}", Colors.deepPurple);
+      return;
+    }
     if (!AdsManager.isRewardedReady) {
       _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע 🎬", Colors.deepPurple);
       return;

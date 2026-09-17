@@ -60,8 +60,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'device_id.dart';
 import 'duel_service.dart'; // 🆕 currentSeasonId() - למחיקת רשומת טבלת השיאים העונתית של הדו-קרב
+import 'battle_pass_service.dart'; // 🆕 סנכרון סטטוס/נקודות הבאטל פאס בין מכשירים
 
-enum LinkResult { success, cancelled, error }
+// 🆕 conflict: החשבון (Google/Apple) שהמשתמש בחר כבר מקושר להתקדמות
+// שמורה בענן (כנראה ממכשיר אחר) - לפי בקשה מפורשת ("אני רוצה שהמערכת
+// תראה לו שהיה לו עוד משתמש... וזה ישאל אותו לאיזה משתמש להתחבר") -
+// כבר לא דורסים אוטומטית! ה-UI צריך להציג את pendingConflict ולבקש
+// מהמשתמש לבחור, ואז לקרוא ל-resolveSignInConflict.
+enum LinkResult { success, cancelled, error, conflict }
+
+/// פרטי ההתקדמות השמורה בענן לחשבון שמתנגש עם המכשיר הנוכחי - ראו
+/// LinkResult.conflict למעלה.
+class SignInConflict {
+  final int coins;
+  final int xp;
+  final int maxLevel;
+  final String? username;
+  const SignInConflict({required this.coins, required this.xp, required this.maxLevel, this.username});
+}
 
 class AccountService {
   static CollectionReference<Map<String, dynamic>> get _players =>
@@ -69,6 +85,16 @@ class AccountService {
 
   /// true רק ב-iOS/macOS - Sign in with Apple לא זמין (ולא רלוונטי) ב-Android.
   static bool get appleAvailable => Platform.isIOS || Platform.isMacOS;
+
+  // 🆕 מצב זמני בין הרגע שמתגלה "conflict" (ראה LinkResult.conflict) לבין
+  // הרגע שהמשתמש בוחר במסך איך להמשיך (resolveSignInConflict) - לא נשמר
+  // ב-SharedPreferences בכוונה, זה מצב חד-פעמי של תהליך התחברות בודד.
+  static User? _pendingUser;
+  static String? _pendingLabel;
+
+  /// פרטי ההתקדמות השמורה בענן שמחכה להחלטת המשתמש - null אם אין
+  /// כרגע התנגשות פתוחה. ה-UI קורא לזה מיד אחרי LinkResult.conflict.
+  static SignInConflict? pendingConflict;
 
   /// המזהה המקושר (Firebase Auth UID) אם קיים, אחרת null.
   static Future<String?> get linkedUid async {
@@ -114,8 +140,7 @@ class AccountService {
       final userCred = await FirebaseAuth.instance.signInWithCredential(credential);
       final user = userCred.user;
       if (user == null) return LinkResult.error;
-      await _afterSignIn(user, label: user.email ?? googleUser.email);
-      return LinkResult.success;
+      return await _afterSignIn(user, label: user.email ?? googleUser.email);
     } catch (e) {
       debugPrint('GOOGLE SIGN-IN ERROR: $e');
       return LinkResult.error;
@@ -144,8 +169,7 @@ class AccountService {
       // בפעמים הבאות appleCred.email יהיה null, ולכן מעדיפים את user.email
       // (מ-Firebase Auth, כבר נשמר מהפעם הראשונה) כשקיים.
       final label = user.email ?? appleCred.email ?? "Apple ID";
-      await _afterSignIn(user, label: label);
-      return LinkResult.success;
+      return await _afterSignIn(user, label: label);
     } catch (e) {
       debugPrint('APPLE SIGN-IN ERROR: $e');
       return LinkResult.error;
@@ -153,45 +177,115 @@ class AccountService {
   }
 
   // ========================================================================
-  // אחרי התחברות מוצלחת (משותף ל-Google/Apple) - ראו הסבר מלא בראש הקובץ.
+  // אחרי התחברות מוצלחת (משותף ל-Google/Apple).
+  // 🐛 תוקן: לפי בקשה מפורשת ("אני רוצה שהמערכת תראה לו שהיה לו עוד
+  // משתמש... וזה ישאל אותו לאיזה משתמש להתחבר") - בעבר, אם לחשבון הזה
+  // כבר הייתה התקדמות שמורה בענן (ממכשיר אחר), היא הייתה *דורסת אוטומטית
+  // ובלי שום שאלה* את ההתקדמות של המכשיר הנוכחי. עכשיו: רק מזהים שיש
+  // התנגשות ומחזירים LinkResult.conflict + pendingConflict עם הפרטים -
+  // ה-UI הוא זה שמציג דיאלוג ושואל, ורק אז קורא ל-resolveSignInConflict
+  // כדי לבצע את הבחירה בפועל (ראו שם). אין תמיכה במספר "פרופילים" תחת
+  // אותו חשבון - כל חשבון Google/Apple מקושר תמיד להתקדמות שחקן אחת
+  // בלבד (בדיוק כמו שכל משחק סלולרי אחר עובד) - הבחירה כאן היא רק
+  // "איזו משתי ההתקדמויות הקיימות תישאר", לא יצירת פרופיל נוסף.
   // ========================================================================
-  static Future<void> _afterSignIn(User user, {required String label}) async {
-    final deviceId = await DeviceId.get();
+  static Future<LinkResult> _afterSignIn(User user, {required String label}) async {
     final cloudDoc = await _players.doc(user.uid).get();
-    final prefs = await SharedPreferences.getInstance();
 
     if (cloudDoc.exists) {
-      // 🆕 החשבון הזה כבר קושר בעבר (כנראה במכשיר אחר) - ההתקדמות מהענן
-      // היא זו ש"זוכה" ונטענת למכשיר הזה. ההתקדמות המקומית הקודמת של
-      // המכשיר הזה נשארת קיימת ב-players/{deviceId} - רק מפסיקים
-      // להשתמש בה מעכשיו לטובת ההתקדמות המקושרת.
       final data = cloudDoc.data() ?? {};
-      await prefs.setInt('coins', (data['coins'] as num?)?.toInt() ?? 15);
-      await prefs.setInt('xp', (data['xp'] as num?)?.toInt() ?? 0);
-      await prefs.setInt('maxLevel', (data['maxLevel'] as num?)?.toInt() ?? 1);
-      final savedUsername = data['username'] as String?;
+      pendingConflict = SignInConflict(
+        coins: (data['coins'] as num?)?.toInt() ?? 0,
+        xp: (data['xp'] as num?)?.toInt() ?? 0,
+        maxLevel: (data['maxLevel'] as num?)?.toInt() ?? 1,
+        username: data['username'] as String?,
+      );
+      _pendingUser = user;
+      _pendingLabel = label;
+      return LinkResult.conflict;
+    }
+
+    await _linkFresh(user, label: label);
+    return LinkResult.success;
+  }
+
+  // 🆕 חיבור ראשון לחשבון הזה (אין עדיין players/{uid}) - ההתקדמות
+  // הנוכחית של המכשיר (שכבר קיימת גם ב-players/{deviceId}) מועתקת
+  // ל-players/{uid} החדש. אין כאן שום התנגשות לפתור.
+  static Future<void> _linkFresh(User user, {required String label}) async {
+    final deviceId = await DeviceId.get();
+    final prefs = await SharedPreferences.getInstance();
+    final coins = prefs.getInt('coins') ?? 15;
+    final xp = prefs.getInt('xp') ?? 0;
+    final maxLevel = prefs.getInt('maxLevel') ?? 1;
+    final username = prefs.getString('username');
+    await _players.doc(user.uid).set({
+      'coins': coins,
+      'xp': xp,
+      'maxLevel': maxLevel,
+      if (username != null) 'username': username,
+      'linkedFromDeviceId': deviceId,
+      'authLabel': label,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _saveLinkState(uid: user.uid, label: label);
+    // 🆕 סנכרון הבאטל פאס - ראו ההסבר המלא ב-battle_pass_service.dart.
+    // כאן המכשיר הוא ה"נכון" (או שזה חיבור ראשון, או שהמשתמש בחר במפורש
+    // להשאיר את ההתקדמות המקומית) - דוחפים אותה לענן, דורסים כל מה
+    // שהיה שם קודם (למשל ממכשיר אחר עם אותו חשבון).
+    BattlePassService.syncToCloud();
+  }
+
+  // ========================================================================
+  // נקרא אחרי שהמשתמש ענה בדיאלוג (ראו pendingConflict) על השאלה "לאיזו
+  // התקדמות להתחבר". useCloudProgress=true טוען את הענן למכשיר; false
+  // משאיר את המכשיר כמו שהוא, ודורס איתו את מה שהיה שמור בענן (כלומר
+  // מרגע זה ההתקדמות של המכשיר הזה היא "הנכונה" לחשבון הזה).
+  // ========================================================================
+  static Future<bool> resolveSignInConflict({required bool useCloudProgress}) async {
+    final user = _pendingUser;
+    final label = _pendingLabel;
+    if (user == null || label == null) return false;
+
+    if (useCloudProgress) {
+      final data = pendingConflict;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('coins', data?.coins ?? 15);
+      await prefs.setInt('xp', data?.xp ?? 0);
+      await prefs.setInt('maxLevel', data?.maxLevel ?? 1);
+      final savedUsername = data?.username;
       if (savedUsername != null && savedUsername.isNotEmpty) {
         await prefs.setString('username', savedUsername);
       }
+      await _saveLinkState(uid: user.uid, label: label);
+      // 🆕 force:true - המשתמש בחר במפורש "התחבר עם ההתקדמות השמורה",
+      // אז דורסים כל התקדמות באטל פאס מקומית שהייתה למכשיר הזה לעונה
+      // הנוכחית (ראו ההסבר המלא ב-battle_pass_service.dart.pullFromCloudIfNeeded).
+      await BattlePassService.pullFromCloudIfNeeded(force: true);
     } else {
-      // 🆕 חיבור ראשון לחשבון הזה - ההתקדמות הנוכחית של המכשיר (שכבר
-      // קיימת גם ב-players/{deviceId}) מועתקת ל-players/{uid} החדש.
-      final coins = prefs.getInt('coins') ?? 15;
-      final xp = prefs.getInt('xp') ?? 0;
-      final maxLevel = prefs.getInt('maxLevel') ?? 1;
-      final username = prefs.getString('username');
-      await _players.doc(user.uid).set({
-        'coins': coins,
-        'xp': xp,
-        'maxLevel': maxLevel,
-        if (username != null) 'username': username,
-        'linkedFromDeviceId': deviceId,
-        'authLabel': label,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _linkFresh(user, label: label);
     }
 
-    await _saveLinkState(uid: user.uid, label: label);
+    pendingConflict = null;
+    _pendingUser = null;
+    _pendingLabel = null;
+    return true;
+  }
+
+  /// המשתמש סגר/ביטל את דיאלוג ההתנגשות בלי לבחור - מנקים את המצב הזמני
+  /// ומתנתקים מ-Firebase Auth (כדי שניסיון התחברות הבא יציג שוב את בורר
+  /// החשבונות, במקום להשתמש בשקט בחשבון שכבר "נבחר" בפועל אבל לא אומץ).
+  static Future<void> cancelSignInConflict() async {
+    pendingConflict = null;
+    _pendingUser = null;
+    _pendingLabel = null;
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    try {
+      await GoogleSignIn().signOut();
+    } catch (_) {}
   }
 
   static String _generateNonce([int length = 32]) {

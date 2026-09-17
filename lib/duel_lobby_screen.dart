@@ -24,6 +24,7 @@ import 'audio_manager.dart'; // 🆕 צליל "נמצא יריב" + הנמכת �
 import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשיו" - נקודה ירוקה+מספר בתפריט הראשי
 import 'reward_popups.dart'; // 🆕 פופאפ "קיבלת אנרגיה" החדש (מסך מלא, לפי המוקאפ)
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית
+import 'app_notification.dart';
 
 enum _LobbyState { checking, banned, notEnoughEnergy, notEnoughCoins, selectingStake, searching, found, noPlayers, error }
 
@@ -237,15 +238,11 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       if (!mounted) return;
       final m = adCooldown.inMinutes;
       final s = adCooldown.inSeconds % 60;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("אפשר לצפות בפרסומת נוספת בעוד $m:${s.toString().padLeft(2, '0')} ⏳", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אפשר לצפות בפרסומת נוספת בעוד $m:${s.toString().padLeft(2, '0')}", type: AppNotificationType.warning);
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("אין פרסומת זמינה כרגע, נסה שוב עוד רגע 🎬", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -851,9 +848,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         _pendingStake = stake;
         Navigator.pop(sheetContext);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("חסרים לך מטבעות לרמה הזו (יש לך $_coins)", textDirection: TextDirection.rtl)),
-        );
+        AppNotification.show(context, "חסרים לך מטבעות לרמה הזו (יש לך $_coins)", type: AppNotificationType.error);
       }
     }
 

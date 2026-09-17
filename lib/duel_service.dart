@@ -226,13 +226,30 @@ class DuelService {
   static const int letterHintCost = 20;
   static const int wordHintCost = 60;
 
-  // 🆕 קנס על יציאה באמצע דו-קרב פעיל (countdown/playing) - מטבעות
-  // האנרגיה כבר "אבודים" ממילא (המטבעות נגבו וה-אנרגיה נוצלה כשהמשחק
-  // התחיל), והיריב כבר מוכרז מנצח ומקבל את הקופה (forfeitMatch).
-  // כאן רק עוקבים כמה פעמים שחקן ספציפי עשה את זה: פעם ראשונה = אזהרה
-  // בלבד, מהפעם השנייה ואילך = חסימה זמנית מ-matchmaking.
+  // 🆕 קנס על יציאה באמצע דו-קרב/מרוץ פעיל - המטבעות/האנרגיה כבר "אבודים"
+  // ממילא (נגבו כשהמשחק התחיל), והיריב תמיד מוכרז מנצח ומקבל את הקופה
+  // (forfeitMatch/LogoRaceService המקביל) בלי קשר לכלום למטה - זה נשאר
+  // אותו דבר. מה שכן משתנה כאן זה רק אם היציאה *גם* נספרת כ"אזהרה"
+  // לצורך חסימה עתידית:
+  //  - יציאה מבוקרת (כפתור X) בלוגו הראשון/השני (progress<2) - אזהרה.
+  //  - יציאה מבוקרת מהלוגו השלישי ואילך - "פרישה" - בלי הצטברות אזהרות
+  //    בכלל (לפי בקשה מפורשת: זה עונש נפרד, המפסיד כבר "משלם" בזה
+  //    שהיריב מנצח - לא צריך גם להעניש עם אזהרה).
+  //  - ניתוק מוחלט (האפליקציה נסגרה/קרסה, ראו opponentDisconnectTimeoutSeconds
+  //    למטה) - תמיד אזהרה, לא משנה על איזה לוגו - כי אין שום "יציאה
+  //    מבוקרת" שאפשר להעריך לפיה, ומבחינת היריב זו התנהגות זהה לנטישה.
+  // משותף לדו-קרב ולמרוץ (logo_race_screen.dart קורא לפונקציות האלה
+  // ישירות דרך duel_service.dart - "מוניטין" אחד לשני המצבים, לא שני
+  // מונים נפרדים - עוזב-חוזר בדו-קרב לא אמור "להתחיל מחדש" במרוץ).
   static const _penaltiesCollection = 'duelPenalties';
   static const int forfeitBanHours = 3;
+  // 🆕 כמה אזהרות (שלא פגו) מובילות לחסימה - הועלה מ-2 ל-4 לפי בקשה
+  // מפורשת, יחד עם ההבחנה למעלה בין "אזהרה" ל"פרישה" (שלא נספרת).
+  static const int forfeitBanThreshold = 4;
+  // 🆕 אזהרה שלא "התחדשה" (אזהרה נוספת) במשך כל כך הרבה ימים - נחשבת
+  // פגה, והמונה מתאפס בפעם הבאה שנדרשת אזהרה חדשה. כך שחקן עם עבר רחוק
+  // לא נשאר "אזהרה אחת מחסימה" לצמיתות.
+  static const int warningsResetDays = 3;
 
   /// כמה חידות יש סה"כ - מגיע מבחוץ (gameLevels.length בקובץ logo_level_screen)
   /// כדי לא ליצור תלות מעגלית בין הקבצים.
@@ -586,13 +603,15 @@ class DuelService {
   // 🆕 כל כמה שניות נחשב "עדיין בחיים" - ראו player1LastSeen/player2LastSeen
   // ב-DuelMatch ו-_maybeForfeitDisconnectedOpponent ב-duel_room_screen.dart.
   static const int heartbeatIntervalSeconds = 4;
-  // 🐛 תוקן: היה 10 שניות (רק 2-3 פעימות שהוחמצו) - מספיק שהתראת מערכת,
-  // מסך הרשאה, או מעבר קצר לאפליקציה אחרת (בדיוק המצבים שבהם Flutter
-  // "מקפיא" טיימרים ברקע) יגרמו להכרזת "ניתוק" על שחקן שכלל לא באמת
-  // עזב. הועלה ל-20 שניות - עדיין מספיק מהיר כדי לא להשאיר את הצד השני
-  // תקוע יותר מדי זמן על ניתוק אמיתי, אבל נותן שולי טעות סבירים יותר
-  // להפרעות קצרות ולגיטימיות.
-  static const int opponentDisconnectTimeoutSeconds = 20;
+  // 🩹 היה 20 שניות (הועלה בעבר מ-10, כדי לתת שולי טעות להפרעות קצרות
+  // ולגיטימיות - התראת מערכת, מסך הרשאה, מעבר קצר לאפליקציה אחרת). לפי
+  // בקשה מפורשת חזר ל-15: עכשיו יש גם מסך "ממתין לחיבור מחדש" בזמן
+  // ההמתנה (ראו _buildWaitingForReconnectOverlay ב-duel_room_screen.dart)
+  // וגם תמיכה ב"חזרה למשחק" אם היריב אכן חוזר תוך כדי (ראו
+  // active_match_service.dart) - כך שגם אם 15 שניות "תפס" הפרעה קצרה
+  // בטעות, זה לא הרס סופי: אם השחקן חוזר, הוא יוכנס ישר בחזרה כל עוד
+  // המשחק עדיין 'playing' (לא נגמר עדיין ברגע שהוא חזר).
+  static const int opponentDisconnectTimeoutSeconds = 15;
 
   /// כתיבת "פעימת חיים" - נקרא כל כמה שניות מ-DuelRoomScreen כל עוד
   /// השחקן בפועל במסך. כתיבה קלה (לא Transaction) לשדה נפרד משדות
@@ -657,7 +676,7 @@ class DuelService {
     final snap = await _db.collection(_penaltiesCollection).doc(deviceId).get();
     final d = snap.data();
     if (d == null) return {'warnings': 0, 'banUntilMs': null};
-    return {'warnings': (d['warnings'] ?? 0) as int, 'banUntilMs': d['banUntil'] as int?};
+    return {'warnings': _effectiveWarnings(d), 'banUntilMs': d['banUntil'] as int?};
   }
 
   static bool isBanned(Map<String, dynamic> status) {
@@ -666,24 +685,32 @@ class DuelService {
     return DateTime.fromMillisecondsSinceEpoch(banUntilMs).isAfter(DateTime.now());
   }
 
-  /// רושם "עזיבה באמצע דו-קרב" עבור מכשיר מסוים - פעם ראשונה רק מעלה
-  /// את מונה האזהרות, מהפעם השנייה ואילך גם קובע חסימה זמנית. בטוח
-  /// לקרוא במקביל/כפול הודות ל-Transaction (increment אטומי).
-  static Future<Map<String, dynamic>> applyForfeitPenalty(String deviceId) async {
+  // 🆕 אזהרות "פגות" (ראו warningsResetDays למעלה) - אם עברו יותר מדי
+  // ימים מאז האזהרה האחרונה בלי אזהרה חדשה, מתייחסים למונה כאילו הוא 0.
+  static int _effectiveWarnings(Map<String, dynamic> d) {
+    final lastWarningAtMs = d['lastWarningAt'] as int?;
+    if (lastWarningAtMs == null) return (d['warnings'] ?? 0) as int; // מסמך ישן מלפני התוספת הזו - מתייחסים כרגיל
+    final expired = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastWarningAtMs)) > const Duration(days: warningsResetDays);
+    return expired ? 0 : ((d['warnings'] ?? 0) as int);
+  }
+
+  /// רושם "עזיבה באמצע דו-קרב/מרוץ" עבור מכשיר מסוים. `countsAsWarning`
+  /// קובע אם זה בכלל מצטבר למונה האזהרות (ראו ההסבר המלא ליד
+  /// forfeitBanThreshold למעלה) - אם false, זו no-op שרק מחזירה את המצב
+  /// הנוכחי בלי לגעת בו (פרישה מאוחרת - לא נספרת).
+  static Future<Map<String, dynamic>> applyForfeitPenalty(String deviceId, {required bool countsAsWarning}) async {
+    if (!countsAsWarning) return getForfeitStatus(deviceId);
     final ref = _db.collection(_penaltiesCollection).doc(deviceId);
-    // 🩹 תוקן: בעבר זה עבר דרך runTransaction - אבל Transaction.get() על
-    // מסמך שכנראה עדיין לא קיים (המקרה הנפוץ - שחקן שעוזב דו-קרב באמצע
-    // בפעם הראשונה) חושף את אותה תקלה ידועה בתוסף cloud_firestore שתוקנה
-    // ב-createInvite/joinInvite ("Bad state: Future already completed").
-    // כאן הסיכון התיאורטי מהוויתור על אטומיות אפסי בפועל - רק המכשיר
-    // עצמו אי-פעם כותב למסמך העונשין שלו, כך שאין שום תרחיש של שני
-    // מכשירים שכותבים לאותו מסמך בו-זמנית.
+    // 🩹 לא Transaction בכוונה - ראו הסבר היסטורי: רק המכשיר עצמו (או
+    // היריב שמכריז על ניתוקו) כותב למסמך העונשין הזה, אין תרחיש אמיתי
+    // של כתיבה כפולה בו-זמנית שדורשת אטומיות.
     final snap = await ref.get();
     final d = snap.data();
-    final warnings = ((d?['warnings'] ?? 0) as int) + 1;
-    final update = <String, dynamic>{'warnings': warnings};
+    final priorWarnings = d == null ? 0 : _effectiveWarnings(d);
+    final warnings = priorWarnings + 1;
+    final update = <String, dynamic>{'warnings': warnings, 'lastWarningAt': DateTime.now().millisecondsSinceEpoch};
     int? banUntilMs;
-    if (warnings >= 2) {
+    if (warnings >= forfeitBanThreshold) {
       banUntilMs = DateTime.now().add(const Duration(hours: forfeitBanHours)).millisecondsSinceEpoch;
       update['banUntil'] = banUntilMs;
     }
@@ -985,7 +1012,7 @@ class DuelService {
   //   createdAt               - Server Timestamp - לחישוב תפוגה
   // ================================================================
   static const _invitesCollection = 'duelInvites';
-  static const Duration inviteExpiry = Duration(minutes: 15);
+  static const Duration inviteExpiry = Duration(minutes: 1);
   static const int inviteCodeLength = 6;
   // בכוונה בלי 0/O ו-1/I - קלות להתבלבל ביניהן כשמקלידים קוד שקיבלו בטקסט.
   static const String _inviteCodeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

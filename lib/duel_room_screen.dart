@@ -31,6 +31,8 @@ import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon - אימוג'י במקום 
 import 'ads_manager.dart'; // 🆕 פרסומת אחרי סיום דו-קרב + איפוס מונה "גלישה בלי לשחק"
 import 'level_override_service.dart'; // 🆕 תיקוני שלבים מרחוק - חייב לחול גם בדו-קרב, לא רק במשחק הרגיל
 import 'battle_pass_service.dart'; // 🆕 נקודות "באטל פאס" על ניצחון בדו-קרב
+import 'app_notification.dart';
+import 'active_match_service.dart'; // 🆕 "חזרה למשחק" אחרי שהאפליקציה נסגרה לגמרי
 
 class DuelRoomScreen extends StatefulWidget {
   final String matchId;
@@ -131,6 +133,10 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     super.initState();
     _waitingSpinController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
     _loadCoins();
+    // 🆕 "חזרה למשחק" - שומר מצביע מקומי שיש דו-קרב פעיל, כדי שאם
+    // האפליקציה תיסגר לגמרי ותיפתח מחדש, main.dart יוכל להכניס ישר
+    // בחזרה במקום למסך הבית (ראו active_match_service.dart).
+    ActiveMatchService.save(type: ActiveMatchType.duel, matchId: widget.matchId);
     _sub = DuelService.watchMatch(widget.matchId).listen(_onMatchUpdate, onError: (_) {});
     // 🆕 recordDuelEntered (לא recordGameEntered הרגיל) - כדי ש-AdsManager
     // ידע גם אם "דפדפנו הרבה ואז לחצנו על דו-קרב" (משפיע על onDuelFinished).
@@ -265,7 +271,13 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     }
     // בסיס התחלתי - נותן ליריב "טווח חסד" עד שהוא שולח את הפעימה הראשונה שלו
     _oppLastSeenLocalClock ??= DateTime.now();
-    _disconnectCheckTimer ??= Timer.periodic(const Duration(seconds: 3), (_) => _maybeForfeitDisconnectedOpponent());
+    // 🆕 גם מרענן את המסך כל 3 שניות (לא רק בודק ניצחון טכני) - כדי
+    // שהספירה לאחור במסך "ממתין לחיבור מחדש" (_buildWaitingForReconnectOverlay)
+    // תתקדם בעצמה גם בלי שמגיע עדכון Firestore חדש.
+    _disconnectCheckTimer ??= Timer.periodic(const Duration(seconds: 3), (_) async {
+      await _maybeForfeitDisconnectedOpponent();
+      if (mounted) setState(() {});
+    });
   }
 
   // 🆕 מכריז עליי כמנצח אם היריב שותק יותר מדי זמן בזמן משחק פעיל -
@@ -284,7 +296,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     // אם זה החזיר false (היריב כבר הכריע את המשחק לפניי, כלומר בעצם
     // *אני* זה שניתקתי מבחינתו), לא מענישים אותו בטעות על מה שלא קרה.
     final iWon = await DuelService.forfeitMatch(widget.matchId, opponentId);
-    if (iWon) await DuelService.applyForfeitPenalty(opponentId);
+    // 🆕 ניתוק מוחלט (לא יציאה מבוקרת) - תמיד נספר כאזהרה, לא משנה על
+    // איזה לוגו - ראו ההסבר המלא ליד forfeitBanThreshold ב-duel_service.dart.
+    if (iWon) await DuelService.applyForfeitPenalty(opponentId, countsAsWarning: true);
   }
 
   // הספירה לאחור (3..2..1) מוצגת מקומית אצל שני השחקנים בערך באותו זמן
@@ -571,12 +585,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   }
 
   void _showNotEnoughCoins(int price) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("אין מספיק מטבעות (צריך $price)", textDirection: TextDirection.rtl),
-        backgroundColor: const Color(0xFF241a4f),
-      ),
-    );
+    AppNotification.show(context, "אין מספיק מטבעות (צריך $price)", type: AppNotificationType.error);
   }
 
   void _revealLetterHint() {
@@ -1121,8 +1130,13 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     if (!_exitHandled && _match != null && _match!.status != 'finished') {
       _exitHandled = true;
       DuelService.forfeitMatch(widget.matchId, widget.myDeviceId);
-      DuelService.applyForfeitPenalty(widget.myDeviceId);
+      // 🆕 סגירת האפליקציה/יציאה בלי אישור מפורש - כמו ניתוק, תמיד אזהרה.
+      DuelService.applyForfeitPenalty(widget.myDeviceId, countsAsWarning: true);
     }
+    // 🆕 dispose תמיד רץ ב"יציאה מנוהלת" (לא כשהתהליך נהרג ישירות על ידי
+    // המערכת/המשתמש) - זה בדיוק ההבדל שגורם ל-"חזרה למשחק" לעבוד נכון,
+    // ראו active_match_service.dart.
+    ActiveMatchService.clear();
     super.dispose();
   }
 
@@ -1151,7 +1165,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         title: const Text("לצאת מהדו-קרב?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
           "אם תצא עכשיו היריב יוכרז מנצח ויקבל את כל הקופה ($_stake שהימרת + $_stake שלו) - המטבעות והאנרגיה שכבר שילמת לא יוחזרו.\n\n"
-          "עזיבה באמצע נספרת: בפעם הראשונה תקבל אזהרה, מהפעם השנייה תיחסם זמנית מדו-קרב.",
+          "${_myProgress < 2 ? "זו עזיבה מוקדמת - תקבל רק אזהרה" : "עזיבה בשלב הזה נחשבת פרישה"} (${DuelService.forfeitBanThreshold} אזהרות = חסימה זמנית מדו-קרב).",
           textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
         ),
@@ -1172,9 +1186,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
 
     if (confirmed != true || !mounted) return;
     _exitHandled = true;
+    // 🆕 יציאה מבוקרת בלוגו הראשון/השני (progress<2, 0-אינדקס) = אזהרה
+    // בלבד; מהשלישי ואילך = פרישה, בלי הצטברות אזהרות - ראו ההסבר המלא
+    // ליד forfeitBanThreshold ב-duel_service.dart.
     await Future.wait([
       DuelService.forfeitMatch(widget.matchId, widget.myDeviceId),
-      DuelService.applyForfeitPenalty(widget.myDeviceId),
+      DuelService.applyForfeitPenalty(widget.myDeviceId, countsAsWarning: _myProgress < 2),
     ]);
     if (mounted) Navigator.pop(context);
   }
@@ -1199,9 +1216,79 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         backgroundColor: const Color(0xFF120C2E),
         body: AppBackground(
           child: SafeArea(
-            child: match == null || !_coinsLoaded
-                ? const Center(child: CircularProgressIndicator(color: Colors.amber))
-                : (match.status == 'countdown' ? _buildCountdown() : _buildGame(match)),
+            child: Stack(
+              children: [
+                match == null || !_coinsLoaded
+                    ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+                    : (match.status == 'countdown' ? _buildCountdown() : _buildGame(match)),
+                // 🩹 תוקן: הבאנר "מישהו ענה נכון" היה בעבר חלק מזרימת התוכן
+                // (דוחף את שאר המסך למטה כשהוא מופיע/נעלם) - לפי בקשה
+                // מפורשת נשאר למעלה, אבל עכשיו צף מעל שאר המסך (לא דוחף
+                // כלום) וקופץ פנימה עם אנימציית slide+fade נעימה יותר.
+                if (match != null && match.status != 'countdown') _buildOpponentAnsweredOverlay(match),
+                // 🆕 "ממתין לחיבור מחדש" - לפי בקשה מפורשת: כשהיריב שותק,
+                // לא נשארים בשקט עד שהניצחון הטכני "קופץ" בלי אזהרה - מציגים
+                // מסך חוסם עם ספירה לאחור, וגם נותנים לו הזדמנות אמיתית
+                // לחזור (אם הפעימה שלו מתחדשת, המסך הזה פשוט נעלם לבד).
+                if (match != null && match.status == 'playing') _buildWaitingForReconnectOverlay(match),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaitingForReconnectOverlay(DuelMatch match) {
+    if (_oppLastSeenLocalClock == null || _disconnectForfeitTriggered) return const SizedBox.shrink();
+    final silentSeconds = DateTime.now().difference(_oppLastSeenLocalClock!).inSeconds;
+    // 🩹 סף חסד קטן (5s) לפני שמראים בכלל - כדי שלא "יהבהב" על כל רווח
+    // רגיל בין פעימות חיים (כל 4 שניות) ורעש רשת רגיל.
+    const graceSeconds = 5;
+    if (silentSeconds < graceSeconds) return const SizedBox.shrink();
+    final remaining = (DuelService.opponentDisconnectTimeoutSeconds - silentSeconds).clamp(0, DuelService.opponentDisconnectTimeoutSeconds);
+    final oppName = widget.myDeviceId == match.player1Id ? match.player2Name : match.player1Name;
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF120C2E).withValues(alpha: 0.88),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(width: 46, height: 46, child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 3)),
+              const SizedBox(height: 20),
+              Text("ממתין לחיבור מחדש של $oppName", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              Text(
+                remaining > 0 ? "אם לא יתחבר תוך $remaining שניות, זה ייחשב ניצחון טכני" : "קובעים ניצחון טכני...",
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOpponentAnsweredOverlay(DuelMatch match) {
+    final oppName = widget.myDeviceId == match.player1Id ? match.player2Name : match.player1Name;
+    // 🎨 יושב מיד מתחת לפסי ההתקדמות (לא מכסה את הכפתור/הצ'יפ/המטבעות
+    // למעלה) וצף מעל שאר המסך - קופץ פנימה עם slide+fade במקום לדחוף תוכן.
+    return Positioned(
+      left: 16,
+      right: 16,
+      top: 128,
+      child: IgnorePointer(
+        child: AnimatedSlide(
+          duration: const Duration(milliseconds: 280),
+          curve: _showOpponentAnsweredBanner ? Curves.easeOutBack : Curves.easeIn,
+          offset: _showOpponentAnsweredBanner ? Offset.zero : const Offset(0, -1.4),
+          child: AnimatedOpacity(
+            opacity: _showOpponentAnsweredBanner ? 1 : 0,
+            duration: const Duration(milliseconds: 200),
+            child: _buildOpponentAnsweredBanner(oppName),
           ),
         ),
       ),
@@ -1238,17 +1325,6 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         _buildHeader(),
         const SizedBox(height: 6),
         _buildProgressHeader(oppName, oppCorrect, match.totalQuestions),
-        // 🆕 באנר "[שם היריב] ענה/תה נכון!" - ראו _flashOpponentAnsweredBanner.
-        // AnimatedSize+AnimatedOpacity כדי שהבאנר "יגדל"/ייכנס במקום לקפוץ
-        // פתאום ולדחוף את שאר התוכן בבת אחת.
-        AnimatedSize(
-          duration: const Duration(milliseconds: 200),
-          child: AnimatedOpacity(
-            opacity: _showOpponentAnsweredBanner ? 1 : 0,
-            duration: const Duration(milliseconds: 200),
-            child: _showOpponentAnsweredBanner ? _buildOpponentAnsweredBanner(oppName) : const SizedBox(width: double.infinity),
-          ),
-        ),
         const SizedBox(height: 14),
         if (iAmWaiting)
           Expanded(child: _buildWaitingForOpponent())
@@ -1490,25 +1566,24 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   Widget _buildOpponentAnsweredBanner(String oppName) {
     const color = Color(0xFFFB7185);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: color.withValues(alpha: 0.22),
-        border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5),
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(colors: [Color(0xFFE11D74), Color(0xFFFB7185)]),
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
       ),
       child: Row(
         textDirection: TextDirection.rtl,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.flash_on_rounded, color: color, size: 18),
+          const Icon(Icons.flash_on_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              '$oppName ענה/תה נכון! ⚡',
+              '$oppName ענה/תה נכון!',
               textDirection: TextDirection.rtl,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900),
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
             ),
           ),
         ],

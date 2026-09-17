@@ -25,6 +25,12 @@ import 'meta_events_service.dart'; // 🆕 מעקב פרסומות Meta (פיי�
 import 'screenshot_guard_service.dart'; // 🆕 זיהוי צילום/הקלטת מסך (iOS בלבד)
 import 'update_checker.dart';
 import 'update_required_screen.dart';
+import 'app_notification.dart';
+import 'active_match_service.dart'; // 🆕 "חזרה למשחק" - זיהוי דו-קרב/מרוץ פעיל בפתיחת האפליקציה
+import 'duel_room_screen.dart';
+import 'logo_race_screen.dart';
+import 'device_id.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // 🍎 App Tracking Transparency (ATT) - חובה של אפל: כל אפליקציה שמשתמשת
 // ב-IDFA לצורך פרסומות ממוקדות (וזה בדיוק מה ש-Google Mobile Ads/AdMob
@@ -200,17 +206,7 @@ void main() async {
   ScreenshotGuardService.onScreenshotTaken = () {
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null) return;
-    ScaffoldMessenger.of(ctx).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'שים לב: צילומי מסך מהמשחק אסורים לשיתוף מחוץ לאפליקציה 🙏',
-          textDirection: TextDirection.rtl,
-          textAlign: TextAlign.right,
-        ),
-        backgroundColor: Color(0xFF2A1740),
-        duration: Duration(seconds: 4),
-      ),
-    );
+    AppNotification.show(ctx, 'שים לב: צילומי מסך מהמשחק אסורים לשיתוף מחוץ לאפליקציה', type: AppNotificationType.warning, duration: const Duration(seconds: 4));
   };
   AudioManager.warmUpClick(); // כדי שגם הלחיצה הראשונה תהיה מיידית
   runApp(MaterialApp(
@@ -239,6 +235,9 @@ class AppRootGate extends StatefulWidget {
 class _AppRootGateState extends State<AppRootGate> {
   bool _checking = true;
   Map<String, String>? _blockInfo;
+  // 🆕 "חזרה למשחק" - ראו ההסבר המלא ב-active_match_service.dart ו-
+  // _checkResumeMatch למטה. null = אין משחק לחזור אליו (המקרה הרגיל).
+  Widget? _resumeScreen;
 
   @override
   void initState() {
@@ -270,11 +269,48 @@ class _AppRootGateState extends State<AppRootGate> {
 
   Future<void> _runCheck() async {
     final result = await UpdateChecker.checkForRequiredUpdate();
+    // 🆕 בודקים "חזרה למשחק" רק אם אין חסימת גרסה - אין טעם להכניס שחקן
+    // ישר לתוך דו-קרב/מרוץ שהוא ממילא ייחסם תוך שנייה על ידי UpdateRequiredScreen.
+    if (result == null) await _checkResumeMatch();
     if (!mounted) return;
     setState(() {
       _blockInfo = result;
       _checking = false;
     });
+  }
+
+  // 🆕 "המערכת צריכה לזהות שהטלפון היה במשחק ולהכניס אותו ישר" - בודק
+  // אם יש מצביע מקומי למשחק פעיל (ראו active_match_service.dart), ואם
+  // כן - מוודא מול Firestore שהמשחק עדיין 'playing' באמת (לא הוכרע כבר
+  // בינתיים, למשל על ידי ניצחון טכני של היריב בזמן שהיינו מנותקים) לפני
+  // שממש קופצים ישר לתוכו. אם משהו לא תקין (המשחק נגמר/נמחק/לא נמצא) -
+  // פשוט מנקים את המצביע וממשיכים כרגיל למסך הבית, בלי שגיאה.
+  Future<void> _checkResumeMatch() async {
+    try {
+      final pending = await ActiveMatchService.get();
+      if (pending == null) return;
+      final myDeviceId = await DeviceId.get();
+      final collection = pending.type == ActiveMatchType.duel ? 'duels' : 'logoRaces';
+      final doc = await FirebaseFirestore.instance.collection(collection).doc(pending.matchId).get();
+      final data = doc.data();
+      if (data == null || data['status'] != 'playing') {
+        await ActiveMatchService.clear();
+        return;
+      }
+      final player1Id = data['player1Id'] as String?;
+      final player2Id = data['player2Id'] as String?;
+      if (myDeviceId != player1Id && myDeviceId != player2Id) {
+        await ActiveMatchService.clear();
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('username') ?? '';
+      _resumeScreen = pending.type == ActiveMatchType.duel
+          ? DuelRoomScreen(matchId: pending.matchId, myDeviceId: myDeviceId, myUsername: username)
+          : LogoRaceScreen(username: username, initialRaceId: pending.matchId);
+    } catch (_) {
+      // לא קריטי - אם משהו נכשל (בעיית רשת וכו') פשוט ממשיכים למסך הבית הרגיל.
+    }
   }
 
   @override
@@ -296,7 +332,7 @@ class _AppRootGateState extends State<AppRootGate> {
         minVersion: _blockInfo!['minVersion'] ?? '',
       );
     }
-    return const MainMenuScreen();
+    return _resumeScreen ?? const MainMenuScreen();
   }
 }
 

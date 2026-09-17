@@ -83,7 +83,7 @@ class NotificationService {
       await _plugin.zonedSchedule(
         _energyFullNotificationId,
         'האנרגיה שלך מלאה',
-        'יריב חדש מחכה - בואו נראה מי מכיר יותר לוגואים ב"זהה את הלוגו!"',
+        'יריב חדש מחכה - בואו נראה מי מכיר יותר לוגואים',
         scheduledDate,
         const NotificationDetails(android: _androidDetails, iOS: DarwinNotificationDetails()),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -115,7 +115,7 @@ class NotificationService {
   // תישלח (הפונקציה שמבטלת ומתזמנת מחדש נקראת בכל פתיחה, ראו
   // scheduleComeBackReminders למטה).
   static const List<Map<String, dynamic>> _comeBackSchedule = [
-    {'days': 1, 'title': 'מתגעגעים אליך', 'body': 'לוגואים חדשים מחכים לך ב"זהה את הלוגו!" - בוא תמשיך בדיוק מאיפה שעצרת'},
+    {'days': 1, 'title': 'מתגעגעים אליך', 'body': 'לוגואים חדשים מחכים לך - בוא תמשיך בדיוק מאיפה שעצרת'},
     {'days': 3, 'title': 'האנרגיה שלך כבר מלאה', 'body': 'זה הזמן המושלם לדו-קרב קצר ולהרוויח עוד כמה מטבעות'},
     {'days': 7, 'title': 'שבוע שלם בלעדיך', 'body': 'שחקנים אחרים כבר מתקרבים אליך בטבלת השיאים - בוא תחזיר לעצמך את המקום'},
   ];
@@ -174,7 +174,7 @@ class NotificationService {
       await _plugin.zonedSchedule(
         _dailyResetNotificationId,
         'משימות חדשות מחכות לך',
-        'האתגר היומי ומשימות חדשות כבר פתוחות ב"זהה את הלוגו!" - בוא תבדוק מה מחכה לך',
+        'האתגר היומי ומשימות חדשות כבר פתוחות - בוא תבדוק מה מחכה לך',
         nextReminder,
         const NotificationDetails(android: _dailyResetAndroidDetails, iOS: DarwinNotificationDetails()),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

@@ -99,6 +99,8 @@ class LogoRaceMatch {
   final Map<String, int> scores;
   final List<RaceChatMessage> messages;
   final String? winnerId;
+  final DateTime? player1LastSeen;
+  final DateTime? player2LastSeen;
 
   const LogoRaceMatch({
     required this.raceId,
@@ -116,6 +118,8 @@ class LogoRaceMatch {
     required this.scores,
     required this.messages,
     required this.winnerId,
+    this.player1LastSeen,
+    this.player2LastSeen,
   });
 
   factory LogoRaceMatch.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -140,10 +144,14 @@ class LogoRaceMatch {
           .map((m) => RaceChatMessage.fromMap(Map<String, dynamic>.from(m as Map)))
           .toList(),
       winnerId: d['winnerId'] as String?,
+      player1LastSeen: (d['lastSeenP1'] as Timestamp?)?.toDate(),
+      player2LastSeen: (d['lastSeenP2'] as Timestamp?)?.toDate(),
     );
   }
 
   String opponentIdFor(String myId) => myId == player1Id ? player2Id : player1Id;
+  /// מתי היריב שלי נראה לאחרונה - null אם עדיין לא כתב אף heartbeat.
+  DateTime? opponentLastSeenFor(String myId) => myId == player1Id ? player2LastSeen : player1LastSeen;
   String opponentNameFor(String myId) => myId == player1Id ? player2Name : player1Name;
   String nameFor(String deviceId) => deviceId == player1Id ? player1Name : (deviceId == player2Id ? player2Name : deviceId);
   int scoreFor(String deviceId) => scores[deviceId] ?? 0;
@@ -431,6 +439,17 @@ class LogoRaceService {
   /// לשלב הזה* - מזכה נקודה ומתקדם לשלב הבא (או מסיים את המרוץ אם זה
   /// היה השלב האחרון), הכל באותו Transaction כדי שלא ייווצר מצב לא עקבי
   /// אם שני השחקנים "כמעט" ניחשו נכון באותו רגע.
+  // 🐛 תוקן באג אמיתי ("הפופאפ במירוץ לא עובד"): בעבר, הכרזת המנצח לשלב
+  // (stageWinner) וההתקדמות לשלב הבא (currentStage) נכתבו יחד *באותו*
+  // עדכון Firestore אטומי - כלומר אף לקוח (לא המנצח ולא היריב) אף פעם
+  // לא ראה מצב ביניים של "currentStage עדיין ישן, אבל stageWinner כבר
+  // מוגדר". ה-UI (roundDecided ב-logo_race_screen.dart) בודק בדיוק את זה
+  // (stageWinner[currentStage.toString()]) - וברגע שההודעה מ-Firestore
+  // הגיעה, currentStage כבר היה השלב *הבא*, כך שהבדיקה תמיד נכשלה בשקט
+  // והבאנר "מישהו ניחש נכון" פשוט לא היה לו סיכוי להופיע אף פעם. עכשיו
+  // הפונקציה הזו רק קובעת את stageWinner+scores - ההתקדמות בפועל
+  // (currentStage) קורית רק אחר כך, בנפרד, דרך advanceAfterStageDecided
+  // (נקרא מהלקוח אחרי השהיה קצרה שנותנת לבאנר זמן להיראות אצל שניהם).
   static Future<void> sendGuess({
     required String raceId,
     required int stage,
@@ -463,11 +482,32 @@ class LogoRaceService {
           final scores = Map<String, int>.from(d['scores'] ?? const {});
           scores[deviceId] = (scores[deviceId] ?? 0) + 1;
           update['scores'] = scores;
-
-          final totalStages = (d['totalStages'] ?? stagesForStake(d['stake'] ?? stakeOptions.first)) as int;
-          _applyStageAdvance(update, stage: stage, totalStages: totalStages, scores: scores, player1Id: d['player1Id'], player2Id: d['player2Id']);
         }
 
+        tx.update(ref, update);
+      });
+    } catch (_) {}
+  }
+
+  // 🆕 מריץ בפועל את המעבר לשלב הבא (או סיום המרוץ) אחרי ש-stageWinner
+  // כבר נקבע - ראו ההסבר המלא ב-sendGuess למעלה. נקרא מהלקוח (שני
+  // הצדדים קוראים לזה, לא רק המנצח) אחרי השהיה קצרה קבועה כדי שהבאנר
+  // יספיק להיראות. מוגן מהפעלה כפולה: אם currentStage כבר התקדם (הלקוח
+  // השני כבר קרא לזה קודם) - no-op.
+  static Future<void> advanceAfterStageDecided({required String raceId, required int stage}) async {
+    final ref = _db.collection(_racesCollection).doc(raceId);
+    try {
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        final d = snap.data();
+        if (d == null || d['status'] != 'playing') return;
+        if ((d['currentStage'] ?? 0) != stage) return; // כבר התקדם
+        final stageWinner = Map<String, dynamic>.from(d['stageWinner'] ?? const {});
+        if (stageWinner[stage.toString()] == null) return; // עדיין לא הוכרע בפועל - אין מה לקדם
+        final scores = Map<String, int>.from(d['scores'] ?? const {});
+        final totalStages = (d['totalStages'] ?? stagesForStake(d['stake'] ?? stakeOptions.first)) as int;
+        final update = <String, dynamic>{};
+        _applyStageAdvance(update, stage: stage, totalStages: totalStages, scores: scores, player1Id: d['player1Id'], player2Id: d['player2Id']);
         tx.update(ref, update);
       });
     } catch (_) {}
@@ -529,8 +569,12 @@ class LogoRaceService {
   // ומציגים ניצחון גם למי שבפועל הפסיד. עכשיו הכל בתוך Transaction אחד -
   // הבדיקה status=='finished' נעשית על הנתונים העדכניים ביותר בשרת, כך
   // שרק קריאה אחת בפועל מצליחה לקבוע מנצח.
-  static Future<void> forfeitRace(String raceId, String leavingDeviceId) async {
+  // 🐛 תוקן: מחזיר עכשיו bool - true רק אם הקריאה הזו *בפועל* קבעה מנצח
+  // בשרת (לא no-op כי המשחק כבר היה finished), בדיוק כמו DuelService.forfeitMatch -
+  // כדי שאפשר יהיה להעניש רק את הצד שבאמת הפסיד (ראו הקריאה ב-logo_race_screen.dart).
+  static Future<bool> forfeitRace(String raceId, String leavingDeviceId) async {
     final ref = _db.collection(_racesCollection).doc(raceId);
+    bool applied = false;
     try {
       await _db.runTransaction((tx) async {
         final snap = await tx.get(ref);
@@ -538,6 +582,18 @@ class LogoRaceService {
         if (d == null || d['status'] == 'finished') return;
         final opponentId = d['player1Id'] == leavingDeviceId ? d['player2Id'] : d['player1Id'];
         tx.update(ref, {'status': 'finished', 'winnerId': opponentId});
+        applied = true;
+      });
+    } catch (_) {}
+    return applied;
+  }
+
+  // 🆕 "פעימת חיים" - בדיוק כמו DuelService.updateHeartbeat, אותו דפוס
+  // בדיוק (כתיבה קלה, לא Transaction, שקטה אם נכשלת).
+  static Future<void> updateHeartbeat(String raceId, {required bool isPlayer1}) async {
+    try {
+      await _db.collection(_racesCollection).doc(raceId).update({
+        isPlayer1 ? 'lastSeenP1' : 'lastSeenP2': FieldValue.serverTimestamp(),
       });
     } catch (_) {}
   }
@@ -557,7 +613,7 @@ class LogoRaceService {
   //   matchId (raceId אחרי שמישהו הצטרף), createdAt
   // ================================================================
   static const _invitesCollection = 'logoRaceInvites';
-  static const Duration inviteExpiry = Duration(minutes: 15);
+  static const Duration inviteExpiry = Duration(minutes: 1);
   static const int inviteCodeLength = 6;
   static const String _inviteCodeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 

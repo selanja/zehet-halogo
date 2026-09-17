@@ -17,6 +17,14 @@ class AudioManager {
   static bool _sfxConfigured = false;
   static bool _globalConfigured = false;
   static bool _pausedForBackground = false;
+  // 🐛 תוקן: קריסה אמיתית מהמכשיר (AndroidAudioError, "Failed to set
+  // source", MEDIA_ERROR_SYSTEM) - קרתה כשהלופ הידני של המוזיקה (seek+
+  // resume ב-onPlayerComplete למטה) והפעלה מחדש דרך ensureMusicPlaying
+  // (נקרא בכל חזרה למסך הבית) רצו בו-זמנית על אותו _musicPlayer: שתי
+  // פקודות מתחרות (play() חדש מול seek+resume קיים) על אותו MediaPlayer
+  // אנדרואיד שוברות אותו. המנעול הזה מוודא שרק ניסיון הפעלה-מחדש אחד
+  // רץ בכל רגע נתון.
+  static bool _restartInFlight = false;
 
   /// 🔇 מתג חירום לבדיקות: שנה ל-false כדי לכבות את כל הסאונד במשחק.
   /// אם הקריסות נעלמות כשזה false - הבעיה באודיו של האמולטור/מכשיר.
@@ -28,6 +36,15 @@ class AudioManager {
   /// 🔊 iOS: קטגוריית ambient מאפשרת לאודיו של המשחק להתנגן יחד עם
   /// מוזיקה מאפליקציות אחרות (Spotify, Apple Music וכו') - בלי להשתיק אותן.
   /// היא גם מכבדת את מתג השקט של האייפון.
+  // 🐛 תוקן: קטגוריית ambient כבר "מערבבת" אודיו עם אפליקציות אחרות
+  // מעצם הגדרתה ב-iOS (בניגוד ל-playback/playAndRecord/multiRoute, שם
+  // צריך לבקש את זה במפורש) - האופציה mixWithOthers שהייתה כאן בנוסף
+  // בכלל לא חוקית יחד עם ambient, וחבילת ה-audioplayers עצמה דוחה את
+  // הצירוף הזה עם Failed assertion בכל הפעלה (נראה בלוג אפילו באנדרואיד,
+  // כי הבדיקה רצה בצד ה-Dart המשותף לפני שמגיעים לקוד הפלטפורמה). בפועל
+  // זה היה נתפס ב-catch למטה ומדלג בשקט על כל ההגדרה הגלובלית הזו - כך
+  // שב-iOS ההתנהגות המבוקשת (מתנגן יחד עם Spotify, מכבד מתג שקט) כנראה
+  // מעולם לא הופעלה בפועל. הוסרה האופציה המיותרת/הלא-חוקית.
   static Future<void> _ensureGlobalConfig() async {
     if (_globalConfigured) return;
     _globalConfigured = true;
@@ -42,9 +59,6 @@ class AudioManager {
         ),
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.ambient,
-          options: const {
-            AVAudioSessionOptions.mixWithOthers,
-          },
         ),
       ));
     } catch (e) {
@@ -384,7 +398,7 @@ class AudioManager {
       await _musicPlayer.setReleaseMode(ReleaseMode.stop);
       await _musicPlayer.setVolume(musicVolume);
       _musicCompleteSub?.cancel();
-      _musicCompleteSub = _musicPlayer.onPlayerComplete.listen((_) {
+      _musicCompleteSub = _musicPlayer.onPlayerComplete.listen((_) async {
         if (!_musicStarted || !soundEnabled) return;
         // 🩹 תוקן: אם האפליקציה ברקע כרגע (המשתמש נעל את המסך/יצא
         // מהאפליקציה) - לא מפעילים מחדש! בלי הבדיקה הזו, אם השיר בדיוק
@@ -392,7 +406,15 @@ class AudioManager {
         // המוזיקה מחדש (seek+resume) גם אחרי ש-pauseMusic() כבר עצר
         // אותה - זו הסיבה שהמוזיקה המשיכה להישמע אחרי כיבוי המסך.
         if (_pausedForBackground) return;
-        _musicPlayer.seek(Duration.zero).then((_) => _musicPlayer.resume()).catchError((_) {});
+        if (_restartInFlight) return; // ראו הסבר ליד _restartInFlight
+        _restartInFlight = true;
+        try {
+          await _musicPlayer.seek(Duration.zero);
+          await _musicPlayer.resume();
+        } catch (_) {
+        } finally {
+          _restartInFlight = false;
+        }
       });
       await _musicPlayer.play(AssetSource('audio/bg_music.ogg'));
     } catch (e) {
@@ -452,10 +474,19 @@ class AudioManager {
         return;
       }
       if (state == PlayerState.stopped || state == PlayerState.completed) {
+        // ראו הסבר ליד _restartInFlight - אם הלופ הידני של onPlayerComplete
+        // כבר באמצע הפעלה-מחדש (מצב "completed" הרגעי הזה בדיוק הוא מה
+        // שהוא נועד לתפוס) - לא מפעילים כאן ניסיון שני עליו במקביל.
+        if (_restartInFlight) return;
         // המוזיקה נעצרה/הסתיימה לגמרי - מתחילים מחדש מאפס
         debugPrint('AudioManager.ensureMusicPlaying: music was ${state.name}, restarting');
-        _musicStarted = false;
-        await startBackgroundMusic();
+        _restartInFlight = true;
+        try {
+          _musicStarted = false;
+          await startBackgroundMusic();
+        } finally {
+          _restartInFlight = false;
+        }
       }
     } catch (e) {
       debugPrint('שגיאת ensureMusicPlaying: $e');

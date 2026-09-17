@@ -107,7 +107,7 @@ class NotificationManager {
       await _plugin.zonedSchedule(
         _coinsBonusNotificationId,
         'המטבעות שלך מחכות',
-        '15 מטבעות חינם זמינים עכשיו - בוא תיקח אותן ב"זהה את הלוגו!"',
+        '15 מטבעות חינם זמינים עכשיו - בוא תיקח אותן',
         scheduledDate,
         const NotificationDetails(
           android: AndroidNotificationDetails(

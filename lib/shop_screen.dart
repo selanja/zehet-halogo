@@ -21,6 +21,7 @@ import 'starter_pack_dialog.dart'; // 🆕 מארז פתיחה - דיאלוג ה
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי כל שינוי מטבעות - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר
 import 'reward_popups.dart'; // 🆕 פופאפי "קיבלת אנרגיה"/"קיבלת מטבעות"/"הרכישה הושלמה" החדשים
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית
+import 'app_notification.dart';
 
 class ShopScreen extends StatefulWidget {
   // 🆕 כשנפתחים לכאן מכרטיס "ללא פרסומות" בתפריט הראשי - גוללים אוטומטית
@@ -179,7 +180,7 @@ class _ShopScreenState extends State<ShopScreen> {
         if (!mounted) return;
         _couponController.clear();
         _loadCoins();
-        _toast("הקוד מומש! קיבלת ${outcome.coins} מטבעות 🎉", Colors.green);
+        _toast("הקוד מומש! קיבלת ${outcome.coins} מטבעות", Colors.green);
         break;
       case CouponResult.notFound:
         _toast("קוד לא קיים - בדוק שהקלדת נכון", Colors.redAccent);
@@ -250,7 +251,7 @@ class _ShopScreenState extends State<ShopScreen> {
     AudioManager.playClick();
     if (!dailyAdAvailable) return;
     if (!AdsManager.isRewardedReady) {
-      _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע 🎬", Colors.deepPurple);
+      _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע", Colors.deepPurple);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -303,7 +304,7 @@ class _ShopScreenState extends State<ShopScreen> {
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע 🎬", Colors.deepPurple);
+      _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע", Colors.deepPurple);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -409,15 +410,7 @@ class _ShopScreenState extends State<ShopScreen> {
 
   void _toast(String msg, Color color, {Duration duration = const Duration(seconds: 4)}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, textDirection: TextDirection.rtl),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        duration: duration,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
+    AppNotification.show(context, msg, color: color, duration: duration);
   }
 
   Future<void> _openLink(String url) async {
@@ -435,7 +428,7 @@ class _ShopScreenState extends State<ShopScreen> {
     AudioManager.playClick();
     bool started = await IapManager.buy(productId);
     if (!started && mounted) {
-      _toast("הרכישה אינה זמינה כרגע, נסה שוב מאוחר יותר 🛍️", Colors.deepPurple);
+      _toast("הרכישה אינה זמינה כרגע, נסה שוב מאוחר יותר", Colors.deepPurple);
     }
   }
 

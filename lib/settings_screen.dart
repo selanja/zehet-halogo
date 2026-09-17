@@ -22,6 +22,8 @@ import 'notification_manager.dart'; // 🆕 מתג "התראות" - שולט ע�
 import 'review_manager.dart'; // 🆕 "דרג אותנו" - פותח את דף האפליקציה בחנות
 import 'account_service.dart'; // 🆕 קישור חשבון Google/Apple + מחיקת משתמש
 import 'account_link_prompt.dart'; // 🆕 אותו דיאלוג קישור חשבון שמוצג גם מהבית
+import 'app_notification.dart';
+import 'update_notes_screen.dart'; // 🆕 "מה חדש במשחק" - הערות עדכון מ-Firestore
 
 class SettingsScreen extends StatefulWidget {
   final String username;
@@ -135,6 +137,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     "⚔️ דו-קרב 1 על 1: שני שחקנים מקבלים את אותם הלוגואים, הראשון שמסיים - מנצח. עולה אנרגיה (מתחדשת עם הזמן).\n\n"
                     "💡 רמזים: חשיפת אות - 15 מטבעות, פתרון המילה - 60 מטבעות. נגמרו המטבעות? אפשר לצפות בפרסומת ולקבל רמז חינם!",
                   ),
+                ),
+                const SizedBox(height: 10),
+                _iconSettingsRow(
+                  icon: Icons.campaign_rounded,
+                  text: "מה חדש במשחק",
+                  color: const Color(0xFFFFD86B),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdateNotesScreen())),
                 ),
                 const SizedBox(height: 22),
                 // 🆕 "חשבון" - קישור ל-Google/Apple כדי שההתקדמות תישמר
@@ -505,9 +514,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("המחיקה נכשלה, נסה שוב מאוחר יותר", textDirection: TextDirection.rtl), backgroundColor: Colors.deepPurple),
-      );
+      AppNotification.show(context, "המחיקה נכשלה, נסה שוב מאוחר יותר", type: AppNotificationType.error);
     }
   }
 
@@ -533,9 +540,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await Share.share(text, subject: "זהה את הלוגו!");
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", textDirection: TextDirection.rtl), backgroundColor: const Color(0xFF241a4f), duration: const Duration(seconds: 5)),
-        );
+        AppNotification.show(context, "לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", duration: const Duration(seconds: 5));
       }
     }
   }
@@ -553,9 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showMailError() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("לא נמצאה אפליקציית מייל. אפשר לכתוב לנו ידנית ל-$_supportEmail", textDirection: TextDirection.rtl), backgroundColor: Color(0xFF241a4f), duration: Duration(seconds: 4)),
-    );
+    AppNotification.show(context, "לא נמצאה אפליקציית מייל. אפשר לכתוב לנו ידנית ל-$_supportEmail", duration: const Duration(seconds: 4));
   }
 
   // ✏️ שינוי שם - עצמאי לגמרי (לא תלוי במסך אחר) כדי שאפשר יהיה לפתוח

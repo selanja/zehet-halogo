@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'sub_levels_screen.dart';
 import 'audio_manager.dart';
 import 'iap_manager.dart';
+import 'app_notification.dart';
 
 class LevelsScreen extends StatefulWidget {
   const LevelsScreen({super.key});
@@ -108,6 +109,8 @@ class _LevelsScreenState extends State<LevelsScreen> {
     14: 23, // NBA
     15: 37, // יחידות בצה"ל וכוחות הביטחון
     16: 23, // רכבים חלק ב
+    17: 22, // אלקטרוניקה ומכשירי חשמל
+    18: 18, // תקשורת וחדשות ישראליות
   };
 
   String getWorldName(int worldNum) {
@@ -144,6 +147,10 @@ class _LevelsScreenState extends State<LevelsScreen> {
         return "יחידות בצה\"ל וכוחות הביטחון";
       case 16:
         return "רכבים חלק ב";
+      case 17:
+        return "אלקטרוניקה ומכשירי חשמל";
+      case 18:
+        return "תקשורת וחדשות ישראליות";
       default:
         return "כללי";
     }
@@ -180,6 +187,10 @@ class _LevelsScreenState extends State<LevelsScreen> {
         return Icons.shield_rounded;
       case 16:
         return Icons.directions_car_filled_rounded;
+      case 17:
+        return Icons.devices_rounded;
+      case 18:
+        return Icons.newspaper_rounded;
       default:
         return Icons.help_outline_rounded;
     }
@@ -344,14 +355,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
     await IapManager.setPendingUnlock(world, getFirstPuzzleIdOfMainLevel(world));
     bool started = await IapManager.buy(IapManager.unlockLevelId);
     if (!started && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("פתיחת רמות אינה זמינה כרגע, נסה שוב מאוחר יותר 🔓",
-              textDirection: TextDirection.rtl),
-          backgroundColor: Colors.deepPurple,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      AppNotification.show(context, "פתיחת רמות אינה זמינה כרגע, נסה שוב מאוחר יותר", type: AppNotificationType.error);
     }
   }
 

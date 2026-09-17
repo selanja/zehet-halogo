@@ -16,7 +16,9 @@
 // 🔴 כדי שרכישת הפרימיום תעבוד בחנות בפועל, חובה ליצור מוצר IAP חדש
 // בקונסולת החנות עם המזהה המדויק: battle_pass_premium (In-app product,
 // לא מתכלה/consumable - נשאר "פעיל" עד סוף העונה) - ראה גם iap_manager.dart.
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'account_service.dart'; // 🆕 מזהה "אפקטיבי" (uid מקושר או deviceId) - לסנכרון הבאטל פאס בין מכשירים
 import 'energy_service.dart';
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי תביעת פרס באטל פאס - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר
 
@@ -89,7 +91,14 @@ class BattlePassService {
   // כוללים את מזהה העונה (currentSeasonId) בתוכם - עונה חדשה = "דף new"
   // ריק לגמרי, בלי שום job/תחזוקה ידנית.
   static const int seasonLengthDays = 45;
-  static final DateTime _seasonEpoch = DateTime(2025, 1, 1);
+  // 🆕 אופס לקראת העלאת המשחק לחנויות ("בוא נאפס את הבאטל פאס") - העוגן
+  // הישן (1.1.2025) היה מתאריך הפיתוח, כך שבפועל היינו כבר "באמצע" עונה
+  // כלשהי ביום ההשקה בלי שום סיבה טובה. העוגן החדש הוא תאריך ההשקה בפועל
+  // (19.9.2026, "עוד יומיים" מהיום שזה נכתב - 17.9.2026) - כל שחקן שיתקין
+  // את האפליקציה מרגע ההשקה יתחיל בדיוק ב"עונה 1, יום 1", עם 45 ימים
+  // מלאים קדימה. ⚠️ אם תאריך ההשקה בפועל ישתנה שוב - תעדכן את התאריך כאן
+  // לתאריך האמיתי לפני שמעלים בפועל.
+  static final DateTime _seasonEpoch = DateTime(2026, 9, 19);
 
   static int _seasonIndex([DateTime? now]) {
     final n = now ?? DateTime.now();
@@ -141,6 +150,7 @@ class BattlePassService {
       final prefs = await SharedPreferences.getInstance();
       final current = prefs.getInt(_pointsKey) ?? 0;
       await prefs.setInt(_pointsKey, current + amount);
+      syncToCloud(); // 🆕 fire-and-forget - ראו ההסבר המלא ליד syncToCloud למטה
     } catch (_) {}
   }
 
@@ -153,6 +163,7 @@ class BattlePassService {
   static Future<void> markPremiumPurchased() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_premiumKey, true);
+    syncToCloud();
   }
 
   static Future<Set<int>> getClaimedFreeTiers() async {
@@ -214,6 +225,7 @@ class BattlePassService {
     if (energy > 0) {
       await EnergyService.addAmount(energy);
     }
+    syncToCloud();
     return {'coins': coins, 'energy': energy};
   }
 
@@ -232,5 +244,67 @@ class BattlePassService {
       if (premiumUnlocked && t.hasPremiumReward && !claimedPremium.contains(t.tier)) count++;
     }
     return count;
+  }
+
+  // ========================================================================
+  // 🆕 סנכרון בין מכשירים - עד עכשיו הכול היה מקומי בלבד (SharedPreferences),
+  // בניגוד למטבעות/XP/אנרגיה שכבר מסתנכרנים לענן. המשמעות: מי שקנה
+  // פרימיום וקישר חשבון Google/Apple, ואז החליף מכשיר או התקין מחדש -
+  // היה מאבד את סטטוס הפרימיום וההתקדמות של העונה הנוכחית לגמרי, למרות
+  // ששילם כסף אמיתי. נשמר תחת players/{effectiveId}.battlePass - אותו
+  // מסמך בדיוק שבו כבר נשמרים מטבעות/XP (ראה player_sync.dart), לא אוסף
+  // נפרד. כולל את מזהה העונה כדי שנתונים מעונה ישנה לעולם לא "יזלגו"
+  // לעונה חדשה בטעות.
+  // ========================================================================
+  static CollectionReference<Map<String, dynamic>> get _players => FirebaseFirestore.instance.collection('players');
+
+  /// שולח את מצב הבאטל פאס של העונה הנוכחית לענן. fire-and-forget בכוונה
+  /// (לא מחכים לו בקוד הקורא) - לא חוסם את זרימת המשחק, וכשל שקט אם אין
+  /// אינטרנט כרגע (יסתנכרן בפעם הבאה שנקרא לזה, בכל שינוי משמעותי הבא).
+  static Future<void> syncToCloud() async {
+    try {
+      final effectiveId = await AccountService.effectiveId();
+      final points = await getPoints();
+      final premium = await isPremiumUnlocked();
+      final claimedFree = await getClaimedFreeTiers();
+      final claimedPremium = await getClaimedPremiumTiers();
+      await _players.doc(effectiveId).set({
+        'battlePass': {
+          'season': currentSeasonId(),
+          'points': points,
+          'premium': premium,
+          'claimedFree': claimedFree.toList(),
+          'claimedPremium': claimedPremium.toList(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  /// טוען מהענן אם יש שם נתונים *לעונה הנוכחית* (נתונים מעונה אחרת -
+  /// למשל אם המכשיר "נעלם" לזמן רב - פשוט מתעלמים מהם, בדיוק כמו
+  /// שהעונה הישנה ממילא הייתה מתאפסת גם במכשיר שבו נשמרו). ראה שני
+  /// מקומות הקריאה ב-account_service.dart (קישור חשבון/פתרון התנגשות):
+  /// `force=false` (ברירת מחדל) - לא דורס התקדמות מקומית קיימת לעונה
+  /// הזו אם כבר יש כזו (למשל שיחקו קצת כאורח לפני הקישור). `force=true` -
+  /// המשתמש בחר במפורש "התחבר עם ההתקדמות השמורה" בדיאלוג התנגשות
+  /// (ראה account_conflict_dialog.dart), כך שכן דורסים כל מה שהיה מקומי.
+  static Future<void> pullFromCloudIfNeeded({bool force = false}) async {
+    try {
+      final effectiveId = await AccountService.effectiveId();
+      final doc = await _players.doc(effectiveId).get();
+      final bp = doc.data()?['battlePass'] as Map<String, dynamic>?;
+      if (bp == null || bp['season'] != currentSeasonId()) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      if (!force && (prefs.containsKey(_pointsKey) || prefs.containsKey(_premiumKey))) return;
+
+      await prefs.setInt(_pointsKey, (bp['points'] as num?)?.toInt() ?? 0);
+      await prefs.setBool(_premiumKey, bp['premium'] == true);
+      final claimedFree = (bp['claimedFree'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList();
+      final claimedPremium = (bp['claimedPremium'] as List<dynamic>? ?? const []).map((e) => e.toString()).toList();
+      await prefs.setStringList(_claimedFreeKey, claimedFree);
+      await prefs.setStringList(_claimedPremiumKey, claimedPremium);
+    } catch (_) {}
   }
 }

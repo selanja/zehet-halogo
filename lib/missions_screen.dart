@@ -16,6 +16,7 @@ import 'app_icons.dart'; // 🆕 CoinIcon - אימוג'י מטבע במקום א
 import 'battle_pass_service.dart'; // 🆕 סטטוס פרימיום - למשימות premiumOnly
 import 'battle_pass_screen.dart'; // 🆕 ניווט "שדרג לפרימיום" ממשימה נעולה
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות במסך הבית (ראו _claim)
+import 'app_notification.dart';
 
 class MissionsScreen extends StatefulWidget {
   const MissionsScreen({super.key});
@@ -75,9 +76,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
   Future<void> _claim(MissionProgress m, bool weekly) async {
     final reward = await MissionsService.claim(m.def.id, weekly: weekly);
     if (reward == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('קיבלת +$reward מטבעות!', textDirection: TextDirection.rtl), backgroundColor: const Color(0xFF16A46F)),
-    );
+    AppNotification.show(context, 'קיבלת +$reward מטבעות!', type: AppNotificationType.success);
     // 🩹 באג שתוקן: איסוף פרס משימה לא עדכן את המטבעות במסך הבית מיידית
     // (בדיוק אותו באג ואותו תיקון כמו ב-battle_pass_screen.dart._claim).
     MainMenuScreen.onReturnedHome?.call();
@@ -88,23 +87,17 @@ class _MissionsScreenState extends State<MissionsScreen> {
   // מהמאגר. אפשר להחליף כל משימה שעדיין לא נאספה (גם כזו שכבר בהתקדמות).
   Future<void> _rerollMission(MissionProgress m, bool weekly) async {
     if (!AdsManager.isRewardedReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("אין פרסומת זמינה כרגע, נסה שוב עוד רגע 🎬", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
       final newDef = await MissionsService.rerollMission(m.def.id, weekly: weekly);
       if (!mounted) return;
       if (newDef == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("אי אפשר להחליף את המשימה הזו כרגע", textDirection: TextDirection.rtl)),
-        );
+        AppNotification.show(context, "אי אפשר להחליף את המשימה הזו כרגע", type: AppNotificationType.error);
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('המשימה הוחלפה: ${newDef.title}', textDirection: TextDirection.rtl), backgroundColor: const Color(0xFF16A46F)),
-      );
+      AppNotification.show(context, 'המשימה הוחלפה: ${newDef.title}', type: AppNotificationType.success);
       _load();
     });
   }

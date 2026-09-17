@@ -29,8 +29,18 @@ class IapManager {
 //   unlock_level                     -> In-app product (מתכלה, 2.90 ש"ח) - פתיחת רמה נעולה
   //   energy_2, energy_8, energy_15, energy_30 -> In-app products (מתכלים)
   //   מחירים נקבעים בקונסולה: 2.90 / 10.90 / 19.90 / 29.90 ש"ח
-  //   battle_pass_premium              -> In-app product (חד-פעמי, ₪14.90) -
+  //   battle_pass_premium              -> In-app product **מתכלה** (₪24.90) -
   //   שדרוג ל"באטל פאס" פרימיום לעונה הנוכחית (ראה battle_pass_service.dart)
+  //   🐛 תוקן: היה מוגדר "לא מתכלה" (non-consumable) - אבל זה שגוי לגמרי
+  //   למוצר שאמור להירכש מחדש כל עונה (45 יום): מוצר לא-מתכלה נשאר קנוי
+  //   *לצמיתות* אצל הקונה, וחנויות (Apple/Google) מאפשרות "שחזור רכישות"
+  //   שלו בחינם לכל החיים - כלומר מי שקנה פעם אחת יכול היה ללחוץ "שחזר
+  //   רכישות" בכל עונה עתידית ולקבל פרימיום בחינם בלי לשלם שוב אף פעם.
+  //   מוצר מתכלה נצרך מיד עם כל רכישה ואי אפשר "לשחזר" אותו בחינם - כל
+  //   עונה שהשחקן רוצה פרימיום, הוא צריך לשלם שוב, בדיוק כמו שמתוכנן.
+  //   ⚠️ חובה ליצור את המוצר הזה בקונסולות בתור Consumable (לא Non-
+  //   Consumable) - אם כבר נוצר כלא-מתכלה ויש לו רכישות אמיתיות, כדאי
+  //   מזהה חדש (למשל battle_pass_premium_v2) במקום לשנות את הקיים.
   // המחירים נקבעים בקונסולה, לא בקוד.
   // ================================================================
   static const String coins100Id = 'coins_100';
@@ -115,8 +125,9 @@ class IapManager {
   /// פתיחת רמה נעולה - מוצר מתכלה (₪2.90). כל רכישה פותחת רמה אחת.
   static const String unlockLevelId = 'unlock_level';
 
-  /// 🆕 שדרוג "באטל פאס" לפרימיום לעונה הנוכחית - מוצר חד-פעמי (לא
-  /// מתכלה), נשאר "פעיל" עד סוף העונה (ראה battle_pass_service.dart).
+  /// 🆕 שדרוג "באטל פאס" לפרימיום לעונה הנוכחית - מוצר מתכלה (Consumable,
+  /// ראו ההסבר המפורט בבלוק ההערות בראש המחלקה) - נצרך מיד עם כל רכישה,
+  /// ונרכש מחדש בכל עונה שהשחקן רוצה פרימיום (ראה battle_pass_service.dart).
   static const String battlePassPremiumId = 'battle_pass_premium';
 
   // 🆕 חבילות אנרגיה בתשלום - כל אחת מזכה בכמות קבועה, בלי תקרה של 8
@@ -231,7 +242,8 @@ class IapManager {
       if (id == coins100Id || id == coins200Id || id == coins1000Id ||
           id == coins2500Id || id == coins6000Id || id == unlockLevelId ||
           _energyProductAmounts.containsKey(id) ||
-          starterPackIds.contains(id)) {
+          starterPackIds.contains(id) ||
+          id == battlePassPremiumId) {
         await _iap.buyConsumable(purchaseParam: param);
       } else {
         await _iap.buyNonConsumable(purchaseParam: param);

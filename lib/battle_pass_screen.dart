@@ -36,6 +36,7 @@ import 'app_icons.dart'; // CoinIcon/EnergyIcon - אייקון וקטורי אמ
 import 'battle_pass_reward_popup.dart'; // 🆕 פופאפ "פרס נאסף!" עם אנימציית תיבה נפתחת
 import 'iap_manager.dart';
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית (ראו _claim/_buyPremium)
+import 'app_notification.dart';
 
 class BattlePassScreen extends StatefulWidget {
   const BattlePassScreen({super.key});
@@ -177,13 +178,90 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     final ok = await IapManager.buy(IapManager.battlePassPremiumId);
     if (mounted && !ok) {
       setState(() => _buying = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('הרכישה לא זמינה כרגע - נסה שוב עוד רגע', textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, 'הרכישה לא זמינה כרגע - נסה שוב עוד רגע', type: AppNotificationType.error);
     }
     // בהצלחה - _onPurchaseUpdated יטען מחדש ויכבה את _buying דרך _load אינו
     // מכבה אותו ישירות, לכן מכבים כאן גם למקרה שהמשתמש ביטל את חלון הרכישה.
     if (mounted) setState(() => _buying = false);
+  }
+
+  // 🆕 דיאלוג "שדרג לפרימיום" - לפי בקשה מפורשת: "ברגע שמישהו לוחץ על
+  // הדורש באטל פאס פרימיום יקפוץ לו הודעה... כמה בערך מקבלים בסך הכול
+  // מהבאטל פאס ומחיר, כדי שיקנה". מוצג כשלוחצים על גלולת פרס בעמודת
+  // הפרימיום שכבר "פתוחה" (הגעת לשלב) אבל נעולה כי הפרימיום עצמו לא
+  // נרכש (ראו קריאה ב-_rewardPill) - זה בדיוק הרגע שבו כדאי להראות למה
+  // שווה לקנות, לא רק מנעול סתמי בלי הסבר.
+  void _showPremiumUpsellDialog() {
+    final premiumTiers = BattlePassService.tiers.where((t) => t.hasPremiumReward).toList();
+    final totalCoins = premiumTiers.fold<int>(0, (sum, t) => sum + t.premiumCoins);
+    final totalEnergy = premiumTiers.fold<int>(0, (sum, t) => sum + t.premiumEnergy);
+    final priceLabel = IapManager.product(IapManager.battlePassPremiumId)?.price ?? '₪24.90';
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF3A2668), Color(0xFF1D0E3C)]),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFFFD979).withValues(alpha: 0.4), width: 1.5),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFD979)]),
+                ),
+                child: const Icon(Icons.workspace_premium_rounded, color: Color(0xFF40170F), size: 30),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                "באטל פאס פרימיום",
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "פותח ${premiumTiers.length} פרסים נוספים לאורך כל העונה - בערך $totalCoins מטבעות"
+                "${totalEnergy > 0 ? ' ו-$totalEnergy אנרגיה' : ''} בסך הכול, בנוסף לכל מה שכבר מקבלים בנתיב החינמי.",
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13.5, height: 1.4),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    _buyPremium();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFFD979),
+                    foregroundColor: const Color(0xFF40170F),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Text("שדרג עכשיו · $priceLabel", textDirection: TextDirection.rtl, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text("אולי אחר כך", style: TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // 🆕 כפתור המידע 'i' בסרגל העליון (חדש - לא היה קיים קודם) פותח דיאלוג
@@ -684,8 +762,16 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
       badgeTextColor = const Color(0xFF40170F);
       badgeShadow = [BoxShadow(color: const Color(0xFFF2793B).withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 6))];
     } else {
-      badgeGradientStart = Colors.white.withValues(alpha: 0.07);
-      badgeGradientEnd = Colors.white.withValues(alpha: 0.07);
+      // 🐛 תוקן: כאן היה הצבע האמיתי שגרם ל"קו עובר דרך המספרים" -
+      // Colors.white.withValues(alpha: 0.07) הוא כמעט שקוף לגמרי (7%
+      // בלבד), אז קו-המסלול מאחורי התג (ראה _buildTierListWithRail)
+      // המשיך להיראות דרכו בבירור בכל השלבים הנעולים (הרוב) - התיקון
+      // הקודם (הוצאת ה-Opacity(rowOpacity) מהתג) לא היה מספיק, כי זה
+      // בכלל לא היה קשור אליו. עכשיו התג נשאר בצבע כהה מלא (100% אטום)
+      // גם במצב נעול - המראה ה"מעומעם" מגיע מצבע הטקסט הבהיר-למחצה,
+      // לא משקיפות הרקע.
+      badgeGradientStart = const Color(0xFF352463);
+      badgeGradientEnd = const Color(0xFF2A1D50);
       badgeTextColor = Colors.white.withValues(alpha: 0.5);
     }
 
@@ -724,20 +810,35 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
             ),
           ),
           const SizedBox(width: 7),
-          // 🩹 תג מספר-השלב - באמצע השורה (בין שתי הגלולות), בדיוק מעל
-          // קו-המסלול (rail) שעובר באמצע האופקי המוחלט. תמיד ב-100%
-          // אטימות (ראה הערה למעלה) כדי שיכסה את הקו לגמרי בכל מצב.
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
-              boxShadow: badgeShadow,
-              border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
-            ),
+          // 🐛 תוקן: למרות שהתג כבר היה ב-100% אטימות, קו-המסלול (rail,
+          // מצויר מאחורי כל השורות ב-_buildTierListWithRail) עדיין הציץ
+          // דרך תגי השלבים שעדיין לא הגעת אליהם - כנראה חוסר-דיוק זעיר
+          // (תת-פיקסל) בין המרכז האופקי של הקו לזה של התג. במקום לסמוך
+          // על כיסוי מדויק ב-100%, מוסיפים "מסכה" מלבנית קצת יותר גדולה
+          // (38x38, בצבע הרקע הכללי) *מתחת* לתג עצמו - כך שגם אם יש חוסר-
+          // דיוק זעיר, יש שוליים אמיתיים שמכסים את הקו לגמרי, לא רק את
+          // הגודל המדויק של התג.
+          Stack(
             alignment: Alignment.center,
-            child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), color: const Color(0xFF201040)),
+              ),
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [badgeGradientStart, badgeGradientEnd]),
+                  boxShadow: badgeShadow,
+                  border: (!(unlocked && freeClaimed) && !freeCanClaim && !premiumCanClaim) ? Border.all(color: Colors.white.withValues(alpha: 0.1)) : null,
+                ),
+                alignment: Alignment.center,
+                child: Text('${def.tier}', style: TextStyle(color: badgeTextColor, fontSize: 13, fontWeight: FontWeight.w900)),
+              ),
+            ],
           ),
           const SizedBox(width: 7),
           // עמודת "פרימיום" - עכשיו הילד האחרון (RTL => צד שמאל).
@@ -811,11 +912,17 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
       borderColor = Colors.white.withValues(alpha: 0.1);
     }
 
+    // 🆕 גלולת פרימיום ש"הגעת אליה" (לפי נקודות) אבל נעולה כי הפרימיום
+    // עצמו לא נרכש - זו בדיוק "הגלולה שדורשת באטל פאס פרימיום" (בניגוד
+    // לגלולה שעוד לא הגעת אליה בכלל, שם מוצג מספר הכוכבים החסרים ואין
+    // טעם להציע רכישה עדיין). לחיצה עליה פותחת את דיאלוג ה-upsell.
+    final bool premiumLockedHere = isPremium && unlocked && !claimed && !canClaim;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: canClaim ? onTap : null,
+        onTap: canClaim ? onTap : (premiumLockedHere ? _showPremiumUpsellDialog : null),
         child: Container(
           constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),

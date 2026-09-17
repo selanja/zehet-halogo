@@ -18,6 +18,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData, HapticFeed
 import 'package:shared_preferences/shared_preferences.dart'; // 🆕 ה-XP של עצמי, ל"מי מוביל בין החברים שלך"
 import 'package:share_plus/share_plus.dart';
 import 'app_background.dart';
+import 'app_notification.dart';
 import 'friend_challenge_screen.dart';
 import 'friend_service.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון קבוע - חסר היה במסך הזה בלבד
@@ -120,14 +121,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
       if (ok) _pendingRequests.removeWhere((r) => r.id == request.id);
     });
     if (ok && accept) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("אתם חברים עכשיו! 🎉", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אתם חברים עכשיו!", type: AppNotificationType.success);
       _loadFriends();
     } else if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("משהו השתבש - נסה שוב", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "משהו השתבש - נסה שוב", type: AppNotificationType.error);
     }
   }
 
@@ -143,9 +140,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     } catch (_) {
       if (!mounted) return;
       Clipboard.setData(ClipboardData(text: _inviteText));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("לא נמצאה אפליקציית שיתוף - ההודעה הועתקה, אפשר להדביק ולשלוח", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "לא נמצאה אפליקציית שיתוף - ההודעה הועתקה, אפשר להדביק ולשלוח");
     }
   }
 
@@ -165,9 +160,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     } catch (_) {
       if (!mounted) return;
       Clipboard.setData(ClipboardData(text: text));
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("לא נמצאה אפליקציית שיתוף - ההודעה הועתקה", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "לא נמצאה אפליקציית שיתוף - ההודעה הועתקה");
     }
   }
 
@@ -176,9 +169,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     if (code == null) return;
     Clipboard.setData(ClipboardData(text: code));
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("הקוד הועתק!", textDirection: TextDirection.rtl)),
-    );
+    AppNotification.show(context, "הקוד הועתק!", type: AppNotificationType.success);
   }
 
   Future<void> _submitAddFriend() async {
@@ -198,9 +189,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
       case AddFriendResult.requestSent:
       case AddFriendResult.success: // תאימות היסטורית - לא אמור להיזרק בפועל יותר
         _addCodeController.clear();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("בקשת חברות נשלחה! ⏳ נחכה שהוא יאשר", textDirection: TextDirection.rtl)),
-        );
+        AppNotification.show(context, "בקשת חברות נשלחה! נחכה שהוא יאשר", type: AppNotificationType.success);
         break;
       case AddFriendResult.alreadyRequested:
         setState(() => _addFriendError = "כבר שלחת לו בקשה - ממתין לאישור");
@@ -218,7 +207,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
         setState(() => _addFriendError = "קוד לא תקין");
         break;
       case AddFriendResult.error:
-        setState(() => _addFriendError = "משהו השתבש - נסה שוב");
+        // 🆕 אבחון זמני - מציג את שגיאת ה-Firestore האמיתית (אם נתפסה)
+        // כדי לאתר את הסיבה המדויקת. להסיר אחרי שהתקלה נמצאת ותוקנה.
+        final real = FriendService.lastSendRequestError;
+        setState(() => _addFriendError = real == null ? "משהו השתבש - נסה שוב" : "משהו השתבש:\n$real");
         break;
     }
   }
@@ -771,13 +763,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
     if (!mounted) return;
     if (ok) {
       setState(() => _friends.removeWhere((f) => f.id == friend.id));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("${friend.name} הוסר/ה מהחברים", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "${friend.name} הוסר/ה מהחברים");
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("משהו השתבש - נסה שוב", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "משהו השתבש - נסה שוב", type: AppNotificationType.error);
     }
   }
 

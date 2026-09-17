@@ -103,6 +103,11 @@ class FriendService {
     throw Exception('לא הצלחנו ליצור קוד חברים');
   }
 
+  /// 🆕 אבחון זמני - חושף את שגיאת ה-Firestore האמיתית כשליחת בקשה
+  /// נכשלת, כדי שאפשר יהיה לראות אותה על המסך (ראה friends_screen.dart)
+  /// בלי Console.app. להסיר אחרי שהתקלה נמצאת ותוקנה.
+  static String? lastSendRequestError;
+
   /// 🆕 שולח בקשת חברות לפי קוד - לא הופך אתכם לחברים מיד, רק כותב
   /// רשומה תחת players/{friendId}/friendRequests/{myId} - הצד השני צריך
   /// לאשר (acceptFriendRequest) כדי שהחברות תיווצר בפועל אצל שניכם.
@@ -119,9 +124,14 @@ class FriendService {
       final already = await _players.doc(myIdVal).collection('friendsList').doc(friendId).get();
       if (already.exists) return AddFriendResult.alreadyFriends;
 
-      final existingRequest = await _players.doc(friendId).collection('friendRequests').doc(myIdVal).get();
-      if (existingRequest.exists) return AddFriendResult.alreadyRequested;
-
+      // 🩹 תוקן: הייתה כאן גם בדיקת "get()" על players/{friendId}/friendRequests/{myId}
+      // *לפני* הכתיבה - קריאה (לא כתיבה) מתוך תת-אוסף פרטי של משתמש
+      // אחר. בניגוד לכתיבה עיוורת (שהתבנית הישנה addFriendByCode כבר
+      // עשתה בהצלחה לתוך friendsList של המשתמש השני), קריאה כזו נחסמת
+      // כנראה על ידי חוקי האבטחה (הגיוני: כל אחד יכול "לשלוח" לתיבת
+      // הבקשות של מישהו, אבל לא לקרוא אותה) - זו כנראה הייתה סיבת ה-
+      // "משהו השתבש" שדווחה. הסרתי את הבדיקה - כתיבה כפולה (בקשה
+      // שנייה לפני שהראשונה אושרה) פשוט מחליפה בשקט את sentAt, לא בעיה.
       await _players.doc(friendId).collection('friendRequests').doc(myIdVal).set({
         'name': myName,
         'sentAt': FieldValue.serverTimestamp(),
@@ -129,6 +139,7 @@ class FriendService {
       return AddFriendResult.requestSent;
     } catch (e) {
       debugPrint('SEND FRIEND REQUEST ERROR: $e');
+      lastSendRequestError = e.toString();
       return AddFriendResult.error;
     }
   }
@@ -147,6 +158,14 @@ class FriendService {
       debugPrint('FETCH FRIEND REQUESTS ERROR: $e');
       return [];
     }
+  }
+
+  /// 🆕 סטרים חי של מספר בקשות החברות הממתינות שקיבלתי - משמש לנקודה
+  /// הירוקה על כפתור "חברים" בסרגל התחתון (ראה app_bottom_nav.dart),
+  /// כדי שיהיה ברור מיד שיש בקשה חדשה בלי צורך להיכנס למסך החברים.
+  static Stream<int> watchPendingRequestsCount() async* {
+    final myIdVal = await myId();
+    yield* _players.doc(myIdVal).collection('friendRequests').snapshots().map((s) => s.docs.length);
   }
 
   /// 🆕 מאשר בקשת חברות ממתינה - רק עכשיו נוצרת החברות ההדדית בפועל

@@ -20,6 +20,7 @@
 // (כדי לא לערום עשרות מסכים זה על זה כשעוברים בין טאבים) - כך שהמסך
 // הראשי תמיד נשאר "קרקעית" יציבה של המחסנית, וכפתור "בית" תמיד יכול
 // לחזור אליו עם popUntil(isFirst).
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ import 'leaderboard_screen.dart';
 import 'missions_screen.dart';
 import 'missions_service.dart';
 import 'friends_screen.dart'; // 🆕 טאב "חברים" בסרגל התחתון - מסך "חברים" כללי (לא רק דו-קרב)
+import 'friend_service.dart';
 
 enum AppTab { home, shop, leaderboard, missions, friends }
 
@@ -44,6 +46,8 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
   late final AnimationController _ringController;
   late final AnimationController _haloController;
   int _missionsUnclaimed = 0;
+  bool _hasPendingFriendRequest = false;
+  StreamSubscription<int>? _friendRequestsSub;
 
   @override
   void initState() {
@@ -51,6 +55,11 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
     _ringController = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
     _haloController = AnimationController(vsync: this, duration: const Duration(milliseconds: 3200))..repeat(reverse: true);
     _loadBadge();
+    // 🆕 נקודה ירוקה על טאב "חברים" כשיש בקשת חברות ממתינה - לפי בקשה
+    // מפורשת ("שיהיה נקודה ירוקה או משהו בסגנון על הכפתור חברים").
+    _friendRequestsSub = FriendService.watchPendingRequestsCount().listen((count) {
+      if (mounted) setState(() => _hasPendingFriendRequest = count > 0);
+    });
   }
 
   Future<void> _loadBadge() async {
@@ -62,6 +71,7 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
   void dispose() {
     _ringController.dispose();
     _haloController.dispose();
+    _friendRequestsSub?.cancel();
     super.dispose();
   }
 
@@ -165,6 +175,7 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
                       label: "חברים",
                       active: widget.current == AppTab.friends,
                       onTap: () => _goFriends(context),
+                      showDot: _hasPendingFriendRequest,
                     ),
                   ),
                 ],
@@ -298,7 +309,8 @@ class _TabItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool active;
   final int? badgeCount;
-  const _TabItem({required this.icon, required this.color, required this.label, required this.onTap, this.active = false, this.badgeCount});
+  final bool showDot;
+  const _TabItem({required this.icon, required this.color, required this.label, required this.onTap, this.active = false, this.badgeCount, this.showDot = false});
 
   @override
   Widget build(BuildContext context) {
@@ -341,6 +353,22 @@ class _TabItem extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text("$badgeCount", style: const TextStyle(color: Color(0xFF08281C), fontSize: 10, fontWeight: FontWeight.w900)),
+                      ),
+                    ),
+                  // 🆕 נקודה ירוקה (בלי מספר) - בקשת חברות ממתינה שמחכה
+                  // לתגובה, ראה FriendService.watchPendingRequestsCount.
+                  if (showDot)
+                    Positioned(
+                      top: 0,
+                      right: 2,
+                      child: Container(
+                        width: 11,
+                        height: 11,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF34D399),
+                          border: Border.all(color: const Color(0xFF1E1448), width: 1.5),
+                        ),
                       ),
                     ),
                 ],

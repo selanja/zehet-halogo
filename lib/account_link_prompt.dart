@@ -9,6 +9,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart';
+import 'account_conflict_dialog.dart';
+import 'app_notification.dart';
 
 class AccountLinkPrompt {
   /// מציג את הדיאלוג רק אם: (א) המכשיר עדיין לא מקושר, ו-(ב) השחקן לא
@@ -50,16 +52,25 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
     setState(() => _loading = true);
     final result = await signIn();
     if (!mounted) return;
+    // 🆕 נמצאה התקדמות שמורה קיימת לחשבון הזה - שואלים את המשתמש לאיזו
+    // התקדמות להתחבר (ראו account_conflict_dialog.dart), במקום לדרוס
+    // אוטומטית כמו קודם.
+    if (result == LinkResult.conflict) {
+      final linked = await showAccountConflictDialog(context);
+      if (!mounted) return;
+      setState(() => _loading = false);
+      if (linked) {
+        Navigator.of(context).pop();
+        AppNotification.show(context, "החשבון קושר בהצלחה! ההתקדמות שלך שמורה", type: AppNotificationType.success);
+      }
+      return;
+    }
     setState(() => _loading = false);
     if (result == LinkResult.success) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("החשבון קושר בהצלחה! ההתקדמות שלך שמורה 🎉", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "החשבון קושר בהצלחה! ההתקדמות שלך שמורה", type: AppNotificationType.success);
     } else if (result == LinkResult.error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("החיבור נכשל, נסה שוב מאוחר יותר", textDirection: TextDirection.rtl), backgroundColor: Colors.deepPurple),
-      );
+      AppNotification.show(context, "החיבור נכשל, נסה שוב מאוחר יותר", type: AppNotificationType.error);
     }
   }
 

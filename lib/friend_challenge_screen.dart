@@ -23,6 +23,7 @@ import 'energy_service.dart';
 import 'app_icons.dart';
 import 'audio_manager.dart';
 import 'friend_service.dart'; // 🆕 הזמנה ישירה לחבר ספציפי מרשימת החברים + קפיצה אוטומטית לקוד
+import 'app_notification.dart';
 
 enum _FCState {
   checking,
@@ -161,7 +162,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // 🩹 שני השדות למטה מקבלים ברירת מחדל ספרותית פשוטה (לא _inviteExpiry/
   // _stakeOptions - אלה getters של המופע, ואי אפשר להשתמש בהם באתחול
   // שדה ב-Dart) - הערך האמיתי נקבע ב-_loadRequirements ברגע שידוע isDuel.
-  Duration _timeLeft = const Duration(minutes: 15);
+  Duration _timeLeft = const Duration(minutes: 1);
   bool _energySpentForCreate = false;
   int? _selectedStakeForCreate; // 🆕 להצגת "תנאי הדו-קרב" במסך ההמתנה
   // 🆕 עיצוב מחדש - ההימור נבחר בתפריט המאוחד עצמו (צ'יפים קומפקטיים),
@@ -417,9 +418,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     if (code == null) return;
     Clipboard.setData(ClipboardData(text: code));
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("הקוד הועתק! שלח אותו לחבר 📋", textDirection: TextDirection.rtl)),
-    );
+    AppNotification.show(context, "הקוד הועתק! שלח אותו לחבר", type: AppNotificationType.success);
   }
 
   // 🆕 "שתף קוד" - פותח את תפריט השיתוף של המכשיר (וואטסאפ וכו'), בדיוק

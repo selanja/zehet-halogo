@@ -13,6 +13,7 @@ import 'logo_level_screen.dart';
 import 'level_loading_screen.dart';
 import 'audio_manager.dart';
 import 'review_manager.dart';
+import 'app_notification.dart';
 
 class SubLevelsScreen extends StatefulWidget {
   final int mainLevel; // מקבל את הרמה הראשית (1, 2, 3...)
@@ -78,6 +79,8 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
     14: 23, // NBA
     15: 37, // יחידות בצה"ל וכוחות הביטחון
     16: 23, // רכבים חלק ב
+    17: 22, // אלקטרוניקה ומכשירי חשמל
+    18: 18, // תקשורת וחדשות ישראליות
   };
 
   // פונקציה שמחזירה את שם הקטגוריה לפי מספר הרמה
@@ -115,6 +118,10 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
         return "יחידות בצה\"ל וכוחות הביטחון";
       case 16:
         return "רכבים חלק ב";
+      case 17:
+        return "אלקטרוניקה ומכשירי חשמל";
+      case 18:
+        return "תקשורת וחדשות ישראליות";
       default:
         return "כללי";
     }
@@ -274,13 +281,9 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                             isLocked: isLocked,
                             onTap: () {
                               if (isLocked) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("המילה נעולה! פתור את הקודמות.", textDirection: TextDirection.rtl)),
-                                );
+                                AppNotification.show(context, "המילה נעולה! פתור את הקודמות.", type: AppNotificationType.warning);
                               } else if (isCompleted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("כבר מצאת את הלוגו הזה! 🏆", textDirection: TextDirection.rtl)),
-                                );
+                                AppNotification.show(context, "כבר מצאת את הלוגו הזה!");
                               } else {
                                 _openPuzzle(puzzleId, displayNum);
                               }

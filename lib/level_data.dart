@@ -46,6 +46,8 @@ class LevelData {
     14: 23, // NBA
     15: 37, // יחידות בצה"ל וכוחות הביטחון
     16: 23, // רכבים חלק ב
+    17: 22, // אלקטרוניקה ומכשירי חשמל
+    18: 18, // תקשורת וחדשות ישראליות
   };
 
   final Map<int, LevelData> gameLevels = {
@@ -519,6 +521,48 @@ class LevelData {
     456: LevelData(ans: "רולס רויס", imagePath: 'assets/images/level16/rools.webp', logoColor: Colors.grey.shade700, keyboard: ['ו', 'ה', 'ס', 'ר', 'נ', 'ח', 'ו', 'ר', 'ס', 'י', 'ו', 'ו', 'ל', 'ר']),
     457: LevelData(ans: "MG", imagePath: 'assets/images/level16/mg.webp', logoColor: Colors.grey.shade700, keyboard: ['Z', 'V', 'G', 'M', 'H', 'A', 'H', 'J', 'H', 'M', 'G', 'G', 'O', 'L']),
     458: LevelData(ans: "מקלארן", imagePath: 'assets/images/level16/mclaren.webp', logoColor: Colors.grey.shade700, keyboard: ['ד', 'ל', 'מ', 'ל', 'ק', 'ר', 'א', 'ק', 'ט', 'ב', 'ו', 'ן', 'נ', 'ר']),
+    // 🆕 קטגוריה 17 - אלקטרוניקה ומכשירי חשמל
+    459: LevelData(ans: "בוש", imagePath: 'assets/images/level17/Bosch.webp', logoColor: Colors.red, keyboard: ['ב', 'ש', 'מ', 'ק', 'ה', 'ל', 'ב', 'ד', 'צ', 'ש', 'ו', 'ב', 'כ', 'ג']),
+    460: LevelData(ans: "אייסר", imagePath: 'assets/images/level17/acer.webp', logoColor: Colors.green, keyboard: ['י', 'ח', 'ב', 'ש', 'ק', 'מ', 'ב', 'ק', 'ש', 'ר', 'י', 'ק', 'א', 'ס']),
+    461: LevelData(ans: "AMD", imagePath: 'assets/images/level17/amd.webp', logoColor: Colors.red.shade900, keyboard: ['R', 'S', 'M', 'D', 'C', 'S', 'W', 'S', 'U', 'L', 'G', 'D', 'D', 'A']),
+    462: LevelData(ans: "אנקר", imagePath: 'assets/images/level17/anker.webp', logoColor: Colors.blueGrey, keyboard: ['י', 'ו', 'ע', 'א', 'ק', 'ר', 'כ', 'ח', 'ק', 'ג', 'י', 'ס', 'נ', 'פ']),
+    463: LevelData(ans: "אנטק", imagePath: 'assets/images/level17/antec.webp', logoColor: Colors.grey.shade700, keyboard: ['ל', 'ר', 'כ', 'ט', 'ק', 'ע', 'ק', 'ק', 'א', 'ס', 'כ', 'צ', 'נ', 'ג']),
+    464: LevelData(ans: "אסוס", imagePath: 'assets/images/level17/asus.webp', logoColor: Colors.blue.shade800, keyboard: ['ד', 'ר', 'ל', 'ס', 'א', 'ו', 'ס', 'ל', 'א', 'ב', 'ו', 'ת', 'ע', 'ס']),
+    465: LevelData(ans: "קנון", imagePath: 'assets/images/level17/canon.webp', logoColor: Colors.red.shade700, keyboard: ['ה', 'ט', 'ט', 'ל', 'צ', 'נ', 'ק', 'צ', 'מ', 'נ', 'ת', 'נ', 'ו', 'ן']),
+    466: LevelData(ans: "CORSAIR", imagePath: 'assets/images/level17/corssair.webp', logoColor: Colors.amber.shade900, keyboard: ['A', 'R', 'I', 'C', 'O', 'O', 'S', 'O', 'Q', 'Y', 'O', 'R', 'R', 'S']),
+    467: LevelData(ans: "דל", imagePath: 'assets/images/level17/dell.webp', logoColor: Colors.blue.shade700, keyboard: ['מ', 'ב', 'ד', 'ד', 'ו', 'ע', 'ז', 'ז', 'מ', 'ס', 'ל', 'ד', 'ג', 'ש']),
+    468: LevelData(ans: "DJI", imagePath: 'assets/images/level17/dji.webp', logoColor: Colors.grey.shade800, keyboard: ['D', 'D', 'L', 'L', 'E', 'P', 'P', 'I', 'D', 'I', 'J', 'U', 'O', 'T']),
+    469: LevelData(ans: "גופרו", imagePath: 'assets/images/level17/gopro.webp', logoColor: Colors.lightBlue, keyboard: ['צ', 'ג', 'ר', 'פ', 'א', 'י', 'ל', 'פ', 'ז', 'ה', 'ו', 'פ', 'ו', 'ש']),
+    470: LevelData(ans: "HP", imagePath: 'assets/images/level17/hp.webp', logoColor: Colors.blue.shade900, keyboard: ['M', 'Z', 'Z', 'G', 'G', 'P', 'T', 'H', 'Z', 'X', 'H', 'Y', 'Z', 'H']),
+    471: LevelData(ans: "אינטל", imagePath: 'assets/images/level17/intel.webp', logoColor: Colors.blue.shade600, keyboard: ['ז', 'ל', 'נ', 'ט', 'ע', 'ד', 'ג', 'י', 'ל', 'ז', 'א', 'כ', 'ח', 'ח']),
+    472: LevelData(ans: "JBL", imagePath: 'assets/images/level17/jbl.webp', logoColor: Colors.orange, keyboard: ['U', 'N', 'K', 'O', 'P', 'F', 'M', 'J', 'C', 'Z', 'L', 'B', 'X', 'Z']),
+    473: LevelData(ans: "לנובו", imagePath: 'assets/images/level17/lenovo.webp', logoColor: Colors.deepOrange, keyboard: ['ו', 'צ', 'ה', 'ת', 'ש', 'ה', 'ל', 'א', 'ב', 'ל', 'ו', 'א', 'צ', 'נ']),
+    474: LevelData(ans: "לוגיטק", imagePath: 'assets/images/level17/logitech.webp', logoColor: Colors.lightBlue.shade300, keyboard: ['ל', 'י', 'ק', 'ל', 'ה', 'ו', 'ט', 'ג', 'ב', 'ק', 'ט', 'צ', 'נ', 'כ']),
+    475: LevelData(ans: "מיקרוסופט", imagePath: 'assets/images/level17/microsoft.webp', logoColor: Colors.blue.shade400, keyboard: ['א', 'ק', 'ו', 'ר', 'ו', 'ו', 'ה', 'ס', 'מ', 'ט', 'י', 'ה', 'ר', 'פ']),
+    476: LevelData(ans: "ניקון", imagePath: 'assets/images/level17/nikon.webp', logoColor: Colors.amber, keyboard: ['א', 'נ', 'ז', 'ן', 'ס', 'ק', 'פ', 'ו', 'ב', 'ד', 'ח', 'ט', 'י', 'צ']),
+    477: LevelData(ans: "פנסוניק", imagePath: 'assets/images/level17/panasonic.webp', logoColor: Colors.blue, keyboard: ['נ', 'ז', 'ט', 'ס', 'ס', 'צ', 'פ', 'ה', 'ו', 'נ', 'י', 'פ', 'ק', 'נ']),
+    478: LevelData(ans: "פיליפס", imagePath: 'assets/images/level17/philips.webp', logoColor: Colors.indigo, keyboard: ['ס', 'פ', 'פ', 'ט', 'י', 'ד', 'מ', 'ס', 'ה', 'ה', 'ע', 'י', 'ח', 'ל']),
+    479: LevelData(ans: "רייזר", imagePath: 'assets/images/level17/rayzer.webp', logoColor: Colors.green.shade900, keyboard: ['ס', 'כ', 'ל', 'א', 'י', 'א', 'ר', 'ז', 'מ', 'י', 'כ', 'ר', 'ס', 'צ']),
+    480: LevelData(ans: "STEELSERIES", imagePath: 'assets/images/level17/steelseries.webp', logoColor: Colors.deepOrange.shade700, keyboard: ['E', 'S', 'M', 'L', 'R', 'E', 'I', 'T', 'S', 'E', 'O', 'E', 'T', 'S']),
+    // 🆕 קטגוריה 18 - תקשורת וחדשות ישראליות
+    481: LevelData(ans: "ערוץ 14", imagePath: 'assets/images/level18/c14.webp', logoColor: Colors.blue.shade900, keyboard: ['ט', 'ץ', 'ר', 'ג', 'ח', 'ג', 'ו', 'א', 'ג', '4', 'ע', 'ש', 'ר', '1']),
+    482: LevelData(ans: "כלכליסט", imagePath: 'assets/images/level18/calcal.webp', logoColor: Colors.green, keyboard: ['ל', 'י', 'ט', 'ס', 'כ', 'ט', 'ו', 'כ', 'ד', 'ז', 'ל', 'ו', 'י', 'ב']),
+    483: LevelData(ans: "גלגלצ", imagePath: 'assets/images/level18/galgaltc.webp', logoColor: Colors.green.shade900, keyboard: ['א', 'ג', 'ל', 'פ', 'ל', 'ג', 'צ', 'ח', 'ז', 'צ', 'ס', 'פ', 'ד', 'ע']),
+    484: LevelData(ans: "גלי צה\"ל", imagePath: 'assets/images/level18/galit.webp', logoColor: Colors.green.shade700, keyboard: ['א', 'מ', 'ה', 'ה', 'צ', '"', 'ש', 'ג', 'י', 'ל', 'ה', 'ב', 'ל', 'ל']),
+    485: LevelData(ans: "גלובס", imagePath: 'assets/images/level18/globs.webp', logoColor: Colors.blue.shade900, keyboard: ['ו', 'ט', 'ס', 'ס', 'ב', 'ו', 'ל', 'ס', 'ג', 'ב', 'א', 'ו', 'ט', 'י']),
+    486: LevelData(ans: "הארץ", imagePath: 'assets/images/level18/haaretz.webp', logoColor: Colors.black, keyboard: ['ץ', 'ג', 'פ', 'א', 'ע', 'פ', 'ש', 'ח', 'ה', 'ז', 'ט', 'ר', 'א', 'ג']),
+    487: LevelData(ans: "I24NEWS", imagePath: 'assets/images/level18/i24.webp', logoColor: Colors.red.shade900, keyboard: ['2', 'Y', 'W', 'N', 'T', 'W', 'S', 'I', 'K', 'Z', 'E', '4', 'V', 'M']),
+    488: LevelData(ans: "ישראל היום", imagePath: 'assets/images/level18/israelhaiom.webp', logoColor: Colors.blue.shade700, keyboard: ['ת', 'ל', 'ה', 'י', 'ר', 'ם', 'ו', 'י', 'ש', 'א', 'פ', 'ק', 'א', 'פ']),
+    489: LevelData(ans: "כאן 11", imagePath: 'assets/images/level18/kan.webp', logoColor: Colors.teal, keyboard: ['ן', 'ב', 'ת', '1', 'ח', 'ע', 'צ', 'צ', 'ש', 'א', 'א', 'ש', 'כ', '1']),
+    490: LevelData(ans: "קשת 12", imagePath: 'assets/images/level18/keshet.webp', logoColor: Colors.indigo, keyboard: ['מ', 'ט', 'ח', 'ח', 'ת', 'ג', 'ע', 'ש', '1', 'ש', 'ק', '2', 'ס', 'ז']),
+    491: LevelData(ans: "מאקו", imagePath: 'assets/images/level18/mako.webp', logoColor: Colors.pink, keyboard: ['א', 'ד', 'ק', 'מ', 'ק', 'ה', 'ת', 'ב', 'ע', 'ר', 'א', 'ע', 'ו', 'ט']),
+    492: LevelData(ans: "N12", imagePath: 'assets/images/level18/n12.webp', logoColor: Colors.black, keyboard: ['I', 'P', 'N', 'A', 'J', 'Q', 'O', 'C', '2', 'O', 'C', '1', 'M', 'J']),
+    493: LevelData(ans: "ONE", imagePath: 'assets/images/level18/one.webp', logoColor: Colors.lightBlue, keyboard: ['M', 'H', 'N', 'A', 'F', 'O', 'O', 'A', 'P', 'P', 'M', 'E', 'V', 'P']),
+    494: LevelData(ans: "רשת 13", imagePath: 'assets/images/level18/reshet.webp', logoColor: Colors.orange, keyboard: ['ג', 'י', '1', 'מ', 'ל', 'א', 'ת', 'ר', '3', 'ז', 'ד', 'ש', 'ט', 'מ']),
+    495: LevelData(ans: "ספורט 5", imagePath: 'assets/images/level18/sport5.webp', logoColor: Colors.deepOrange, keyboard: ['ו', 'ט', 'פ', 'ט', 'ז', 'נ', '5', 'ר', 'פ', 'נ', 'ח', 'כ', 'ל', 'ס']),
+    496: LevelData(ans: "וואלה", imagePath: 'assets/images/level18/walla.webp', logoColor: Colors.blue, keyboard: ['ו', 'ב', 'ו', 'נ', 'צ', 'ע', 'א', 'ל', 'י', 'ה', 'ו', 'ע', 'ה', 'ש']),
+    497: LevelData(ans: "ידיעות אחרונות", imagePath: 'assets/images/level18/yediot.webp', logoColor: Colors.red.shade700, keyboard: ['ת', 'ת', 'י', 'ו', 'א', 'ש', 'ו', 'ו', 'נ', 'ח', 'ר', 'ע', 'ד', 'י']),
+    498: LevelData(ans: "YNET", imagePath: 'assets/images/level18/ynet.webp', logoColor: Colors.red, keyboard: ['K', 'E', 'K', 'H', 'N', 'H', 'C', 'R', 'I', 'F', 'Y', 'T', 'C', 'L']),
   };
 
 // 🆕 ה-IDs הגלובליים ב-gameLevels מוקצים ברצף לפי סדר ה"רמות" (עולמות)

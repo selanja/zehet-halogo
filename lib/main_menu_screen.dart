@@ -32,10 +32,12 @@ import 'battle_pass_screen.dart'; // 🆕 באטל פאס עונתי - מסך ה
 import 'settings_screen.dart'; // 🆕 הגדרות - עברו לאייקון גלגל-שיניים בבית (הוצא מסרגל הניווט התחתון)
 import 'account_link_prompt.dart'; // 🆕 דיאלוג "שמור את ההתקדמות שלך" - הצעה לקשר חשבון Google/Apple
 import 'account_service.dart'; // 🆕 מסך "ברוכים הבאים" עכשיו מציע גם Google ולא רק שם+אורח - ראה _buildWelcomeChoiceScreen
+import 'account_conflict_dialog.dart'; // 🆕 דיאלוג "מצאנו לך חשבון קיים" - ראה _handleGoogleWelcomeSignIn
 import 'logo_race_screen.dart'; // 🆕 "מרוץ לוגואים" - מצב אונליין חדש, 1 על 1, מי שמנחש ראשון בכל לוגו מנצח
 import 'play_vs_person_mode_screen.dart'; // 🆕 מסך רכזת "שחק מול אחרים" - בחירת מוד (דו-קרב/מירוץ), עוצב לפי מסך "04 · בחירת מוד"
 import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשיו" - נקודה ירוקה+מספר על כרטיסי דו-קרב/מרוץ
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי בונוס פרסומת - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר
+import 'app_notification.dart';
 
 class MainMenuScreen extends StatefulWidget {
   const MainMenuScreen({super.key});
@@ -211,9 +213,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   Future<void> _collectAdBonus() async {
     if (!_adBonusAvailable || _collectingAdBonus) return;
     if (!AdsManager.isRewardedReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("אין פרסומת זמינה כרגע, נסה שוב עוד רגע", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
       return;
     }
     setState(() => _collectingAdBonus = true);
@@ -371,6 +371,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         return "יחידות בצה\"ל וכוחות הביטחון";
       case 16:
         return "רכבים חלק ב";
+      case 17:
+        return "אלקטרוניקה ומכשירי חשמל";
+      case 18:
+        return "תקשורת וחדשות ישראליות";
       default:
         return "כללי";
     }
@@ -697,32 +701,49 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     setState(() => _welcomeGoogleLoading = true);
     final result = await AccountService.signInWithGoogle();
     if (!mounted) return;
+    // 🆕 נמצאה התקדמות שמורה קיימת לחשבון הזה - שואלים את המשתמש לאיזו
+    // התקדמות להתחבר (ראו account_conflict_dialog.dart) לפני שממשיכים,
+    // במקום לדרוס אוטומטית כמו קודם.
+    if (result == LinkResult.conflict) {
+      final linked = await showAccountConflictDialog(context);
+      if (!mounted) return;
+      setState(() => _welcomeGoogleLoading = false);
+      if (!linked) return; // המשתמש ביטל - נשארים במסך הבחירה
+      await _afterGoogleLinkSuccess();
+      return;
+    }
     setState(() => _welcomeGoogleLoading = false);
     switch (result) {
       case LinkResult.success:
-        final prefs = await SharedPreferences.getInstance();
-        final savedName = prefs.getString('username');
-        if (!mounted) return;
-        if (savedName != null && savedName.trim().isNotEmpty) {
-          setState(() {
-            username = savedName;
-            showWelcomeScreen = false;
-          });
-          _refreshStats(); // 🩹 מרענן מיד את כל הסטטיסטיקות (מטבעות/XP/רמה/רצף) מהשחזור מהענן - בלי זה מסך הבית "קופץ" מאוחר יותר
-        } else {
-          setState(() {
-            _welcomeInitialName = "";
-            _welcomeShowingNameEntry = true;
-          });
-        }
+        await _afterGoogleLinkSuccess();
         break;
       case LinkResult.error:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("ההתחברות עם Google נכשלה - אפשר לנסות שוב או לשחק כאורח בינתיים", textDirection: TextDirection.rtl)),
-        );
+        AppNotification.show(context, "ההתחברות עם Google נכשלה - אפשר לנסות שוב או לשחק כאורח בינתיים", type: AppNotificationType.error);
         break;
       case LinkResult.cancelled:
         break; // המשתמש סגר את חלון הבחירה של Google - נשארים במסך הבחירה
+      case LinkResult.conflict:
+        break; // כבר טופל למעלה
+    }
+  }
+
+  // 🩹 חולץ מתוך _handleGoogleWelcomeSignIn כדי שגם מסלול ה-conflict
+  // (אחרי שהמשתמש בחר איזו התקדמות להשתמש) יריץ בדיוק את אותה לוגיקה.
+  Future<void> _afterGoogleLinkSuccess() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString('username');
+    if (!mounted) return;
+    if (savedName != null && savedName.trim().isNotEmpty) {
+      setState(() {
+        username = savedName;
+        showWelcomeScreen = false;
+      });
+      _refreshStats(); // 🩹 מרענן מיד את כל הסטטיסטיקות (מטבעות/XP/רמה/רצף) מהשחזור מהענן - בלי זה מסך הבית "קופץ" מאוחר יותר
+    } else {
+      setState(() {
+        _welcomeInitialName = "";
+        _welcomeShowingNameEntry = true;
+      });
     }
   }
 
@@ -1619,15 +1640,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     final adCooldown = await EnergyService.timeUntilNextAdEnergy();
     if (adCooldown != null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("אפשר לצפות בפרסומת נוספת בעוד ${_formatMmSs(adCooldown)} ⏳", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אפשר לצפות בפרסומת נוספת בעוד ${_formatMmSs(adCooldown)}", type: AppNotificationType.warning);
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("אין פרסומת זמינה כרגע, נסה שוב עוד רגע 🎬", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -2319,13 +2336,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   void _showShareFallback(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", textDirection: TextDirection.rtl),
-        backgroundColor: const Color(0xFF241a4f),
-        duration: const Duration(seconds: 5),
-      ),
-    );
+    AppNotification.show(context, "לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", duration: const Duration(seconds: 5));
   }
 
 

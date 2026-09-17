@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'iap_manager.dart';
 import 'starter_pack_service.dart';
 import 'app_icons.dart';
+import 'app_notification.dart';
 
 class StarterPackDialog extends StatefulWidget {
   final String variantId; // starter_pack_a/b/c
@@ -70,9 +71,7 @@ class _StarterPackDialogState extends State<StarterPackDialog> {
     if (!mounted) return;
     setState(() => _buying = false);
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("הרכישה אינה זמינה כרגע, נסה שוב מאוחר יותר"), backgroundColor: Colors.deepPurple),
-      );
+      AppNotification.show(context, "הרכישה אינה זמינה כרגע, נסה שוב מאוחר יותר", type: AppNotificationType.error);
       return;
     }
     // הרכישה בפועל מטופלת אסינכרונית ב-IapManager.purchaseStream - סוגרים

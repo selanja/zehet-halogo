@@ -27,6 +27,9 @@ import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשי
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי כל שינוי מטבעות/XP - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר (אותו תיקון כמו duel_room_screen.dart)
 import 'logo_race_service.dart';
 import 'opponent_found_widgets.dart'; // 🆕 מסך "נמצא יריב!" - זהה בדיוק לזה שבדו-קרב (ראו הערה בקובץ)
+import 'app_notification.dart';
+import 'duel_service.dart' show DuelService; // 🆕 מוניטין/אזהרות/חסימה משותפים עם הדו-קרב - ראו _maybeForfeitDisconnectedOpponent
+import 'active_match_service.dart'; // 🆕 "חזרה למשחק" אחרי שהאפליקציה נסגרה לגמרי
 
 class LogoRaceScreen extends StatefulWidget {
   final String username;
@@ -114,6 +117,21 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   int _tipIndex = 0;
   Timer? _elapsedTimer;
   int _elapsedSeconds = 0;
+
+  // 🆕 זיהוי ניתוק אמיתי של היריב - בדיוק כמו duel_room_screen.dart
+  // (DuelService.updateHeartbeat/opponentDisconnectTimeoutSeconds), רק
+  // דרך LogoRaceService המקביל. במרוץ לא היה שום מנגנון כזה עד עכשיו -
+  // אם היריב סגר את האפליקציה, לא היה שום דבר שמכריז מנצח.
+  Timer? _heartbeatTimer;
+  Timer? _disconnectCheckTimer;
+  DateTime? _oppLastSeenServerValuePrev;
+  DateTime? _oppLastSeenLocalClock;
+  bool _disconnectForfeitTriggered = false;
+  bool _activeMatchSaved = false;
+  // 🆕 ראו הסבר מלא ב-LogoRaceService.sendGuess/advanceAfterStageDecided -
+  // מונע קריאה כפולה ל-advanceAfterStageDecided על אותו שלב בדיוק.
+  int? _advanceScheduledForStage;
+  static const Duration _roundResultBannerDuration = Duration(milliseconds: 2200);
 
   late final AnimationController _radarController;
   late final AnimationController _pulseController;
@@ -220,9 +238,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   // יריב (ראו _payEntryFeeIfNeeded), בדיוק כמו בדו-קרב.
   Future<void> _onStakeSelected(int stake) async {
     if (_coins < stake) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("חסרים לך מטבעות לרמה הזו (יש לך $_coins)", textDirection: TextDirection.rtl)),
-      );
+      AppNotification.show(context, "חסרים לך מטבעות לרמה הזו (יש לך $_coins)", type: AppNotificationType.error);
       return;
     }
     _selectedStake = stake;
@@ -266,6 +282,23 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     }
   }
 
+  // 🆕 ראו LogoRaceService.sendGuess/advanceAfterStageDecided - ברגע
+  // ש-stageWinner נקבע לשלב הנוכחי אבל currentStage עדיין לא התקדם,
+  // מתזמנים את ההתקדמות בפועל להתרחש רק אחרי שהבאנר הספיק להיראות.
+  // שני הלקוחות מתזמנים את זה (לא רק המנצח) - ה-Transaction ב-service
+  // מגן מפני הפעלה כפולה, כך שזה בטוח.
+  void _maybeScheduleStageAdvance(LogoRaceMatch race) {
+    final stage = race.currentStage;
+    if (_advanceScheduledForStage == stage) return;
+    final decided = race.stageWinner.containsKey(stage.toString());
+    if (!decided) return;
+    _advanceScheduledForStage = stage;
+    Future.delayed(_roundResultBannerDuration, () {
+      if (!mounted || _raceId == null) return;
+      LogoRaceService.advanceAfterStageDecided(raceId: _raceId!, stage: stage);
+    });
+  }
+
   void _startTipRotation() {
     _tipTimer?.cancel();
     _tipTimer = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -282,6 +315,13 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       _payEntryFeeIfNeeded(race.stake);
     }
 
+    // 🆕 "חזרה למשחק" - שומר מצביע מקומי שיש מרוץ פעיל (ראו
+    // active_match_service.dart), פעם אחת ברגע שיש לנו מרוץ אמיתי.
+    if (!_activeMatchSaved && (race.status == 'countdown' || race.status == 'playing')) {
+      _activeMatchSaved = true;
+      ActiveMatchService.save(type: ActiveMatchType.race, matchId: race.raceId);
+    }
+
     switch (race.status) {
       case 'countdown':
         if (_phase != _Phase.countdown && _phase != _Phase.playing) {
@@ -292,6 +332,9 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       case 'playing':
         if (_phase != _Phase.playing) setState(() => _phase = _Phase.playing);
         _syncStage(race);
+        _startHeartbeatIfNeeded(race);
+        _checkOpponentHeartbeat(race);
+        _maybeScheduleStageAdvance(race);
         break;
       case 'finished':
         _stageTicker?.cancel();
@@ -306,6 +349,50 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         }
         break;
     }
+  }
+
+  // 🆕 מתחיל לשלוח "פעימת חיים" למרוץ הזה - בדיוק כמו
+  // duel_room_screen.dart._startHeartbeatIfNeeded. רץ פעם אחת בלבד הודות
+  // לבדיקת _heartbeatTimer != null.
+  void _startHeartbeatIfNeeded(LogoRaceMatch race) {
+    if (_heartbeatTimer != null) return;
+    final isPlayer1 = race.player1Id == _myDeviceId;
+    LogoRaceService.updateHeartbeat(race.raceId, isPlayer1: isPlayer1);
+    _heartbeatTimer = Timer.periodic(Duration(seconds: DuelService.heartbeatIntervalSeconds), (_) {
+      if (_race != null && _race!.status == 'finished') return;
+      LogoRaceService.updateHeartbeat(race.raceId, isPlayer1: isPlayer1);
+    });
+  }
+
+  // 🆕 עוקב מתי ראינו לאחרונה פעימת חיים אמיתית (חדשה) מהיריב - בדיוק
+  // כמו duel_room_screen.dart._checkOpponentHeartbeat.
+  void _checkOpponentHeartbeat(LogoRaceMatch race) {
+    final oppLastSeen = race.opponentLastSeenFor(_myDeviceId);
+    if (oppLastSeen != null && oppLastSeen != _oppLastSeenServerValuePrev) {
+      _oppLastSeenServerValuePrev = oppLastSeen;
+      _oppLastSeenLocalClock = DateTime.now();
+    }
+    _oppLastSeenLocalClock ??= DateTime.now();
+    _disconnectCheckTimer ??= Timer.periodic(const Duration(seconds: 3), (_) async {
+      await _maybeForfeitDisconnectedOpponent();
+      if (mounted) setState(() {});
+    });
+  }
+
+  // 🆕 מכריז עליי כמנצח אם היריב שותק יותר מדי זמן - בדיוק כמו
+  // duel_room_screen.dart._maybeForfeitDisconnectedOpponent, כולל אותה
+  // הגנה מפני "שני הצדדים חושבים שהם ניצחו" (forfeitRace מחזיר bool).
+  Future<void> _maybeForfeitDisconnectedOpponent() async {
+    final race = _race;
+    if (_disconnectForfeitTriggered || race == null || race.status != 'playing' || _oppLastSeenLocalClock == null || _raceId == null) return;
+    final silentFor = DateTime.now().difference(_oppLastSeenLocalClock!);
+    if (silentFor < Duration(seconds: DuelService.opponentDisconnectTimeoutSeconds)) return;
+    _disconnectForfeitTriggered = true;
+    final opponentId = race.opponentIdFor(_myDeviceId);
+    final iWon = await LogoRaceService.forfeitRace(_raceId!, opponentId);
+    // 🆕 ניתוק מוחלט - תמיד נספר כאזהרה (משותפת עם הדו-קרב), ראו
+    // ההסבר המלא ליד forfeitBanThreshold ב-duel_service.dart.
+    if (iWon) await DuelService.applyForfeitPenalty(opponentId, countsAsWarning: true);
   }
 
   // 🆕 דמי ההימור (מטבעות) כבר "אושרו" בבחירת הרמה (בדקנו שיש מספיק), אבל
@@ -486,14 +573,21 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     }
   }
 
-  void _leaveIfNeeded() {
+  // 🆕 `explicit` - true רק כשמגיעים לכאן אחרי שהמשתמש אישר במפורש
+  // בדיאלוג "לצאת מהמרוץ?" (ראה _confirmExitRace). false בכל מקרה אחר
+  // (dispose בלי אישור - למשל האפליקציה נסגרה) - שם זה תמיד נספר כאזהרה,
+  // בדיוק כמו בדו-קרב. כשזה explicit, האזהרה תלויה בשלב הנוכחי (ראו
+  // ההסבר המלא ליד forfeitBanThreshold ב-duel_service.dart).
+  void _leaveIfNeeded({bool explicit = false}) {
     if (_leftRace) return;
     _leftRace = true;
     PresenceService.stopHeartbeat();
     if (_phase == _Phase.searching) {
       _service.cancelSearch(_myDeviceId);
     } else if (_raceId != null && (_phase == _Phase.countdown || _phase == _Phase.playing)) {
+      final countsAsWarning = !explicit || (_race?.currentStage ?? 0) < 2;
       LogoRaceService.forfeitRace(_raceId!, _myDeviceId);
+      DuelService.applyForfeitPenalty(_myDeviceId, countsAsWarning: countsAsWarning);
     }
   }
 
@@ -513,7 +607,8 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("לצאת מהמרוץ?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
-          "אם תצא עכשיו היריב יוכרז מנצח ויקבל את כל הקופה ($stake שהימרת + $stake שלו) - המטבעות שכבר שילמת לא יוחזרו.",
+          "אם תצא עכשיו היריב יוכרז מנצח ויקבל את כל הקופה ($stake שהימרת + $stake שלו) - המטבעות שכבר שילמת לא יוחזרו.\n\n"
+          "${(_race?.currentStage ?? 0) < 2 ? "זו עזיבה מוקדמת - תקבל רק אזהרה" : "עזיבה בשלב הזה נחשבת פרישה"} (${DuelService.forfeitBanThreshold} אזהרות = חסימה זמנית).",
           textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
         ),
@@ -532,7 +627,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     );
     _exitDialogShowing = false;
     if (confirmed == true && mounted) {
-      _leaveIfNeeded();
+      _leaveIfNeeded(explicit: true);
       Navigator.pop(context);
     }
   }
@@ -540,11 +635,15 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   @override
   void dispose() {
     _leaveIfNeeded();
+    // 🆕 dispose תמיד רץ ב"יציאה מנוהלת" - ראו ההסבר המלא ב-active_match_service.dart.
+    ActiveMatchService.clear();
     _raceSub?.cancel();
     _countdownTicker?.cancel();
     _stageTicker?.cancel();
     _tipTimer?.cancel();
     _elapsedTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _disconnectCheckTimer?.cancel();
     _radarController.dispose();
     _pulseController.dispose();
     _chatScroll.dispose();
@@ -569,27 +668,66 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: SafeArea(
-            child: switch (_phase) {
-              _Phase.connecting => const Center(child: CircularProgressIndicator(color: Color(0xFF7DD3FC))),
-              _Phase.noEnergy => _buildMessageScreen(icon: Icons.bolt_rounded, title: 'אין מספיק אנרגיה', subtitle: 'למרוץ נדרשות ${EnergyService.duelCost} אנרגיות מתוך ${EnergyService.maxEnergy}. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.'),
-              _Phase.noCoins => _buildMessageScreen(icon: Icons.monetization_on_rounded, title: 'אין מספיק מטבעות', subtitle: 'דמי כניסה למרוץ: החל מ-${LogoRaceService.stakeOptions.first} מטבעות (יש לך $_coins). המנצח לוקח את כל הקופה!'),
-              _Phase.error => _buildMessageScreen(icon: Icons.wifi_off_rounded, title: 'לא הצלחנו להתחבר', subtitle: 'בדוק את החיבור לאינטרנט ונסה שוב'),
-              _Phase.noOpponent => _buildMessageScreen(icon: Icons.person_search_rounded, title: 'אין כרגע יריב זמין', subtitle: 'האנרגיה הוחזרה אליך - נסה שוב עוד רגע'),
-              // 🆕 בורר ההימור עצמו כבר לא מוצג כאן inline - הוא נפתח
-              // כ-bottom sheet מעל המסך (ראו _openStakeSheet). מה שנשאר
-              // גלוי כאן ברקע (מטושטש/מוכהה על ידי ה-barrier של הגליון)
-              // הוא רק סרגל העליון, בדיוק כמו שרואים מאחורי כל bottom
-              // sheet אמיתי.
-              _Phase.selectingStake => _buildTopBar(),
-              _Phase.searching => _buildSearching(),
-              _Phase.countdown => _buildCountdown(),
-              _Phase.playing => _buildPlaying(),
-              // 🆕 בדיוק כמו duel_room_screen.dart - כשהמרוץ מסתיים, המסך
-              // עצמו ממשיך להראות את הרגע האחרון של המשחק (קפוא), ומסך
-              // התוצאה מוצג כדיאלוג מעל זה (ראה _showRaceResultDialog),
-              // לא כהחלפת state מלאה של גוף המסך.
-              _Phase.finished => _buildPlaying(),
-            },
+            child: Stack(
+              children: [
+                switch (_phase) {
+                  _Phase.connecting => const Center(child: CircularProgressIndicator(color: Color(0xFF7DD3FC))),
+                  _Phase.noEnergy => _buildMessageScreen(icon: Icons.bolt_rounded, title: 'אין מספיק אנרגיה', subtitle: 'למרוץ נדרשות ${EnergyService.duelCost} אנרגיות מתוך ${EnergyService.maxEnergy}. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.'),
+                  _Phase.noCoins => _buildMessageScreen(icon: Icons.monetization_on_rounded, title: 'אין מספיק מטבעות', subtitle: 'דמי כניסה למרוץ: החל מ-${LogoRaceService.stakeOptions.first} מטבעות (יש לך $_coins). המנצח לוקח את כל הקופה!'),
+                  _Phase.error => _buildMessageScreen(icon: Icons.wifi_off_rounded, title: 'לא הצלחנו להתחבר', subtitle: 'בדוק את החיבור לאינטרנט ונסה שוב'),
+                  _Phase.noOpponent => _buildMessageScreen(icon: Icons.person_search_rounded, title: 'אין כרגע יריב זמין', subtitle: 'האנרגיה הוחזרה אליך - נסה שוב עוד רגע'),
+                  // 🆕 בורר ההימור עצמו כבר לא מוצג כאן inline - הוא נפתח
+                  // כ-bottom sheet מעל המסך (ראו _openStakeSheet). מה שנשאר
+                  // גלוי כאן ברקע (מטושטש/מוכהה על ידי ה-barrier של הגליון)
+                  // הוא רק סרגל העליון, בדיוק כמו שרואים מאחורי כל bottom
+                  // sheet אמיתי.
+                  _Phase.selectingStake => _buildTopBar(),
+                  _Phase.searching => _buildSearching(),
+                  _Phase.countdown => _buildCountdown(),
+                  _Phase.playing => _buildPlaying(),
+                  // 🆕 בדיוק כמו duel_room_screen.dart - כשהמרוץ מסתיים, המסך
+                  // עצמו ממשיך להראות את הרגע האחרון של המשחק (קפוא), ומסך
+                  // התוצאה מוצג כדיאלוג מעל זה (ראה _showRaceResultDialog),
+                  // לא כהחלפת state מלאה של גוף המסך.
+                  _Phase.finished => _buildPlaying(),
+                },
+                // 🆕 "ממתין לחיבור מחדש" - בדיוק כמו duel_room_screen.dart,
+                // ראו ההסבר המלא שם.
+                if (_phase == _Phase.playing) _buildWaitingForReconnectOverlay(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaitingForReconnectOverlay() {
+    final race = _race;
+    if (race == null || _oppLastSeenLocalClock == null || _disconnectForfeitTriggered) return const SizedBox.shrink();
+    final silentSeconds = DateTime.now().difference(_oppLastSeenLocalClock!).inSeconds;
+    const graceSeconds = 5;
+    if (silentSeconds < graceSeconds) return const SizedBox.shrink();
+    final remaining = (DuelService.opponentDisconnectTimeoutSeconds - silentSeconds).clamp(0, DuelService.opponentDisconnectTimeoutSeconds);
+    final oppName = race.opponentNameFor(_myDeviceId);
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF0C1B2A).withValues(alpha: 0.9),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(width: 46, height: 46, child: CircularProgressIndicator(color: Color(0xFF7DD3FC), strokeWidth: 3)),
+              const SizedBox(height: 20),
+              Text("ממתין לחיבור מחדש של $oppName", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              Text(
+                remaining > 0 ? "אם לא יתחבר תוך $remaining שניות, זה ייחשב ניצחון טכני" : "קובעים ניצחון טכני...",
+                textAlign: TextAlign.center,
+                textDirection: TextDirection.rtl,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
+              ),
+            ],
           ),
         ),
       ),
@@ -823,9 +961,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     // בדיוק כמו קודם.
     void onTap() {
       if (!canAfford) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("חסרים לך מטבעות לרמה הזו (יש לך $_coins)", textDirection: TextDirection.rtl)),
-        );
+        AppNotification.show(context, "חסרים לך מטבעות לרמה הזו (יש לך $_coins)", type: AppNotificationType.error);
         return;
       }
       // 🩹 תוקן - ראו הערה מפורטת ליד _pendingStake למעלה (זה בדיוק מה

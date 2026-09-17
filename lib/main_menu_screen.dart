@@ -925,7 +925,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               right: 0,
               bottom: 30,
               child: const Text(
-                "גרסה 1.1.1 · © כל הזכויות שמורות",
+                "גרסה 1.2.0 · © כל הזכויות שמורות",
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.w500),
               ),

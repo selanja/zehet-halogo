@@ -92,6 +92,12 @@ class AccountService {
   static User? _pendingUser;
   static String? _pendingLabel;
 
+  // 🩹 תוקן: "אין לי אפשרות לחבר את הטלפון למחשב" - כדי שאפשר יהיה
+  // לראות את הסיבה המדויקת לכישלון *ישירות על מסך האייפון* (בלי Mac/
+  // Console.app בכלל), כל catch באזור ההתחברות שומר כאן את הטקסט של
+  // השגיאה, וה-UI (account_link_prompt.dart) מציג אותו בהודעת השגיאה.
+  static String? lastAuthError;
+
   /// פרטי ההתקדמות השמורה בענן שמחכה להחלטת המשתמש - null אם אין
   /// כרגע התנגשות פתוחה. ה-UI קורא לזה מיד אחרי LinkResult.conflict.
   static SignInConflict? pendingConflict;
@@ -158,6 +164,7 @@ class AccountService {
       return result;
     } catch (e) {
       debugPrint('GOOGLE SIGN-IN ERROR: $e');
+      lastAuthError = e.toString();
       return LinkResult.error;
     }
   }
@@ -190,6 +197,7 @@ class AccountService {
       return await _afterSignIn(user, label: label);
     } catch (e) {
       debugPrint('APPLE SIGN-IN ERROR: $e');
+      lastAuthError = e.toString();
       return LinkResult.error;
     }
   }
@@ -297,6 +305,7 @@ class AccountService {
       }
     } catch (e) {
       debugPrint('RESOLVE SIGN-IN CONFLICT ERROR: $e');
+      lastAuthError = e.toString();
       return false;
     }
 

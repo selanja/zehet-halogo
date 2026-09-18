@@ -288,6 +288,25 @@ class AccountService {
     } catch (_) {}
   }
 
+  // ========================================================================
+  // 🆕 "שיהיה אופציה להתנתק מהחשבון שהתחברתי אליו" - מתנתק מהחשבון
+  // Google/Apple המקושר, בלי למחוק שום דבר: ההתקדמות שכרגע על המכשיר
+  // (שהיא ההתקדמות שהייתה מסונכרנת מהחשבון עד הרגע הזה) נשארת בדיוק
+  // כמו שהיא, רק שמעכשיו effectiveId() חוזר להשתמש ב-deviceId הרגיל
+  // במקום ב-uid המקושר - בדיוק כמו לפני שקישרו חשבון בכלל.
+  // ========================================================================
+  static Future<void> signOutLinked() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('linkedUid');
+    await prefs.remove('linkedLabel');
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    try {
+      await GoogleSignIn().signOut();
+    } catch (_) {}
+  }
+
   static String _generateNonce([int length = 32]) {
     const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
@@ -324,6 +343,13 @@ class AccountService {
       for (final doc in friendsSnap.docs) {
         await doc.reference.delete().catchError((_) {});
       }
+      // 🩹 תוקן: "שזה ימחק ממש את כל השורה שלא ישאר ממנה זכר" - תת-אוסף
+      // friendRequests/* (בקשות חברות ממתינות *אליו*, ראו friend_service.dart)
+      // לא נמחק בכלל קודם - היה נשאר לנצח גם אחרי מחיקת המשתמש.
+      final requestsSnap = await _players.doc(id).collection('friendRequests').get();
+      for (final doc in requestsSnap.docs) {
+        await doc.reference.delete().catchError((_) {});
+      }
     } catch (_) {}
 
     await _players.doc(id).delete().catchError((_) {});
@@ -339,6 +365,9 @@ class AccountService {
         .doc('${DuelService.currentSeasonId()}_$id')
         .delete()
         .catchError((_) {});
+    // 🩹 תוקן: תור ההמתנה של מצב מירוץ (logo_race_service.dart) - אותה
+    // בעיה בדיוק כמו duelQueue למעלה, פשוט נשכח קודם.
+    await FirebaseFirestore.instance.collection('logoRaceQueue').doc(id).delete().catchError((_) {});
   }
 
   // ========================================================================

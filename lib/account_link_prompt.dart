@@ -15,11 +15,23 @@ import 'app_notification.dart';
 class AccountLinkPrompt {
   /// מציג את הדיאלוג רק אם: (א) המכשיר עדיין לא מקושר, ו-(ב) השחקן לא
   /// ביקש בעבר "אל תזכיר לי שוב". קריאה בטוחה מכל מקום - לא זורקת שגיאה.
+  /// 🩹 תוקן: "אם התחברתי כאורח אני לא רוצה שכל פעם תקפוץ ההודעה" - עד
+  /// עכשיו הדיאלוג קפץ בכל כניסה קרה לאפליקציה (אלא אם סימנו "אל תזכיר
+  /// לי שוב", שהוא כבר ויתור סופי על ההצעה). עכשיו: לכל היותר פעם ב-24
+  /// שעות, כל עוד לא סומן "אל תזכיר לי שוב".
+  static const _minHoursBetweenShows = 24;
+
   static Future<void> maybeShow(BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getString('linkedUid') != null) return;
       if (prefs.getBool('hideLinkAccountPrompt') == true) return;
+      final lastShownMs = prefs.getInt('lastLinkPromptShownAt');
+      if (lastShownMs != null) {
+        final elapsed = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastShownMs));
+        if (elapsed.inHours < _minHoursBetweenShows) return;
+      }
+      await prefs.setInt('lastLinkPromptShownAt', DateTime.now().millisecondsSinceEpoch);
       if (!context.mounted) return;
       await show(context);
     } catch (_) {}
@@ -119,9 +131,18 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13),
             ),
             const SizedBox(height: 20),
-            if (_loading)
-              const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: CircularProgressIndicator(color: Color(0xFFFFD86B)))
-            else ...[
+            if (_loading) ...[
+              const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: CircularProgressIndicator(color: Color(0xFFFFD86B))),
+              // 🩹 תוקן: "לחצתי השאר עם המשתמש הזה ונהיה ככה חושב ולא
+              // עוצר" - עד עכשיו לא הייתה שום דרך גלויה לצאת מהמסך הזה
+              // אם ה-await נתקע (למשל בעיית URL scheme ב-iOS שכבר תוקנה,
+              // אבל גם כרשת ביטחון לכל תקלה עתידית דומה) - רק סגירה
+              // "סמויה" של הדיאלוג עם לחיצה מחוץ לו. עכשיו יש כפתור מפורש.
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("ביטול", style: TextStyle(color: Colors.white54, fontSize: 12.5)),
+              ),
+            ] else ...[
               _providerButton(
                 label: "המשך עם Google",
                 icon: Icons.g_mobiledata_rounded,

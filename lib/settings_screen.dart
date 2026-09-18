@@ -438,27 +438,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAccountRow() {
     final label = _linkedLabel;
     if (label != null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 15),
-        decoration: BoxDecoration(
+      return Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.4)),
-          color: const Color(0xFF7DD3FC).withValues(alpha: 0.08),
-        ),
-        child: Row(
-          textDirection: TextDirection.rtl,
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Color(0xFF7DD3FC), size: 17),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                "מחובר: $label",
-                textDirection: TextDirection.rtl,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 14, fontWeight: FontWeight.w800),
-              ),
+          onTap: _confirmSignOutLinked,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 15),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.4)),
+              color: const Color(0xFF7DD3FC).withValues(alpha: 0.08),
             ),
-          ],
+            child: Row(
+              textDirection: TextDirection.rtl,
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Color(0xFF7DD3FC), size: 17),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    "מחובר: $label",
+                    textDirection: TextDirection.rtl,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Icon(Icons.logout_rounded, color: Colors.white.withValues(alpha: 0.4), size: 16),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -471,6 +480,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) await _loadProfileStats(); // מרענן את השורה אחרי קישור מוצלח
       },
     );
+  }
+
+  // 🆕 "שיהיה אופציה להתנתק מהחשבון שהתחברתי אליו" - לוחצים על שורת
+  // "מחובר: ..." בהגדרות כדי להתנתק (לא למחוק כלום, ראו AccountService.signOutLinked).
+  Future<void> _confirmSignOutLinked() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF241a4f),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white.withValues(alpha: 0.14))),
+        title: const Text("להתנתק מהחשבון?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white)),
+        content: const Text(
+          "ההתקדמות הנוכחית שלך תישאר במכשיר הזה כרגיל. תוכל להתחבר שוב לאותו חשבון בכל עת.",
+          textDirection: TextDirection.rtl,
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("ביטול", style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("התנתק", style: TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w900))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await AccountService.signOutLinked();
+    if (!mounted) return;
+    await _loadProfileStats();
+    if (mounted) AppNotification.show(context, "התנתקת מהחשבון", type: AppNotificationType.success);
   }
 
   // 🆕 "מחק משתמש" - אישור מפורש (פעולה סופית ובלתי הפיכה) לפני מחיקה

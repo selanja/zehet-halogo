@@ -292,7 +292,7 @@ class BattlePassService {
   static Future<void> pullFromCloudIfNeeded({bool force = false}) async {
     try {
       final effectiveId = await AccountService.effectiveId();
-      final doc = await _players.doc(effectiveId).get();
+      final doc = await _players.doc(effectiveId).get().timeout(const Duration(seconds: 15));
       final bp = doc.data()?['battlePass'] as Map<String, dynamic>?;
       if (bp == null || bp['season'] != currentSeasonId()) return;
 

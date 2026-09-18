@@ -239,6 +239,7 @@ class AccountService {
     final xp = prefs.getInt('xp') ?? 0;
     final maxLevel = prefs.getInt('maxLevel') ?? 1;
     final username = prefs.getString('username');
+    debugPrint('GOOGLE SIGN-IN: _linkFresh - writing players/${user.uid}');
     await _players.doc(user.uid).set({
       'coins': coins,
       'xp': xp,
@@ -247,7 +248,8 @@ class AccountService {
       'linkedFromDeviceId': deviceId,
       'authLabel': label,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    }, SetOptions(merge: true)).timeout(_stepTimeout);
+    debugPrint('GOOGLE SIGN-IN: _linkFresh - write done');
 
     await _saveLinkState(uid: user.uid, label: label);
     // 🆕 סנכרון הבאטל פאס - ראו ההסבר המלא ב-battle_pass_service.dart.
@@ -263,28 +265,39 @@ class AccountService {
   // משאיר את המכשיר כמו שהוא, ודורס איתו את מה שהיה שמור בענן (כלומר
   // מרגע זה ההתקדמות של המכשיר הזה היא "הנכונה" לחשבון הזה).
   // ========================================================================
+  // 🩹 תוקן: זו הייתה בדיוק סיבת התקיעה "לנצח" אחרי בחירה בדיאלוג
+  // ההתנגשות - בניגוד ל-signInWithGoogle/signInWithApple, לפונקציה הזו
+  // לא היה בכלל try/catch או timeout. אם כתיבת ה-Firestore (ב-_linkFresh
+  // או ב-pullFromCloudIfNeeded) נתקעה מכל סיבה (רשת/permission) - ה-await
+  // כאן פשוט לא היה חוזר לעולם, וה-UI שקורא לזה (showAccountConflictDialog)
+  // נשאר תקוע במסך הטעינה בלי שום שגיאה.
   static Future<bool> resolveSignInConflict({required bool useCloudProgress}) async {
     final user = _pendingUser;
     final label = _pendingLabel;
     if (user == null || label == null) return false;
 
-    if (useCloudProgress) {
-      final data = pendingConflict;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('coins', data?.coins ?? 15);
-      await prefs.setInt('xp', data?.xp ?? 0);
-      await prefs.setInt('maxLevel', data?.maxLevel ?? 1);
-      final savedUsername = data?.username;
-      if (savedUsername != null && savedUsername.isNotEmpty) {
-        await prefs.setString('username', savedUsername);
+    try {
+      if (useCloudProgress) {
+        final data = pendingConflict;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('coins', data?.coins ?? 15);
+        await prefs.setInt('xp', data?.xp ?? 0);
+        await prefs.setInt('maxLevel', data?.maxLevel ?? 1);
+        final savedUsername = data?.username;
+        if (savedUsername != null && savedUsername.isNotEmpty) {
+          await prefs.setString('username', savedUsername);
+        }
+        await _saveLinkState(uid: user.uid, label: label);
+        // 🆕 force:true - המשתמש בחר במפורש "התחבר עם ההתקדמות השמורה",
+        // אז דורסים כל התקדמות באטל פאס מקומית שהייתה למכשיר הזה לעונה
+        // הנוכחית (ראו ההסבר המלא ב-battle_pass_service.dart.pullFromCloudIfNeeded).
+        await BattlePassService.pullFromCloudIfNeeded(force: true).timeout(_stepTimeout);
+      } else {
+        await _linkFresh(user, label: label);
       }
-      await _saveLinkState(uid: user.uid, label: label);
-      // 🆕 force:true - המשתמש בחר במפורש "התחבר עם ההתקדמות השמורה",
-      // אז דורסים כל התקדמות באטל פאס מקומית שהייתה למכשיר הזה לעונה
-      // הנוכחית (ראו ההסבר המלא ב-battle_pass_service.dart.pullFromCloudIfNeeded).
-      await BattlePassService.pullFromCloudIfNeeded(force: true);
-    } else {
-      await _linkFresh(user, label: label);
+    } catch (e) {
+      debugPrint('RESOLVE SIGN-IN CONFLICT ERROR: $e');
+      return false;
     }
 
     pendingConflict = null;

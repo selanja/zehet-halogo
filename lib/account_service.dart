@@ -128,19 +128,34 @@ class AccountService {
   // ========================================================================
   // התחברות עם Google
   // ========================================================================
+  // 🩹 תוקן: "לחצתי המשך אחרי גוגל ונהיה תקוע חושב לנצח, לא עוצר" - גם
+  // אחרי תיקון ה-URL scheme וה-GoogleService-Info.plist ב-iOS (build חדש
+  // הותקן ועדיין קרה), כלומר יש עוד סיבה שלא הצלחתי לאתר בלי לוג ממכשיר
+  // אמיתי. כל שלב עטוף עכשיו ב-timeout (עם debugPrint לפני/אחרי) - כך
+  // שבמקום תקיעה אינסופית, אחרי 20 שניות זה ייכשל עם שגיאה ברורה, וה-
+  // debugPrint-ים (נראים ב-Console.app במק, מסוננים לפי "Runner") יראו
+  // בדיוק על איזו שורה זה נעצר בפעם הבאה שזה קורה.
+  static const _stepTimeout = Duration(seconds: 20);
+
   static Future<LinkResult> signInWithGoogle() async {
     try {
-      final googleUser = await GoogleSignIn().signIn();
+      debugPrint('GOOGLE SIGN-IN: starting GoogleSignIn().signIn()');
+      final googleUser = await GoogleSignIn().signIn().timeout(_stepTimeout);
+      debugPrint('GOOGLE SIGN-IN: signIn() returned (user=${googleUser?.email})');
       if (googleUser == null) return LinkResult.cancelled; // המשתמש ביטל את חלון הבחירה
-      final googleAuth = await googleUser.authentication;
+      final googleAuth = await googleUser.authentication.timeout(_stepTimeout);
+      debugPrint('GOOGLE SIGN-IN: got authentication tokens');
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      final userCred = await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCred = await FirebaseAuth.instance.signInWithCredential(credential).timeout(_stepTimeout);
+      debugPrint('GOOGLE SIGN-IN: signInWithCredential() returned (uid=${userCred.user?.uid})');
       final user = userCred.user;
       if (user == null) return LinkResult.error;
-      return await _afterSignIn(user, label: user.email ?? googleUser.email);
+      final result = await _afterSignIn(user, label: user.email ?? googleUser.email);
+      debugPrint('GOOGLE SIGN-IN: _afterSignIn() returned $result');
+      return result;
     } catch (e) {
       debugPrint('GOOGLE SIGN-IN ERROR: $e');
       return LinkResult.error;
@@ -154,15 +169,18 @@ class AccountService {
     try {
       final rawNonce = _generateNonce();
       final hashedNonce = _sha256(rawNonce);
+      debugPrint('APPLE SIGN-IN: starting getAppleIDCredential()');
       final appleCred = await SignInWithApple.getAppleIDCredential(
         scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
         nonce: hashedNonce,
-      );
+      ).timeout(_stepTimeout);
+      debugPrint('APPLE SIGN-IN: getAppleIDCredential() returned');
       final oauthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCred.identityToken,
         rawNonce: rawNonce,
       );
-      final userCred = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      final userCred = await FirebaseAuth.instance.signInWithCredential(oauthCredential).timeout(_stepTimeout);
+      debugPrint('APPLE SIGN-IN: signInWithCredential() returned (uid=${userCred.user?.uid})');
       final user = userCred.user;
       if (user == null) return LinkResult.error;
       // 🆕 אפל מחזירה מייל/שם רק בהתחברות הראשונה אי-פעם לאפליקציה הזו -
@@ -190,7 +208,9 @@ class AccountService {
   // "איזו משתי ההתקדמויות הקיימות תישאר", לא יצירת פרופיל נוסף.
   // ========================================================================
   static Future<LinkResult> _afterSignIn(User user, {required String label}) async {
-    final cloudDoc = await _players.doc(user.uid).get();
+    debugPrint('GOOGLE SIGN-IN: _afterSignIn - reading players/${user.uid}');
+    final cloudDoc = await _players.doc(user.uid).get().timeout(_stepTimeout);
+    debugPrint('GOOGLE SIGN-IN: _afterSignIn - players/${user.uid} exists=${cloudDoc.exists}');
 
     if (cloudDoc.exists) {
       final data = cloudDoc.data() ?? {};

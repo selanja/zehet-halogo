@@ -141,7 +141,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     super.initState();
     _radarController = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
     _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat(reverse: true);
-    AdsManager.recordGameEntered();
+    AdsManager.recordDuelEntered(); // מירוץ = אותו סוג משחק 1 על 1 כמו דו-קרב, אותה לוגיקת פרסומות
     _connect();
   }
 
@@ -1838,6 +1838,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                         // מרוץ חדש - המקבילה של "דו-קרב נוסף" מבחינת המרוץ
                         // (שאין לו לובי נפרד מהמסך עצמו, בניגוד לדו-קרב).
                         Navigator.pop(context);
+                        AdsManager.onDuelFinished(); // פרסומת "אחרי משחק 1 על 1" - ראו ads_manager.dart
                         Navigator.push(context, MaterialPageRoute(builder: (_) => LogoRaceScreen(username: widget.username)));
                       },
                       child: Ink(
@@ -1885,6 +1886,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                           onPressed: () {
                             Navigator.pop(context);
                             Navigator.pop(context);
+                            AdsManager.onDuelFinished(); // פרסומת "אחרי משחק 1 על 1" - ראו ads_manager.dart
                           },
                           child: const Text('חזרה לתפריט', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                         ),

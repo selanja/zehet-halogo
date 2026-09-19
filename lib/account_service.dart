@@ -182,8 +182,15 @@ class AccountService {
         nonce: hashedNonce,
       ).timeout(_stepTimeout);
       debugPrint('APPLE SIGN-IN: getAppleIDCredential() returned');
+      // 🩹 תוקן: "[firebase_auth/invalid-credential] Invalid OAuth response
+      // from apple.com" - למרות ש-idToken היה תקין, מגרסאות מסוימות של
+      // firebase_auth (SDK v9 המודולרי) ואילך Firebase דורש גם את
+      // authorizationCode של אפל (מועבר כ-accessToken) כדי לאמת את
+      // האישור - בלעדיו הוא נחשב "לא שלם" ונדחה עם השגיאה הזו בדיוק,
+      // גם כשה-idToken עצמו תקין לגמרי בפני עצמו.
       final oauthCredential = OAuthProvider("apple.com").credential(
         idToken: appleCred.identityToken,
+        accessToken: appleCred.authorizationCode,
         rawNonce: rawNonce,
       );
       final userCred = await FirebaseAuth.instance.signInWithCredential(oauthCredential).timeout(_stepTimeout);

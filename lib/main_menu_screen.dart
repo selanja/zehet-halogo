@@ -709,7 +709,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       final linked = await showAccountConflictDialog(context);
       if (!mounted) return;
       setState(() => _welcomeGoogleLoading = false);
-      if (!linked) return; // המשתמש ביטל - נשארים במסך הבחירה
+      if (!linked) {
+        // המשתמש ביטל, או שהשמירה נכשלה - במקרה של כישלון מציגים הודעה ידידותית
+        if (AccountService.lastAuthFailed) {
+          AccountService.lastAuthFailed = false;
+          AppNotification.show(context, "ההתחברות נכשלה, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+        }
+        return;
+      }
       await _afterWelcomeLinkSuccess();
       return;
     }
@@ -742,7 +749,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       final linked = await showAccountConflictDialog(context);
       if (!mounted) return;
       setState(() => _welcomeAppleLoading = false);
-      if (!linked) return;
+      if (!linked) {
+        if (AccountService.lastAuthFailed) {
+          AccountService.lastAuthFailed = false;
+          AppNotification.show(context, "ההתחברות נכשלה, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+        }
+        return;
+      }
       await _afterWelcomeLinkSuccess();
       return;
     }

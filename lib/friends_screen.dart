@@ -207,10 +207,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         setState(() => _addFriendError = "קוד לא תקין");
         break;
       case AddFriendResult.error:
-        // 🆕 אבחון זמני - מציג את שגיאת ה-Firestore האמיתית (אם נתפסה)
-        // כדי לאתר את הסיבה המדויקת. להסיר אחרי שהתקלה נמצאת ותוקנה.
-        final real = FriendService.lastSendRequestError;
-        setState(() => _addFriendError = real == null ? "משהו השתבש - נסה שוב" : "משהו השתבש:\n$real");
+        setState(() => _addFriendError = "משהו השתבש - נסה שוב מאוחר יותר");
         break;
     }
   }

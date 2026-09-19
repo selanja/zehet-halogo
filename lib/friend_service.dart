@@ -103,11 +103,6 @@ class FriendService {
     throw Exception('לא הצלחנו ליצור קוד חברים');
   }
 
-  /// 🆕 אבחון זמני - חושף את שגיאת ה-Firestore האמיתית כשליחת בקשה
-  /// נכשלת, כדי שאפשר יהיה לראות אותה על המסך (ראה friends_screen.dart)
-  /// בלי Console.app. להסיר אחרי שהתקלה נמצאת ותוקנה.
-  static String? lastSendRequestError;
-
   /// 🆕 שולח בקשת חברות לפי קוד - לא הופך אתכם לחברים מיד, רק כותב
   /// רשומה תחת players/{friendId}/friendRequests/{myId} - הצד השני צריך
   /// לאשר (acceptFriendRequest) כדי שהחברות תיווצר בפועל אצל שניכם.
@@ -139,7 +134,6 @@ class FriendService {
       return AddFriendResult.requestSent;
     } catch (e) {
       debugPrint('SEND FRIEND REQUEST ERROR: $e');
-      lastSendRequestError = e.toString();
       return AddFriendResult.error;
     }
   }

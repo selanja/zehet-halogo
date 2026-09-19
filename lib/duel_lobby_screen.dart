@@ -1311,6 +1311,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   }
 
   Widget _buildFoundFallback(Object error) {
+    debugPrint('DuelLobby _buildFoundContent error: $error');
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 40, 20, 26),
       child: Column(
@@ -1322,15 +1323,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           Text(_opponentName ?? "יריב", textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 16, fontWeight: FontWeight.w800)),
           const SizedBox(height: 30),
           Text("$_readyCountdown", style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 40, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 30),
-          // 🆕 טקסט השגיאה עצמו מוצג (בדיוק כמו ErrorWidget.builder הקיים
-          // באפליקציה) - כדי שאם זה קורה שוב, אפשר יהיה לצלם ולשלוח לי
-          // בדיוק מה נשבר, במקום שהמסך פשוט ייראה "ריק" בלי שום רמז.
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(10)),
-            child: Text(error.toString(), style: TextStyle(color: Colors.red.shade200, fontSize: 11)),
-          ),
         ],
       ),
     );

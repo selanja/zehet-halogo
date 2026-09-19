@@ -92,11 +92,10 @@ class AccountService {
   static User? _pendingUser;
   static String? _pendingLabel;
 
-  // 🩹 תוקן: "אין לי אפשרות לחבר את הטלפון למחשב" - כדי שאפשר יהיה
-  // לראות את הסיבה המדויקת לכישלון *ישירות על מסך האייפון* (בלי Mac/
-  // Console.app בכלל), כל catch באזור ההתחברות שומר כאן את הטקסט של
-  // השגיאה, וה-UI (account_link_prompt.dart) מציג אותו בהודעת השגיאה.
-  static String? lastAuthError;
+  // true אם שלב בהתחברות/פתרון-ההתנגשות נכשל (בלי לחשוף למשתמש את פרטי
+  // השגיאה - הם נכתבים רק ל-debugPrint). ה-UI משתמש בזה כדי להבחין בין
+  // "המשתמש ביטל" ל"נכשל" ולהציג הודעה ידידותית.
+  static bool lastAuthFailed = false;
 
   /// פרטי ההתקדמות השמורה בענן שמחכה להחלטת המשתמש - null אם אין
   /// כרגע התנגשות פתוחה. ה-UI קורא לזה מיד אחרי LinkResult.conflict.
@@ -155,6 +154,7 @@ class AccountService {
   static const _stepTimeout = Duration(seconds: 20);
 
   static Future<LinkResult> signInWithGoogle() async {
+    lastAuthFailed = false;
     try {
       debugPrint('GOOGLE SIGN-IN: starting GoogleSignIn().signIn()');
       final googleUser = await GoogleSignIn().signIn().timeout(_stepTimeout);
@@ -175,7 +175,7 @@ class AccountService {
       return result;
     } catch (e) {
       debugPrint('GOOGLE SIGN-IN ERROR: $e');
-      lastAuthError = e.toString();
+      lastAuthFailed = true;
       return LinkResult.error;
     }
   }
@@ -184,6 +184,7 @@ class AccountService {
   // התחברות עם Apple (iOS/macOS בלבד - ראו appleAvailable)
   // ========================================================================
   static Future<LinkResult> signInWithApple() async {
+    lastAuthFailed = false;
     try {
       final rawNonce = _generateNonce();
       final hashedNonce = _sha256(rawNonce);
@@ -215,7 +216,7 @@ class AccountService {
       return await _afterSignIn(user, label: label);
     } catch (e) {
       debugPrint('APPLE SIGN-IN ERROR: $e');
-      lastAuthError = e.toString();
+      lastAuthFailed = true;
       return LinkResult.error;
     }
   }
@@ -323,7 +324,7 @@ class AccountService {
       }
     } catch (e) {
       debugPrint('RESOLVE SIGN-IN CONFLICT ERROR: $e');
-      lastAuthError = e.toString();
+      lastAuthFailed = true;
       return false;
     }
 

@@ -74,11 +74,9 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
       if (linked) {
         Navigator.of(context).pop();
         AppNotification.show(context, "החשבון קושר בהצלחה! ההתקדמות שלך שמורה", type: AppNotificationType.success);
-      } else if (AccountService.lastAuthError != null) {
-        // 🩹 תוקן: "אין לי אפשרות לחבר את הטלפון למחשב" (כדי לראות לוג) -
-        // מציגים את טקסט השגיאה המדויק ישירות במסך, בלי Console.app בכלל.
-        _showErrorWithDetails(AccountService.lastAuthError!);
-        AccountService.lastAuthError = null;
+      } else if (AccountService.lastAuthFailed) {
+        AccountService.lastAuthFailed = false;
+        AppNotification.show(context, "החיבור נכשל, נסה שוב מאוחר יותר", type: AppNotificationType.error);
       }
       return;
     }
@@ -87,32 +85,9 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
       Navigator.of(context).pop();
       AppNotification.show(context, "החשבון קושר בהצלחה! ההתקדמות שלך שמורה", type: AppNotificationType.success);
     } else if (result == LinkResult.error) {
-      final details = AccountService.lastAuthError;
-      AccountService.lastAuthError = null;
-      if (details != null) {
-        _showErrorWithDetails(details);
-      } else {
-        AppNotification.show(context, "החיבור נכשל, נסה שוב מאוחר יותר", type: AppNotificationType.error);
-      }
+      AccountService.lastAuthFailed = false;
+      AppNotification.show(context, "החיבור נכשל, נסה שוב מאוחר יותר", type: AppNotificationType.error);
     }
-  }
-
-  // 🩹 תוקן: מציג את טקסט השגיאה המדויק בדיאלוג נפרד (אפשר להעתיק/לצלם
-  // מסך) - הודעת ה-toast הרגילה (AppNotification) נעלמת מהר מדי ולא
-  // מתאימה לטקסט ארוך כמו שגיאת Firestore.
-  void _showErrorWithDetails(String details) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF241a4f),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withValues(alpha: 0.14))),
-        title: const Text("החיבור נכשל", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white)),
-        content: SelectableText(details, textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("סגור", style: TextStyle(color: Colors.white54))),
-        ],
-      ),
-    );
   }
 
   Future<void> _dontShowAgain() async {

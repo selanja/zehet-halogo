@@ -58,31 +58,6 @@ Future<void> _requestTrackingIfNeeded() async {
   }
 }
 
-// 🆕 אבחון זמני: כברירת מחדל, כששגיאה קורית בזמן בניית מסך (build),
-// Flutter במצב release מציג מסך אפור/לבן ריק ומסתיר את השגיאה מהמשתמש
-// (זה בכוונה - כדי שמשתמשים לא יראו טקסט טכני). זה בדיוק מה שקורה
-// עכשיו במסך השלב ובחנות ב-iOS - יש שגיאה אבל היא מוסתרת. השורות
-// למטה מבטלות את ההסתרה: במקום מסך ריק, יוצג ממש טקסט השגיאה על רקע
-// אדום - כדי שנוכל סוף-סוף לראות מה באמת נשבר, גם דרך TestFlight,
-// בלי צורך במק/סימולטור בכלל. ⚠️ להסיר את זה בחזרה אחרי שהתקלה נמצאת
-// ותוקנה - זה לא משהו שרוצים שמשתמשים אמיתיים יראו.
-void _enableVisibleErrorScreens() {
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    return Material(
-      color: Colors.red.shade900,
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            details.exceptionAsString(),
-            style: const TextStyle(color: Colors.white, fontSize: 13),
-          ),
-        ),
-      ),
-    );
-  };
-}
-
 // 🔒 תיקון אבטחה קריטי - "חבר בדק ומצא שאפשר לכתוב ל-Firestore ישירות
 // עם ה-API של הפרויקט, בלי לעבור דרך האפליקציה בכלל (שינה XP/שם וכו')".
 // זה קרה כי חוקי האבטחה של Firestore היום פתוחים ("if true") כמעט
@@ -124,15 +99,8 @@ Future<void> _activateAppCheck() async {
     );
   } catch (e) {
     debugPrint('שגיאת אתחול App Check: $e');
-    kFirebaseInitError = 'App Check: $e';
   }
 }
-
-/// 🆕 אבחון זמני - שומר את השגיאה האמיתית מאתחול Firebase/App Check כדי
-/// שאפשר יהיה להציג אותה על המסך (ראו AppRootGate למטה), כי ב-release
-/// build אין גישה נוחה ל-debugPrint/Console.app. להסיר אחרי שהתקלה נמצאת
-/// ותוקנה.
-String? kFirebaseInitError;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -143,7 +111,6 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  _enableVisibleErrorScreens();
   await _requestTrackingIfNeeded(); // 🍎 חייב לרוץ לפני AdsManager.init()
   // 🔥 אתחול Firebase (חובה לפני כל שימוש ב-Firestore) - עטוף ב-try/catch
   // כדי שכשל בחיבור לא ימנע פתיחת המשחק, בדיוק כמו שאר האתחולים כאן.
@@ -156,10 +123,6 @@ void main() async {
     LeaderboardService.migrateFromSheetsIfNeeded();
   } catch (e) {
     debugPrint('שגיאת אתחול Firebase: $e');
-    // 🆕 אבחון זמני - ראו kFirebaseInitError למטה ואיפה שהוא מוצג
-    // ב-AppRootGate. מטרתו לחשוף את השגיאה האמיתית גם ב-release build
-    // באייפון בלי צורך בחיבור פיזי/Console.app. להסיר אחרי שהתקלה נמצאת.
-    kFirebaseInitError = e.toString();
   }
   // אתחול מערכת הפרסומות, הרכישות והקליק ברקע.
   // כל אחד עטוף ב-try/catch פנימי, כך ששגיאה באחד לא תמנע
@@ -243,28 +206,6 @@ class _AppRootGateState extends State<AppRootGate> {
   void initState() {
     super.initState();
     _runCheck();
-    // 🆕 אבחון זמני - מציג את שגיאת אתחול Firebase/App Check האמיתית
-    // (אם הייתה) בדיאלוג על המסך, כדי לאבחן תקלת קישוריות ב-release
-    // build באייפון בלי Console.app. להסיר אחרי שהתקלה נמצאת ותוקנה.
-    if (kFirebaseInitError != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final ctx = rootNavigatorKey.currentContext;
-        if (ctx == null) return;
-        showDialog(
-          context: ctx,
-          builder: (_) => AlertDialog(
-            title: const Text('שגיאת אתחול Firebase (אבחון זמני)'),
-            content: SelectableText(kFirebaseInitError!),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('סגור'),
-              ),
-            ],
-          ),
-        );
-      });
-    }
   }
 
   Future<void> _runCheck() async {

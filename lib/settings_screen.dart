@@ -438,6 +438,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildAccountRow() {
     final label = _linkedLabel;
     if (label != null) {
+      // 🩹 תוקן: "לא רוצה שיהיה רשום את האימייל (במיוחד אימייל-ריליי
+      // מוזר וארוך של 'Hide My Email' באפל) - פשוט Apple עם וי ירוק
+      // ומתחת Google, כל אחד עם וי ירוק רק אם הוא מחובר בפועל". הבדיקה
+      // היא לפי providerData האמיתי של Firebase Auth (AccountService.
+      // linkedProviderIds), לא לפי ניחוש מהאימייל.
+      final providers = AccountService.linkedProviderIds;
+      final appleLinked = providers.contains('apple.com');
+      final googleLinked = providers.contains('google.com');
       return Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(16),
@@ -451,20 +459,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.4)),
               color: const Color(0xFF7DD3FC).withValues(alpha: 0.08),
             ),
-            child: Row(
-              textDirection: TextDirection.rtl,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.check_circle_rounded, color: Color(0xFF7DD3FC), size: 17),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    "מחובר: $label",
-                    textDirection: TextDirection.rtl,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 14, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                Icon(Icons.logout_rounded, color: Colors.white.withValues(alpha: 0.4), size: 16),
+                _providerStatusRow(icon: Icons.apple_rounded, label: "Apple", connected: appleLinked),
+                const SizedBox(height: 8),
+                _providerStatusRow(icon: Icons.g_mobiledata_rounded, label: "Google", connected: googleLinked),
               ],
             ),
           ),
@@ -479,6 +479,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await AccountLinkPrompt.show(context);
         if (mounted) await _loadProfileStats(); // מרענן את השורה אחרי קישור מוצלח
       },
+    );
+  }
+
+  Widget _providerStatusRow({required IconData icon, required String label, required bool connected}) {
+    return Row(
+      textDirection: TextDirection.rtl,
+      children: [
+        Icon(icon, color: Colors.white.withValues(alpha: 0.85), size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(label, textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+        ),
+        Icon(
+          connected ? Icons.check_circle_rounded : Icons.remove_circle_outline_rounded,
+          color: connected ? const Color(0xFF3DDC84) : Colors.white.withValues(alpha: 0.25),
+          size: 17,
+        ),
+      ],
     );
   }
 

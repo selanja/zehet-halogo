@@ -125,6 +125,17 @@ class AccountService {
     return prefs.getString('linkedLabel');
   }
 
+  /// 🆕 "פשוט אני רוצה שיהיה רשום Apple עם וי ירוק ומתחת Google, אם גוגל
+  /// מחובר וי ירוק אם אפל וי ירוק" - אילו ספקים (google.com/apple.com)
+  /// מקושרים כרגע למשתמש המחובר, לפי providerData האמיתי של Firebase
+  /// Auth (לא לפי ניחוש מהאימייל - כך שגם אימייל-ריליי מוזר של אפל
+  /// ("Hide My Email") לא משפיע על הזיהוי). ריק אם לא מקושר בכלל.
+  static Set<String> get linkedProviderIds {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const {};
+    return user.providerData.map((p) => p.providerId).toSet();
+  }
+
   static Future<void> _saveLinkState({required String uid, required String label}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('linkedUid', uid);

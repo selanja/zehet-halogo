@@ -67,6 +67,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // ההתחברות ל-Google הצליחה אבל לחשבון הזה עדיין אין שם שמור בענן).
   bool _welcomeShowingNameEntry = false;
   bool _welcomeGoogleLoading = false;
+  bool _welcomeAppleLoading = false;
   // 🩹 השם ש"ימולא מראש" בשדה השם במסך הבחירה הראשוני - ריק אם נבחר
   // "שחק כאורח", או השם שכבר שמור בענן אם ההתחברות ל-Google שחזרה שם
   // קיים (כדי שהשחקן עדיין יאשר/יוכל לשנות אותו, ולא ידלג ישר הביתה -
@@ -709,13 +710,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       if (!mounted) return;
       setState(() => _welcomeGoogleLoading = false);
       if (!linked) return; // המשתמש ביטל - נשארים במסך הבחירה
-      await _afterGoogleLinkSuccess();
+      await _afterWelcomeLinkSuccess();
       return;
     }
     setState(() => _welcomeGoogleLoading = false);
     switch (result) {
       case LinkResult.success:
-        await _afterGoogleLinkSuccess();
+        await _afterWelcomeLinkSuccess();
         break;
       case LinkResult.error:
         AppNotification.show(context, "ההתחברות עם Google נכשלה - אפשר לנסות שוב או לשחק כאורח בינתיים", type: AppNotificationType.error);
@@ -727,9 +728,43 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     }
   }
 
-  // 🩹 חולץ מתוך _handleGoogleWelcomeSignIn כדי שגם מסלול ה-conflict
-  // (אחרי שהמשתמש בחר איזו התקדמות להשתמש) יריץ בדיוק את אותה לוגיקה.
-  Future<void> _afterGoogleLinkSuccess() async {
+  // 🆕 "המשך עם Apple" ממסך הבחירה הראשוני - בדיוק אותה לוגיקה כמו
+  // _handleGoogleWelcomeSignIn, רק עם AccountService.signInWithApple.
+  // לפי דיווח מפורש: המסך הראשוני הציע קודם רק Google, למרות ש-Apple
+  // כבר נתמך לגמרי (account_link_prompt.dart כבר מציע את שניהם) - זה
+  // היה חוסר-עקביות שהוחמץ בטעות, לא החלטה מכוונת.
+  Future<void> _handleAppleWelcomeSignIn() async {
+    if (_welcomeAppleLoading) return;
+    setState(() => _welcomeAppleLoading = true);
+    final result = await AccountService.signInWithApple();
+    if (!mounted) return;
+    if (result == LinkResult.conflict) {
+      final linked = await showAccountConflictDialog(context);
+      if (!mounted) return;
+      setState(() => _welcomeAppleLoading = false);
+      if (!linked) return;
+      await _afterWelcomeLinkSuccess();
+      return;
+    }
+    setState(() => _welcomeAppleLoading = false);
+    switch (result) {
+      case LinkResult.success:
+        await _afterWelcomeLinkSuccess();
+        break;
+      case LinkResult.error:
+        AppNotification.show(context, "ההתחברות עם Apple נכשלה - אפשר לנסות שוב או לשחק כאורח בינתיים", type: AppNotificationType.error);
+        break;
+      case LinkResult.cancelled:
+        break;
+      case LinkResult.conflict:
+        break;
+    }
+  }
+
+  // 🩹 חולץ מתוך _handleGoogleWelcomeSignIn/_handleAppleWelcomeSignIn כדי
+  // ששני הספקים (וגם מסלול ה-conflict של כל אחד מהם) ירוצו בדיוק באותה
+  // לוגיקה אחרי הצלחה.
+  Future<void> _afterWelcomeLinkSuccess() async {
     final prefs = await SharedPreferences.getInstance();
     final savedName = prefs.getString('username');
     if (!mounted) return;
@@ -819,6 +854,38 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             ),
           ),
         ),
+        // כפתור "המשך עם Apple" - רק ב-iOS/macOS (ראו AccountService.appleAvailable)
+        if (AccountService.appleAvailable) ...[
+          const SizedBox(height: 12),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _welcomeAppleLoading ? null : _handleAppleWelcomeSignIn,
+              borderRadius: BorderRadius.circular(21),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(21),
+                  gradient: const LinearGradient(colors: [Color(0xFF2A2A2A), Color(0xFF000000)]),
+                ),
+                child: Center(
+                  child: _welcomeAppleLoading
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          textDirection: TextDirection.rtl,
+                          children: [
+                            const Icon(Icons.apple_rounded, color: Colors.white, size: 22),
+                            const SizedBox(width: 10),
+                            const Text("המשך עם Apple", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         // כפתור "שחק כאורח" - הזרימה המקורית (שם בלבד, בלי חשבון מקושר)
         Material(

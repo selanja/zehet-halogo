@@ -43,18 +43,51 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 //     app_tracking_transparency: ^2.0.6
 // וגם הוספת מפתח ל-Info.plist (ב-Xcode, לא בקוד Dart) - ראו הסבר מלא
 // שנשלח בנפרד בצ'אט, כי את זה אי אפשר לערוך מכאן.
+//
+// 🩹 תוקן (דחיית אפל 1.2.0, Guideline 2.1: "unable to locate the App
+// Tracking Transparency permission request ... iPadOS 27"): הבקשה רצה קודם
+// ב-main() *לפני* runApp - כלומר לפני שיש בכלל מסך והאפליקציה "פעילה" -
+// ובגרסאות iOS/iPadOS החדשות בקשה כזו נבלעת בשקט בלי להציג חלון. עכשיו
+// היא נקראת רק אחרי הפריים הראשון, מחכה שהאפליקציה תהיה במצב resumed, ואם
+// החלון עדיין לא הוצג (הסטטוס נשאר notDetermined) מנסה פעם נוספת.
+Future<void> _waitForAppActive() async {
+  for (var i = 0; i < 20; i++) {
+    final s = WidgetsBinding.instance.lifecycleState;
+    if (s == null || s == AppLifecycleState.resumed) return;
+    await Future.delayed(const Duration(milliseconds: 250));
+  }
+}
+
 Future<void> _requestTrackingIfNeeded() async {
   if (!Platform.isIOS) return; // רלוונטי רק ב-iOS
   try {
     final status = await AppTrackingTransparency.trackingAuthorizationStatus;
-    if (status == TrackingStatus.notDetermined) {
-      // השהיה קצרה - אפל ממליצה לא לבקש את זה ממש בפריים הראשון, כדי
-      // שהחלון לא "ייבלע" בתוך אנימציית הפתיחה של האפליקציה.
-      await Future.delayed(const Duration(milliseconds: 400));
+    if (status != TrackingStatus.notDetermined) return;
+    await _waitForAppActive();
+    await Future.delayed(const Duration(milliseconds: 1000));
+    final result = await AppTrackingTransparency.requestTrackingAuthorization();
+    if (result == TrackingStatus.notDetermined) {
+      await _waitForAppActive();
+      await Future.delayed(const Duration(seconds: 2));
       await AppTrackingTransparency.requestTrackingAuthorization();
     }
   } catch (e) {
     debugPrint('ATT request error: $e');
+  }
+}
+
+/// ATT קודם, ורק אחריו כל מה שעלול לעקוב (AdMob, Meta) - אחרי הפריים הראשון.
+Future<void> _initTrackingAndAds() async {
+  await _requestTrackingIfNeeded();
+  try {
+    await AdsManager.init();
+  } catch (e) {
+    debugPrint('שגיאת אתחול AdsManager: $e');
+  }
+  try {
+    await MetaEventsService.init();
+  } catch (e) {
+    debugPrint('שגיאת אתחול MetaEventsService: $e');
   }
 }
 
@@ -111,7 +144,8 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  await _requestTrackingIfNeeded(); // 🍎 חייב לרוץ לפני AdsManager.init()
+  // 🍎 בקשת ATT + אתחול AdMob/Meta עברו ל-_initTrackingAndAds, שנקרא אחרי
+  // הפריים הראשון (ראו runApp למטה) - לא כאן, לפני שיש מסך.
   // 🔥 אתחול Firebase (חובה לפני כל שימוש ב-Firestore) - עטוף ב-try/catch
   // כדי שכשל בחיבור לא ימנע פתיחת המשחק, בדיוק כמו שאר האתחולים כאן.
   try {
@@ -128,7 +162,6 @@ void main() async {
   // כל אחד עטוף ב-try/catch פנימי, כך ששגיאה באחד לא תמנע
   // את פתיחת האפליקציה — חשוב במיוחד ב-iPad ובמכשירים שבהם
   // AdMob או IAP עשויים להיכשל (למשל בסביבת review של אפל).
-  await AdsManager.init();
   await IapManager.init();
   await NotificationManager.init(); // 🔔 התראות מקומיות (תזכורת בונוס מטבעות)
   // 🆕 היו קיימים כבר בקוד (energy_service.dart קורא להם) אבל בלי
@@ -153,11 +186,6 @@ void main() async {
   // להסבר המלא ולשלבי ההגדרה הידניים הנדרשים (App ID/Client Token).
   // בלי ההגדרה הידנית הזו, הקריאה כאן לא תעשה כלום בפועל - אבל גם לא
   // תקריס כלום, בדיוק כמו שאר האתחולים.
-  try {
-    await MetaEventsService.init();
-  } catch (e) {
-    debugPrint('שגיאת אתחול MetaEventsService: $e');
-  }
   // 🆕 זיהוי צילום/הקלטת מסך (ראו screenshot_guard_service.dart) - לא
   // עושה כלום באנדרואיד (שם כבר יש FLAG_SECURE, הרבה יותר חזק). לא
   // דורש try/catch - הפונקציה עצמה בטוחה לגמרי גם בלי ההגדרה הידנית
@@ -177,6 +205,7 @@ void main() async {
     debugShowCheckedModeBanner: false,
     home: const AppLifecycleManager(child: AppRootGate()),
   ));
+  WidgetsBinding.instance.addPostFrameCallback((_) => _initTrackingAndAds());
 }
 
 // 🆕 מפתח ניווט גלובלי - כדי שאפשר יהיה להציג SnackBar/דיאלוג (למשל

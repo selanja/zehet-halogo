@@ -76,18 +76,18 @@ class MissionsService {
   // _dailyCount) - הצמצום עכשיו הוא בכמות המשימות המוצגות, לא בגובה
   // הפרס של כל אחת.
   static const List<MissionDef> _dailyPool = [
-    MissionDef(id: 'd_logos_6', event: MissionEvent.logoSolved, target: 6, reward: 3, title: 'פתור 6 לוגואים'),
-    MissionDef(id: 'd_logos_12', event: MissionEvent.logoSolved, target: 12, reward: 4, title: 'פתור 12 לוגואים'),
-    MissionDef(id: 'd_hint_1', event: MissionEvent.hintUsed, target: 1, reward: 2, title: 'השתמש ברמז אחד'),
-    MissionDef(id: 'd_duel_play_2', event: MissionEvent.duelPlayed, target: 2, reward: 4, title: 'שחק 2 דו-קרבים'),
-    MissionDef(id: 'd_duel_win_1', event: MissionEvent.duelWon, target: 1, reward: 4, title: 'נצח דו-קרב אחד'),
+    MissionDef(id: 'd_logos_6', event: MissionEvent.logoSolved, target: 6, reward: 4, title: 'פתור 6 לוגואים'),
+    MissionDef(id: 'd_logos_12', event: MissionEvent.logoSolved, target: 12, reward: 6, title: 'פתור 12 לוגואים'),
+    MissionDef(id: 'd_hint_1', event: MissionEvent.hintUsed, target: 1, reward: 3, title: 'השתמש ברמז אחד'),
+    MissionDef(id: 'd_duel_play_2', event: MissionEvent.duelPlayed, target: 2, reward: 6, title: 'שחק 2 דו-קרבים'),
+    MissionDef(id: 'd_duel_win_1', event: MissionEvent.duelWon, target: 1, reward: 6, title: 'נצח דו-קרב אחד'),
   ];
 
   static const List<MissionDef> _weeklyPool = [
-    MissionDef(id: 'w_logos_40', event: MissionEvent.logoSolved, target: 40, reward: 20, title: 'פתור 40 לוגואים השבוע'),
-    MissionDef(id: 'w_logos_80', event: MissionEvent.logoSolved, target: 80, reward: 35, title: 'פתור 80 לוגואים השבוע'),
-    MissionDef(id: 'w_duel_play_8', event: MissionEvent.duelPlayed, target: 8, reward: 25, title: 'שחק 8 דו-קרבים השבוע'),
-    MissionDef(id: 'w_duel_win_5', event: MissionEvent.duelWon, target: 5, reward: 28, title: 'נצח 5 דו-קרבים השבוע'),
+    MissionDef(id: 'w_logos_40', event: MissionEvent.logoSolved, target: 40, reward: 28, title: 'פתור 40 לוגואים השבוע'),
+    MissionDef(id: 'w_logos_80', event: MissionEvent.logoSolved, target: 80, reward: 45, title: 'פתור 80 לוגואים השבוע'),
+    MissionDef(id: 'w_duel_play_8', event: MissionEvent.duelPlayed, target: 8, reward: 32, title: 'שחק 8 דו-קרבים השבוע'),
+    MissionDef(id: 'w_duel_win_5', event: MissionEvent.duelWon, target: 5, reward: 36, title: 'נצח 5 דו-קרבים השבוע'),
   ];
 
   // 🆕 משימות "פרימיום" - לפי בקשה מפורשת: משימות נוספות שמוצגות לכולם
@@ -100,13 +100,13 @@ class MissionsService {
   // 🩹 הועלו מ-1 ל-2 משימות פרימיום לכל תקופה (יומי/שבועי) לפי בקשה
   // מפורשת, ומוצגות עכשיו ראשונות ברשימה (ראו המיון ב-_getMissions).
   static const List<MissionDef> _dailyPremiumMissions = [
-    MissionDef(id: 'd_premium_logos_20', event: MissionEvent.logoSolved, target: 20, reward: 10, title: 'פתור 20 לוגואים', premiumOnly: true),
-    MissionDef(id: 'd_premium_duel_win_2', event: MissionEvent.duelWon, target: 2, reward: 12, title: 'נצח 2 דו-קרבים', premiumOnly: true),
+    MissionDef(id: 'd_premium_logos_20', event: MissionEvent.logoSolved, target: 20, reward: 13, title: 'פתור 20 לוגואים', premiumOnly: true),
+    MissionDef(id: 'd_premium_duel_win_2', event: MissionEvent.duelWon, target: 2, reward: 15, title: 'נצח 2 דו-קרבים', premiumOnly: true),
   ];
 
   static const List<MissionDef> _weeklyPremiumMissions = [
-    MissionDef(id: 'w_premium_duel_win_10', event: MissionEvent.duelWon, target: 10, reward: 45, title: 'נצח 10 דו-קרבים השבוע', premiumOnly: true),
-    MissionDef(id: 'w_premium_logos_150', event: MissionEvent.logoSolved, target: 150, reward: 60, title: 'פתור 150 לוגואים השבוע', premiumOnly: true),
+    MissionDef(id: 'w_premium_duel_win_10', event: MissionEvent.duelWon, target: 10, reward: 55, title: 'נצח 10 דו-קרבים השבוע', premiumOnly: true),
+    MissionDef(id: 'w_premium_logos_150', event: MissionEvent.logoSolved, target: 150, reward: 75, title: 'פתור 150 לוגואים השבוע', premiumOnly: true),
   ];
 
   // 🩹 תוקן לפי בקשה מפורשת: 2 משימות יומיות רגילות + 2 שבועיות רגילות
@@ -123,7 +123,7 @@ class MissionsService {
   // 🩹 הופחת לפי בקשה מפורשת (יחד עם העלאת פרסי המשימות היומיות למעלה) -
   // מ-50 ל-30. זה גם ה-XP וגם כמות נקודות-הבאטל-פאס שהאתגר היומי נותן
   // (ראו MissionsService.completeDailyChallenge).
-  static const int dailyChallengeXpReward = 30;
+  static const int dailyChallengeXpReward = 40; // 🩹 הועלה מ-30 - חלק מאיזון מחדש של נקודות הבאטל פאס (ראו duel_room_screen.dart._winBattlePassPoints)
 
   static String _todayId(DateTime now) => '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 

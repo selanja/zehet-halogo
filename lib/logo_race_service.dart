@@ -56,6 +56,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'bot_config.dart';
 import 'duel_service.dart' show DuelService; // 🆕 שימוש חוזר ב-pickRandomLogoIds הקיים
 import 'energy_service.dart';
 
@@ -392,6 +393,25 @@ class LogoRaceService {
       });
 
       _timeoutTimer = Timer(searchTimeout, () async {
+        if (finished) return;
+        // 🆕 אף יריב אמיתי לא נמצא - נכנס יריב-בוט (בדיוק כמו בדו-קרב, ראו
+        // DuelService.botFallbackEnabled + BotConfig לכיבוי מרחוק).
+        if (DuelService.botFallbackEnabled && await BotConfig.enabledFor('race') && !finished) {
+          try {
+            final botRaceId = await _createBotRaceIfStillWaiting(
+              deviceId: deviceId,
+              username: username,
+              allLevelIds: allLevelIds,
+              stake: stake,
+            );
+            if (botRaceId != null) {
+              finish(RaceSearchResult(RaceSearchStatus.matched, raceId: botRaceId));
+              return;
+            }
+          } catch (_) {
+            // נופלים לתוצאה הרגילה למטה
+          }
+        }
         await myQueueRef.delete().catchError((_) {});
         finish(const RaceSearchResult(RaceSearchStatus.noPlayersFound));
       });
@@ -400,6 +420,51 @@ class LogoRaceService {
     }
 
     return completer.future;
+  }
+
+  /// 🆕 יוצר מירוץ מול בוט - אבל רק אם רשומת התור שלי עדיין לא נתפסה ע"י
+  /// שחקן אמיתי (Transaction). השחקן האמיתי הוא player1, הבוט player2 עם
+  /// מזהה שמתחיל ב-DuelService.botIdPrefix; הלקוח של השחקן "מנגן" בשם הבוט
+  /// (ראו logo_race_screen.dart).
+  Future<String?> _createBotRaceIfStillWaiting({
+    required String deviceId,
+    required String username,
+    required List<int> allLevelIds,
+    required int stake,
+  }) async {
+    final rnd = Random();
+    final botId = '${DuelService.botIdPrefix}${rnd.nextInt(900000) + 100000}';
+    final names = DuelService.botNames;
+    var botName = names[rnd.nextInt(names.length)];
+    if (botName == username) botName = names[(names.indexOf(botName) + 1) % names.length];
+    final myRef = _db.collection(_queueCollection).doc(deviceId);
+    return _db.runTransaction<String?>((tx) async {
+      final mySnap = await tx.get(myRef);
+      final existing = mySnap.data()?['matchId'] as String?;
+      if (existing != null) return existing; // נתפסתי ע"י שחקן אמיתי ברגע האחרון
+      final totalStages = stagesForStake(stake);
+      final raceRef = _db.collection(_racesCollection).doc();
+      tx.set(raceRef, {
+        'player1Id': deviceId,
+        'player1Name': username,
+        'player2Id': botId,
+        'player2Name': botName,
+        'status': 'countdown',
+        'logoIds': DuelService.pickRandomLogoIds(allLevelIds, count: totalStages),
+        'stake': stake,
+        'totalStages': totalStages,
+        'currentStage': 0,
+        'stageStartAt': null,
+        'stageWinner': {},
+        'scores': {},
+        'messages': [],
+        'winnerId': null,
+        'createdAt': FieldValue.serverTimestamp(),
+        'vsBot': true,
+      });
+      if (mySnap.exists) tx.delete(myRef);
+      return raceRef.id;
+    });
   }
 
   Future<void> cancelSearch(String deviceId) async {

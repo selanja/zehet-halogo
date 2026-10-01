@@ -13,13 +13,15 @@
 // מתחלפים, כרטיס "תנאי המרוץ") - כדי שהתחושה תהיה עקבית עם שאר המשחק.
 
 import 'dart:async';
+import 'dart:math' show Random;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart'; // 🆕 כפתור "שיתוף" במסך התוצאה - בדיוק כמו ב-duel_room_screen.dart
+import 'share_helper.dart'; // 🐛 שיתוף עם sharePositionOrigin - תוקן כשל שיתוף ב-iOS
 import 'app_background.dart';
 import 'level_data.dart';
 import 'device_id.dart';
 import 'audio_manager.dart';
+import 'achievements_service.dart';
 import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon - אימוג'י במקום אייקון וקטורי
 import 'ads_manager.dart'; // 🆕 זה משחק בפועל - מאפס את מונה "גלישה בלי לשחק"
 import 'energy_service.dart';
@@ -27,8 +29,10 @@ import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשי
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי כל שינוי מטבעות/XP - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר (אותו תיקון כמו duel_room_screen.dart)
 import 'logo_race_service.dart';
 import 'opponent_found_widgets.dart'; // 🆕 מסך "נמצא יריב!" - זהה בדיוק לזה שבדו-קרב (ראו הערה בקובץ)
-import 'app_notification.dart';
+import 'not_enough_coins_dialog.dart'; // 🆕 "אין מספיק מטבעות" - עכשיו מקשר ישר לחנות
+import 'starter_pack_dialog.dart'; // 🆕 מציג מארז פתיחה ברגע חיכוך אם עדיין זכאי
 import 'duel_service.dart' show DuelService; // 🆕 מוניטין/אזהרות/חסימה משותפים עם הדו-קרב - ראו _maybeForfeitDisconnectedOpponent
+import 'out_of_resource.dart'; // 🆕 "נגמר משהו" - פרסומת/חנות
 import 'active_match_service.dart'; // 🆕 "חזרה למשחק" אחרי שהאפליקציה נסגרה לגמרי
 
 class LogoRaceScreen extends StatefulWidget {
@@ -128,6 +132,56 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   DateTime? _oppLastSeenLocalClock;
   bool _disconnectForfeitTriggered = false;
   bool _activeMatchSaved = false;
+  // 🩹 "מסך לבן בלוגו" - טוענים מראש (מפענחים) את כל לוגואי המרוץ ברגע שהוא
+  // מתחיל, כדי שהעיגול החושף לא יחשוף כרטיס לבן ריק בזמן שהתמונה עוד מתפענחת.
+  // 🆕 יריב-בוט (ראו DuelService.botFallbackEnabled + BotConfig): הלקוח שלי
+  // "מנגן" בשם הבוט - בחלק מהשלבים הוא "מנחש" (לפעמים קודם ניחוש שגוי) אחרי
+  // השהיה אקראית, ברמת מיומנות אקראית לכל משחק. בלי פעימות חיים ובלי ניתוק.
+  Timer? _botTimer;
+  int _botLastStage = -1;
+  final Random _botRandom = Random();
+  late final double _botSkill = _botRandom.nextDouble();
+  bool _isBotRace(LogoRaceMatch r) => DuelService.isBotId(r.opponentIdFor(_myDeviceId));
+
+  void _botOnStage(LogoRaceMatch race) {
+    if (!_isBotRace(race) || race.status != 'playing') return;
+    final stage = race.currentStage;
+    if (stage == _botLastStage) return;
+    _botLastStage = stage;
+    _botTimer?.cancel();
+    if (_botRandom.nextDouble() >= 0.15 + _botSkill * 0.6) return; // השלב הזה נשאר לשחקן
+    final level = _levelForStage(race, stage);
+    if (level == null) return;
+    final speed = 1.35 - _botSkill * 0.85;
+    final ms = ((4 + _botRandom.nextDouble() * 14) * speed * 1000).round();
+    final botId = race.opponentIdFor(_myDeviceId);
+    final answer = level.answer;
+    bool stillOpen() {
+      final r = _race;
+      return mounted && r != null && r.status == 'playing' && r.currentStage == stage && !r.stageWinner.containsKey(stage.toString());
+    }
+
+    _botTimer = Timer(Duration(milliseconds: ms), () async {
+      if (!stillOpen() || _raceId == null) return;
+      final reversed = answer.split('').reversed.join();
+      if (_botRandom.nextDouble() < 0.3 && reversed != answer) {
+        await LogoRaceService.sendGuess(raceId: _raceId!, stage: stage, deviceId: botId, text: reversed, correctAnswer: answer);
+        await Future.delayed(Duration(milliseconds: 1200 + _botRandom.nextInt(1500)));
+        if (!stillOpen()) return;
+      }
+      await LogoRaceService.sendGuess(raceId: _raceId!, stage: stage, deviceId: botId, text: answer, correctAnswer: answer);
+    });
+  }
+
+  bool _logosPrecached = false;
+  void _precacheRaceLogos(LogoRaceMatch race) {
+    if (_logosPrecached) return;
+    _logosPrecached = true;
+    for (final id in race.logoIds) {
+      final level = gameLevels[id];
+      if (level != null) precacheImage(AssetImage(level.imagePath), context).catchError((_) {});
+    }
+  }
   // 🆕 ראו הסבר מלא ב-LogoRaceService.sendGuess/advanceAfterStageDecided -
   // מונע קריאה כפולה ל-advanceAfterStageDecided על אותו שלב בדיוק.
   int? _advanceScheduledForStage;
@@ -233,12 +287,34 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     PlayerSyncService.syncCurrentProgress(); // 🩹 בלי זה מטבעות שהרוויחו/הפסידו במרוץ לא מסתנכרנים לחשבון Google/Apple מקושר
   }
 
+  // 🆕 "אין מספיק מטבעות להימור" - אם יש עדיין הצעת "מארז פתיחה" זכאית
+  // שלא הוצגה בכלל, מציגים אותה קודם (ממירה הרבה יותר טוב, ובדיוק ברגע
+  // שהמשתמש פתוח לזה) - אחרת מציגים את דיאלוג הקנייה הרגיל עם החבילה
+  // הנכונה מודגשת בחנות.
+  Future<void> _showNotEnoughCoinsForStake(int stake) async {
+    final prefs = await SharedPreferences.getInstance();
+    final maxLevel = prefs.getInt('maxLevel') ?? 1;
+    if (!mounted) return;
+    final shownStarterPack = await StarterPackDialog.maybeShowAtFriction(context, maxLevel: maxLevel);
+    if (shownStarterPack) return;
+    showNotEnoughCoinsDialog(
+      context,
+      cost: stake,
+      coins: _coins,
+      onReturnedFromShop: () async {
+        final fresh = await SharedPreferences.getInstance();
+        if (!mounted) return;
+        setState(() => _coins = fresh.getInt('coins') ?? _coins);
+      },
+    );
+  }
+
   // 🆕 נבחרה רמת הימור - מתחילים לחפש יריב. האנרגיה נצרכת בתוך
   // service.findMatch; דמי ההימור עצמם (מטבעות) נגבים רק כש-*באמת* נמצא
   // יריב (ראו _payEntryFeeIfNeeded), בדיוק כמו בדו-קרב.
   Future<void> _onStakeSelected(int stake) async {
     if (_coins < stake) {
-      AppNotification.show(context, "חסרים לך מטבעות לרמה הזו (יש לך $_coins)", type: AppNotificationType.error);
+      await _showNotEnoughCoinsForStake(stake);
       return;
     }
     _selectedStake = stake;
@@ -311,6 +387,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     if (!mounted) return;
     setState(() => _race = race);
 
+    _precacheRaceLogos(race);
     if (!_entryFeePaid && (race.status == 'countdown' || race.status == 'playing')) {
       _payEntryFeeIfNeeded(race.stake);
     }
@@ -332,6 +409,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       case 'playing':
         if (_phase != _Phase.playing) setState(() => _phase = _Phase.playing);
         _syncStage(race);
+        _botOnStage(race);
         _startHeartbeatIfNeeded(race);
         _checkOpponentHeartbeat(race);
         _maybeScheduleStageAdvance(race);
@@ -367,6 +445,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   // 🆕 עוקב מתי ראינו לאחרונה פעימת חיים אמיתית (חדשה) מהיריב - בדיוק
   // כמו duel_room_screen.dart._checkOpponentHeartbeat.
   void _checkOpponentHeartbeat(LogoRaceMatch race) {
+    if (_isBotRace(race)) return; // בוט לא שולח פעימות - לא מנותק
     final oppLastSeen = race.opponentLastSeenFor(_myDeviceId);
     if (oppLastSeen != null && oppLastSeen != _oppLastSeenServerValuePrev) {
       _oppLastSeenServerValuePrev = oppLastSeen;
@@ -566,6 +645,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     }
     await _saveCoins();
     if (iWon) {
+      AchievementsService.inc('raceWins'); // 🆕 הישגים
       final prefs = await SharedPreferences.getInstance();
       final xp = prefs.getInt('xp') ?? 0;
       await prefs.setInt('xp', xp + LogoRaceService.winXpReward);
@@ -640,6 +720,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     _raceSub?.cancel();
     _countdownTicker?.cancel();
     _stageTicker?.cancel();
+    _botTimer?.cancel();
     _tipTimer?.cancel();
     _elapsedTimer?.cancel();
     _heartbeatTimer?.cancel();
@@ -672,8 +753,8 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               children: [
                 switch (_phase) {
                   _Phase.connecting => const Center(child: CircularProgressIndicator(color: Color(0xFF7DD3FC))),
-                  _Phase.noEnergy => _buildMessageScreen(icon: Icons.bolt_rounded, title: 'אין מספיק אנרגיה', subtitle: 'למרוץ נדרשות ${EnergyService.duelCost} אנרגיות מתוך ${EnergyService.maxEnergy}. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.'),
-                  _Phase.noCoins => _buildMessageScreen(icon: Icons.monetization_on_rounded, title: 'אין מספיק מטבעות', subtitle: 'דמי כניסה למרוץ: החל מ-${LogoRaceService.stakeOptions.first} מטבעות (יש לך $_coins). המנצח לוקח את כל הקופה!'),
+                  _Phase.noEnergy => _buildMessageScreen(icon: Icons.bolt_rounded, title: 'אין מספיק אנרגיה', subtitle: 'למרוץ נדרשות ${EnergyService.duelCost} אנרגיות מתוך ${EnergyService.maxEnergy}. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.', offerCoins: false),
+                  _Phase.noCoins => _buildMessageScreen(icon: Icons.monetization_on_rounded, title: 'אין מספיק מטבעות', subtitle: 'דמי כניסה למרוץ: החל מ-${LogoRaceService.stakeOptions.first} מטבעות (יש לך $_coins). המנצח לוקח את כל הקופה!', offerCoins: true),
                   _Phase.error => _buildMessageScreen(icon: Icons.wifi_off_rounded, title: 'לא הצלחנו להתחבר', subtitle: 'בדוק את החיבור לאינטרנט ונסה שוב'),
                   _Phase.noOpponent => _buildMessageScreen(icon: Icons.person_search_rounded, title: 'אין כרגע יריב זמין', subtitle: 'האנרגיה הוחזרה אליך - נסה שוב עוד רגע'),
                   // 🆕 בורר ההימור עצמו כבר לא מוצג כאן inline - הוא נפתח
@@ -796,7 +877,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildMessageScreen({required IconData icon, required String title, required String subtitle}) {
+  Widget _buildMessageScreen({required IconData icon, required String title, required String subtitle, bool? offerCoins}) {
     return Column(
       children: [
         _buildTopBar(),
@@ -813,6 +894,15 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   const SizedBox(height: 8),
                   Text(subtitle, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
                   const SizedBox(height: 26),
+                  // 🆕 "נגמר משהו" - אפשר לקבל בפרסומת או לקנות בחנות, ואז לנסות שוב
+                  if (offerCoins != null) ...[
+                    ...OutOfResource.offerButtons(context, coins: offerCoins, onGranted: () {
+                      if (!mounted) return;
+                      setState(() => _phase = _Phase.connecting);
+                      _connect();
+                    }),
+                    const SizedBox(height: 14),
+                  ],
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF38BDF8), foregroundColor: const Color(0xFF0B2233), padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: () => Navigator.pop(context),
@@ -961,7 +1051,10 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     // בדיוק כמו קודם.
     void onTap() {
       if (!canAfford) {
-        AppNotification.show(context, "חסרים לך מטבעות לרמה הזו (יש לך $_coins)", type: AppNotificationType.error);
+        // 🐛 תוקן: היה AppNotification חולף בלי אפשרות לקנות - עכשיו
+        // מקשר ישר לחנות עם החבילה הנכונה מודגשת.
+        Navigator.pop(sheetContext);
+        _showNotEnoughCoinsForStake(stake);
         return;
       }
       // 🩹 תוקן - ראו הערה מפורטת ליד _pendingStake למעלה (זה בדיוק מה
@@ -1869,7 +1962,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                             final text = iWon
                                 ? 'ניצחתי במרוץ לוגואים במשחק "זהה את הלוגו!" 🏁 $myScore/${race.totalStages} לוגואים. בואו תנסו לנצח אותי! 🎮'
                                 : 'שיחקתי מרוץ לוגואים במשחק "זהה את הלוגו!" - בואו תתמודדו איתי! 🏁';
-                            Share.share(text);
+                            shareText(context, text);
                           },
                           child: const Text('שיתוף', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                         ),

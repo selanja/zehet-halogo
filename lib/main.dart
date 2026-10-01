@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // 🆕 קריאת 
 import 'main_menu_screen.dart';
 import 'ads_manager.dart';
 import 'iap_manager.dart';
+import 'referral_service.dart';
 import 'audio_manager.dart';
 import 'leaderboard.dart';
 import 'player_sync.dart';
@@ -26,10 +27,12 @@ import 'screenshot_guard_service.dart'; // 🆕 זיהוי צילום/הקלטת
 import 'update_checker.dart';
 import 'update_required_screen.dart';
 import 'app_notification.dart';
+import 'reward_popups.dart';
 import 'active_match_service.dart'; // 🆕 "חזרה למשחק" - זיהוי דו-קרב/מרוץ פעיל בפתיחת האפליקציה
 import 'duel_room_screen.dart';
 import 'logo_race_screen.dart';
 import 'device_id.dart';
+import 'app_loading_screen.dart'; // 🆕 מסך הטעינה החדש בזמן _checking (ראו AppRootGate)
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // 🍎 App Tracking Transparency (ATT) - חובה של אפל: כל אפליקציה שמשתמשת
@@ -163,6 +166,10 @@ void main() async {
   // את פתיחת האפליקציה — חשוב במיוחד ב-iPad ובמכשירים שבהם
   // AdMob או IAP עשויים להיכשל (למשל בסביבת review של אפל).
   await IapManager.init();
+  // 🆕 "מביאים חבר חדש למשחק" - הבדיקה עצמה (ReferralService.checkForReferral)
+  // עברה ל-AppLifecycleManager.initState, כי כדי להציג פופאפ "קיבלת X
+  // מטבעות!" יפה (לא רק לזכות בשקט) צריך BuildContext/Navigator שעדיין
+  // לא קיים כאן, לפני runApp().
   await NotificationManager.init(); // 🔔 התראות מקומיות (תזכורת בונוס מטבעות)
   // 🆕 היו קיימים כבר בקוד (energy_service.dart קורא להם) אבל בלי
   // האתחול הזה הם היו no-op שקט לגמרי - שום התראת "אנרגיה מלאה" או
@@ -231,17 +238,56 @@ class _AppRootGateState extends State<AppRootGate> {
   // _checkResumeMatch למטה. null = אין משחק לחזור אליו (המקרה הרגיל).
   Widget? _resumeScreen;
 
+  // 🆕 התקדמות/סטטוס *אמיתיים* של מסך הטעינה (app_loading_screen.dart) -
+  // מתעדכנים כאן, בכל שלב בפועל של _runCheck, לא מספרים מומצאים. ראו
+  // ההערה המלאה ב-app_loading_screen.dart למה זה תוקן ככה.
+  final ValueNotifier<double> _loadProgress = ValueNotifier(0.05);
+  final ValueNotifier<String> _loadStatus = ValueNotifier('בודקים גרסה...');
+
   @override
   void initState() {
     super.initState();
     _runCheck();
   }
 
+  @override
+  void dispose() {
+    _loadProgress.dispose();
+    _loadStatus.dispose();
+    super.dispose();
+  }
+
+  // 🩹 תוקן: "האחוזים לא עולים" - הבדיקות האמיתיות (checkForRequiredUpdate/
+  // _checkResumeMatch) מסתיימות לפעמים כל כך מהר (רשת/מטמון מהירים) שה-
+  // State כולו עובר מ-5% ל-100% תוך פחות מפריים אחד - לא "לא עולה", אלא
+  // עולה כל כך מהר שאי אפשר לראות את זה בעין. התיקון *לא* מחזיר התקדמות
+  // מזויפת (אין לולאה/טיימר שרץ בלי קשר למצב האמיתי) - כל ערך כאן עדיין
+  // משקף שלב אמיתי שבאמת הסתיים, רק עם רווח קצר מינימלי בין שלב לשלב כדי
+  // שהעין תספיק לקלוט את העלייה, בדיוק כמו שרוב האפליקציות עושות למסכי
+  // פתיחה (אם הבדיקה האמיתית איטית מהרווח הזה - היא זו שקובעת את הקצב,
+  // לא ההפך).
+  static const _minStepGap = Duration(milliseconds: 220);
+
+  Future<void> _pacedProgress(double value, String status) async {
+    _loadStatus.value = status;
+    _loadProgress.value = value;
+    await Future.delayed(_minStepGap);
+  }
+
   Future<void> _runCheck() async {
+    await _pacedProgress(0.12, 'מתחברים לשרת...');
     final result = await UpdateChecker.checkForRequiredUpdate();
+    await _pacedProgress(0.5, 'בודקים גרסה...');
     // 🆕 בודקים "חזרה למשחק" רק אם אין חסימת גרסה - אין טעם להכניס שחקן
     // ישר לתוך דו-קרב/מרוץ שהוא ממילא ייחסם תוך שנייה על ידי UpdateRequiredScreen.
-    if (result == null) await _checkResumeMatch();
+    if (result == null) {
+      _loadStatus.value = 'בודקים משחק פעיל...';
+      await _checkResumeMatch();
+    }
+    await _pacedProgress(0.9, 'כמעט מוכנים...');
+    _loadProgress.value = 1.0;
+    _loadStatus.value = 'מוכנים';
+    await Future.delayed(_minStepGap);
     if (!mounted) return;
     setState(() {
       _blockInfo = result;
@@ -286,12 +332,7 @@ class _AppRootGateState extends State<AppRootGate> {
   @override
   Widget build(BuildContext context) {
     if (_checking) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF1D0E3C),
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFFFFC64B)),
-        ),
-      );
+      return AppLoadingScreen(progress: _loadProgress, status: _loadStatus);
     }
     if (_blockInfo != null) {
       return UpdateRequiredScreen(
@@ -340,6 +381,8 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
   StreamSubscription<Map<String, dynamic>?>? _incomingInviteSub;
   Timer? _presenceTimer;
   bool _showingIncomingInviteDialog = false;
+  String? _shownInviteCode;
+  BuildContext? _inviteDialogContext;
 
   @override
   void initState() {
@@ -350,6 +393,40 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
     // השחקן כבר באמצע משחק, ולא רק בפעם הבאה שהוא פותח את האפליקציה.
     PlayerSyncService.startListening();
     _startFriendPresenceAndInvites();
+    // 🆕 "קיבלת X מטבעות כי הורדת דרך ההזמנה של Y!" - צד המותקן החדש.
+    _checkReferralAndShowPopup();
+    // 🆕 "קיבלת X מטבעות! חבר הצטרף למשחק" - צד המזמין (מגיע מאוחר יותר,
+    // כשה-listener החי ב-player_sync.dart קולט pendingBonusCoins).
+    PlayerSyncService.referralBonusReceived.addListener(_onReferralBonusReceived);
+  }
+
+  Future<void> _checkReferralAndShowPopup() async {
+    final result = await ReferralService.checkForReferral();
+    if (result == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final currentCoins = prefs.getInt('coins') ?? 15;
+    _showBonusPopup(rewardAmount: result.coins, currentCoins: currentCoins, subtitle: 'כי הורדת את המשחק דרך ההזמנה של ${result.referrerName}! 🎉');
+  }
+
+  void _onReferralBonusReceived() {
+    final amount = PlayerSyncService.referralBonusReceived.amount;
+    if (amount == null || amount <= 0) return;
+    SharedPreferences.getInstance().then((prefs) {
+      if (!mounted) return;
+      _showBonusPopup(rewardAmount: amount, currentCoins: prefs.getInt('coins') ?? 15, subtitle: 'חבר הצטרף למשחק דרך ההזמנה שלך! 🎉');
+    });
+  }
+
+  // 🆕 אותו פופאפ מסך-מלא של "קיבלת מטבעות" (reward_popups.dart) שכבר
+  // מוכר מכל שאר בונוסי המטבעות באפליקציה - מנסה כמה פעמים אם ה-
+  // Navigator עדיין לא מוכן (בדיוק כמו _showIncomingInviteDialog למטה).
+  void _showBonusPopup({required int rewardAmount, required int currentCoins, required String subtitle, int attempt = 0}) {
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) {
+      if (attempt < 5) Future.delayed(const Duration(seconds: 1), () => _showBonusPopup(rewardAmount: rewardAmount, currentCoins: currentCoins, subtitle: subtitle, attempt: attempt + 1));
+      return;
+    }
+    showCoinsRewardPopup(ctx, rewardAmount: rewardAmount, currentCoins: currentCoins, subtitle: subtitle);
   }
 
   // 🆕 "הוא יכול להזמין אותו למשחק והוא יכול לראות אם הוא מחובר" -
@@ -377,14 +454,35 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
   // לדו-קרב" עם שני אווטארים מול VS, מאזן ראש-בראש, "תנאי הדו-קרב"
   // (הימור/לוגואים/פרס), פס התקדמות עם ספירה לאחור, וכפתור קבלה גדול +
   // שתי אפשרויות משנה ("אחר כך" / "דחה") - ראו _IncomingInviteDialog למטה.
-  void _showIncomingInviteDialog(String myId, Map<String, dynamic> invite) {
-    if (_showingIncomingInviteDialog) return; // כבר מוצג דיאלוג הזמנה - לא פותחים עוד אחד
-    final ctx = rootNavigatorKey.currentContext;
-    if (ctx == null) return;
-    final fromId = (invite['fromId'] as String?) ?? '';
-    final fromName = (invite['fromName'] as String?) ?? 'חבר';
+  void _showIncomingInviteDialog(String myId, Map<String, dynamic> invite, {int attempt = 0}) {
     final code = invite['code'] as String?;
     if (code == null || code.isEmpty) return;
+    // 🩹 "ההזמנה לא קפצה" - (1) הזמנה ישנה שלא טופלה (למשל "אחר כך" או שהאפליקציה
+    // הייתה סגורה) נשארה במסמך ותפסה את הדיאלוג/הוצגה באיחור - הזמנה פגה אחרי
+    // דקה, אז מתעלמים ומנקים כל הזמנה ישנה מ-3 דקות. (2) אם כבר מוצג דיאלוג
+    // של הזמנה *אחרת* - מחליפים אותו בחדשה במקום להתעלם ממנה. (3) אם ה-Navigator
+    // עוד לא מוכן (פתיחה קרה) - מנסים שוב אחרי שנייה במקום לוותר בשקט.
+    final rawSent = invite['sentAt'];
+    DateTime? sentAtOrNull;
+    try {
+      sentAtOrNull = (rawSent as dynamic).toDate() as DateTime;
+    } catch (_) {}
+    if (sentAtOrNull != null && DateTime.now().difference(sentAtOrNull) > const Duration(minutes: 3)) {
+      FriendService.clearIncomingInvite(myId);
+      return;
+    }
+    if (_showingIncomingInviteDialog) {
+      if (_shownInviteCode == code) return; // אותה הזמנה - כבר מוצגת
+      final old = _inviteDialogContext;
+      if (old != null && old.mounted) Navigator.of(old).pop();
+    }
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx == null) {
+      if (attempt < 5) Future.delayed(const Duration(seconds: 1), () => _showIncomingInviteDialog(myId, invite, attempt: attempt + 1));
+      return;
+    }
+    final fromId = (invite['fromId'] as String?) ?? '';
+    final fromName = (invite['fromName'] as String?) ?? 'חבר';
     // 🆕 "אתגר חבר" עכשיו תומך גם במרוץ - ההזמנה הנכנסת חייבת לדעת לאיזה
     // מוד היא שייכת (ראו FriendService.notifyFriendOfInvite), כי הקוד
     // חי באוסף Firestore שונה לגמרי לכל מוד. ברירת מחדל true (דו-קרב)
@@ -398,11 +496,14 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
       sentAt = DateTime.now();
     }
     _showingIncomingInviteDialog = true;
+    _shownInviteCode = code;
     showDialog(
       context: ctx,
       barrierDismissible: false,
       barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (dialogContext) => _IncomingInviteDialog(
+      builder: (dialogContext) {
+        _inviteDialogContext = dialogContext;
+        return _IncomingInviteDialog(
         myId: myId,
         fromId: fromId,
         fromName: fromName,
@@ -436,14 +537,22 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
             MaterialPageRoute(builder: (_) => FriendChallengeScreen(username: username, prefillJoinCode: code, isDuel: isDuel)),
           );
         },
-      ),
-    ).then((_) => _showingIncomingInviteDialog = false);
+        );
+      },
+    ).then((_) {
+      // רק אם זה עדיין הדיאלוג הנוכחי (ייתכן שהוחלף בהזמנה חדשה יותר)
+      if (_shownInviteCode == code) {
+        _showingIncomingInviteDialog = false;
+        _shownInviteCode = null;
+      }
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     PlayerSyncService.stopListening();
+    PlayerSyncService.referralBonusReceived.removeListener(_onReferralBonusReceived);
     _incomingInviteSub?.cancel();
     _presenceTimer?.cancel();
     super.dispose();

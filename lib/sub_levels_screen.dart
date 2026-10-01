@@ -81,6 +81,8 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
     16: 23, // רכבים חלק ב
     17: 22, // אלקטרוניקה ומכשירי חשמל
     18: 18, // תקשורת וחדשות ישראליות
+    19: 40, // דגלים חלק ג'
+    20: 20, // אלקטרוניקה חלק ב
   };
 
   // פונקציה שמחזירה את שם הקטגוריה לפי מספר הרמה
@@ -122,6 +124,10 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
         return "אלקטרוניקה ומכשירי חשמל";
       case 18:
         return "תקשורת וחדשות ישראליות";
+      case 19:
+        return "דגלים חלק ג'";
+      case 20:
+        return "אלקטרוניקה ומכשירי חשמל חלק ב";
       default:
         return "כללי";
     }

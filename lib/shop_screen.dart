@@ -30,7 +30,12 @@ class ShopScreen extends StatefulWidget {
   // 🆕 כנ"ל - כשנפתחים לכאן ממסך "נגמרה האנרגיה" (כפתור "קנה בחנות ⚡")
   // גוללים ישר לאזור "חנות האנרגיה".
   final bool scrollToEnergy;
-  const ShopScreen({super.key, this.scrollToNoAds = false, this.scrollToEnergy = false});
+  // 🆕 כשנפתחים לכאן מ"אין מספיק מטבעות" (דו-קרב/מירוץ/רמז) - גוללים
+  // ישר ל"חנות המטבעות" *וגם* מסמנים חזותית את החבילה הקטנה ביותר
+  // שבאמת מכסה את המחסור (לא סתם "כל החבילות זהות" - רואים ישר איזו
+  // אחת פותרת את הבעיה הנוכחית). ראו _recommendedCoinsProductId למטה.
+  final int? highlightNeededCoins;
+  const ShopScreen({super.key, this.scrollToNoAds = false, this.scrollToEnergy = false, this.highlightNeededCoins});
 
   @override
   State<ShopScreen> createState() => _ShopScreenState();
@@ -48,6 +53,26 @@ class _ShopScreenState extends State<ShopScreen> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _noAdsSectionKey = GlobalKey();
   final GlobalKey _energySectionKey = GlobalKey();
+  final GlobalKey _coinsSectionKey = GlobalKey();
+
+  // 🆕 איזו חבילת מטבעות "מומלצת" כרגע (ראו highlightNeededCoins למעלה) -
+  // הקטנה ביותר שמכסה את המחסור, או הגדולה ביותר אם המחסור עולה על הכל.
+  static const Map<String, int> _coinPackAmounts = {
+    IapManager.coins100Id: 100,
+    IapManager.coins200Id: 200,
+    IapManager.coins1000Id: 1000,
+    IapManager.coins2500Id: 2500,
+    IapManager.coins6000Id: 6000,
+  };
+  String? get _recommendedCoinsProductId {
+    final needed = widget.highlightNeededCoins;
+    if (needed == null || needed <= 0) return null;
+    final sorted = _coinPackAmounts.entries.toList()..sort((a, b) => a.value.compareTo(b.value));
+    for (final e in sorted) {
+      if (e.value >= needed) return e.key;
+    }
+    return sorted.last.key;
+  }
 
   // 🆕 מימוש קוד קופון
   final TextEditingController _couponController = TextEditingController();
@@ -99,6 +124,8 @@ class _ShopScreenState extends State<ShopScreen> {
       _scrollToSection(_noAdsSectionKey, attemptsLeft: 6);
     } else if (widget.scrollToEnergy) {
       _scrollToSection(_energySectionKey, attemptsLeft: 6);
+    } else if (widget.highlightNeededCoins != null) {
+      _scrollToSection(_coinsSectionKey, attemptsLeft: 6);
     }
   }
 
@@ -342,26 +369,32 @@ class _ShopScreenState extends State<ShopScreen> {
     String description = "";
     List<GrantedItem> granted = [];
 
+    // 🆕 "בונוס רכישה ראשונה" - ראו IapManager.lastGrantWasFirstPurchaseBonus.
+    // הכמות שכבר נזכתה בפועל (_grant) הייתה כפולה - חייבים להציג את זה
+    // כאן בפופאפ, אחרת המשתמש פשוט לא ידע שקיבל בונוס בכלל.
+    final bool firstPurchaseBonus = IapManager.lastGrantWasFirstPurchaseBonus;
+    String coinsValue(int base) => firstPurchaseBonus ? "+${base * 2} 🎁" : "+$base";
+
     switch (productId) {
       case 'coins_100':
-        name = "100 מטבעות"; description = "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: "+100")];
+        name = "100 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(100))];
         break;
       case 'coins_200':
-        name = "200 מטבעות"; description = "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: "+200")];
+        name = "200 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(200))];
         break;
       case 'coins_1000':
-        name = "1000 מטבעות"; description = "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: "+1000")];
+        name = "1000 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(1000))];
         break;
       case 'coins_2500':
-        name = "2500 מטבעות"; description = "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: "+2500")];
+        name = "2500 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(2500))];
         break;
       case 'coins_6000':
-        name = "6000 מטבעות"; description = "חבילת מטבעות - הכי משתלם";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: "+6000")];
+        name = "6000 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות - הכי משתלם";
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(6000))];
         break;
       case 'energy_2':
         name = "2 אנרגיה"; description = "חבילת אנרגיה";
@@ -782,16 +815,19 @@ class _ShopScreenState extends State<ShopScreen> {
                       ),
                     ],
 
-                    const SizedBox(height: 18),
+                    SizedBox(height: 18, key: _coinsSectionKey),
                     const _SectionTitle("חנות המטבעות", icon: Icons.auto_awesome_rounded),
                     const SizedBox(height: 12),
 
                     // ===== כרטיס מוביל =====
-                    _FeaturedCard(
-                      title: "חבילת אגדה",
-                      amount: "6,000 מטבעות",
-                      price: _price(IapManager.coins6000Id, "₪160.00"),
-                      onTap: () => _buy(IapManager.coins6000Id),
+                    _RecommendedHighlight(
+                      highlighted: _recommendedCoinsProductId == IapManager.coins6000Id,
+                      child: _FeaturedCard(
+                        title: "חבילת אגדה",
+                        amount: "6,000 מטבעות",
+                        price: _price(IapManager.coins6000Id, "₪160.00"),
+                        onTap: () => _buy(IapManager.coins6000Id),
+                      ),
                     ),
 
                     const SizedBox(height: 14),
@@ -800,24 +836,30 @@ class _ShopScreenState extends State<ShopScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: _CoinTile(
-                            icon: Icons.workspace_premium_rounded,
-                            iconColor: const Color(0xFFFFC64B),
-                            title: "חבילת זהב",
-                            amount: "200",
-                            price: _price(IapManager.coins200Id, "₪10.00"),
-                            onTap: () => _buy(IapManager.coins200Id),
+                          child: _RecommendedHighlight(
+                            highlighted: _recommendedCoinsProductId == IapManager.coins200Id,
+                            child: _CoinTile(
+                              icon: Icons.workspace_premium_rounded,
+                              iconColor: const Color(0xFFFFC64B),
+                              title: "חבילת זהב",
+                              amount: "200",
+                              price: _price(IapManager.coins200Id, "₪10.00"),
+                              onTap: () => _buy(IapManager.coins200Id),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _CoinTile(
-                            icon: Icons.shield_rounded,
-                            iconColor: const Color(0xFF64B5F6),
-                            title: "חבילת מתחילים",
-                            amount: "100",
-                            price: _price(IapManager.coins100Id, "₪5.90"),
-                            onTap: () => _buy(IapManager.coins100Id),
+                          child: _RecommendedHighlight(
+                            highlighted: _recommendedCoinsProductId == IapManager.coins100Id,
+                            child: _CoinTile(
+                              icon: Icons.shield_rounded,
+                              iconColor: const Color(0xFF64B5F6),
+                              title: "חבילת מתחילים",
+                              amount: "100",
+                              price: _price(IapManager.coins100Id, "₪5.90"),
+                              onTap: () => _buy(IapManager.coins100Id),
+                            ),
                           ),
                         ),
                       ],
@@ -826,24 +868,30 @@ class _ShopScreenState extends State<ShopScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: _CoinTile(
-                            icon: Icons.diamond_rounded,
-                            iconColor: const Color(0xFF4DD0E1),
-                            title: "חבילת מלכים",
-                            amount: "2,500",
-                            price: _price(IapManager.coins2500Id, "₪80.00"),
-                            onTap: () => _buy(IapManager.coins2500Id),
+                          child: _RecommendedHighlight(
+                            highlighted: _recommendedCoinsProductId == IapManager.coins2500Id,
+                            child: _CoinTile(
+                              icon: Icons.diamond_rounded,
+                              iconColor: const Color(0xFF4DD0E1),
+                              title: "חבילת מלכים",
+                              amount: "2,500",
+                              price: _price(IapManager.coins2500Id, "₪80.00"),
+                              onTap: () => _buy(IapManager.coins2500Id),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _CoinTile(
-                            icon: Icons.rocket_launch_rounded,
-                            iconColor: const Color(0xFFFF8A65),
-                            title: "חבילת VIP",
-                            amount: "1,000",
-                            price: _price(IapManager.coins1000Id, "₪35.00"),
-                            onTap: () => _buy(IapManager.coins1000Id),
+                          child: _RecommendedHighlight(
+                            highlighted: _recommendedCoinsProductId == IapManager.coins1000Id,
+                            child: _CoinTile(
+                              icon: Icons.rocket_launch_rounded,
+                              iconColor: const Color(0xFFFF8A65),
+                              title: "חבילת VIP",
+                              amount: "1,000",
+                              price: _price(IapManager.coins1000Id, "₪35.00"),
+                              onTap: () => _buy(IapManager.coins1000Id),
+                            ),
                           ),
                         ),
                       ],
@@ -1069,6 +1117,48 @@ class _SectionTitle extends StatelessWidget {
 }
 
 /// כרטיס הזהב הגדול - פריסה אנכית כדי שהמחיר לא ידרוס את הכותרת
+/// 🆕 עוטף חבילת מטבעות שהומלצה (הגיע ל"אין מספיק מטבעות" - ראו
+/// ShopScreen.highlightNeededCoins) בטבעת זוהרת + תג "מומלץ לך" קטן,
+/// כדי שיהיה מיידית ברור איזו חבילה בדיוק פותרת את המחסור הנוכחי -
+/// לא רק "יש כמה חבילות, תבחר משהו". שקוף לגמרי כשלא מומלצת.
+class _RecommendedHighlight extends StatelessWidget {
+  final bool highlighted;
+  final Widget child;
+  const _RecommendedHighlight({required this.highlighted, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!highlighted) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(25),
+            gradient: const LinearGradient(colors: [Color(0xFF6EE7B7), Color(0xFF22C79A)]),
+            boxShadow: [BoxShadow(color: const Color(0xFF6EE7B7).withValues(alpha: 0.45), blurRadius: 22, spreadRadius: 1)],
+          ),
+          child: child,
+        ),
+        Positioned(
+          top: -10,
+          left: 14,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: const Color(0xFF16A46F),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 7)],
+            ),
+            child: const Text("מומלץ לך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FeaturedCard extends StatelessWidget {
   final String title, amount, price;
   final VoidCallback onTap;

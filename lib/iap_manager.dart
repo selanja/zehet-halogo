@@ -15,6 +15,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'energy_service.dart'; // 🆕 חבילות אנרגיה בתשלום
 import 'device_id.dart'; // 🆕 לתיעוד רכישות ב-Firestore לפי מכשיר
 import 'meta_events_service.dart'; // 🆕 מעקב רכישות ל-Meta Ads (אופטימיזציית קמפיין)
+import 'analytics_service.dart'; // 📊 מעקב רכישות ל-Firebase Analytics/Google Ads
 import 'battle_pass_service.dart'; // 🆕 שדרוג "באטל פאס" לפרימיום
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי רכישה אמיתית - קריטי במיוחד כאן (כסף אמיתי), בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה את הרכישה במכשיר אחר
 
@@ -178,6 +179,29 @@ class IapManager {
   /// מזהה המוצר לתוכן הפופאפ ומציג אותו.
   static void Function(String productId)? onPurchaseGranted;
 
+  // 🆕 "בונוס רכישה ראשונה" - הרכישה הראשונה אי-פעם של חבילת מטבעות
+  // *קטנה* (ראו _firstPurchaseBonusEligibleIds למטה - לפי בקשה מפורשת
+  // מוגבל לחבילות הקטנות בלבד, לא הגדולות) מזכה כפול, חד-פעמי, כדי
+  // להוריד את החיכוך הפסיכולוגי של "הרכישה הראשונה" בלי להוריד בפועל
+  // את המחיר. "הרכישה הראשונה" עצמה נצרכת (מסומנת) בכל רכישת מטבעות
+  // ראשונה, גם אם זו חבילה גדולה - היא פשוט לא מזכה בבונוס במקרה הזה
+  // (אין "לשמור" את הזכאות לרכישה קטנה מאוחרת יותר). נבדק/מוגדר ב-
+  // _grant() ממש לפני קריאת onPurchaseGranted, כדי שהמסך הקורא
+  // (ShopScreen._onPurchaseGranted) יידע להציג את הכמות הכפולה בפועל
+  // בפופאפ "הרכישה הושלמה" - לא רק לזכות בשקט בלי שהמשתמש ידע שקיבל בונוס.
+  static bool lastGrantWasFirstPurchaseBonus = false;
+
+  static const Map<String, int> _coinPackAmounts = {
+    coins100Id: 100,
+    coins200Id: 200,
+    coins1000Id: 1000,
+    coins2500Id: 2500,
+    coins6000Id: 6000,
+  };
+  // 🆕 רק החבילות הקטנות זכאיות לבונוס רכישה ראשונה - 100/200 מטבעות.
+  // חבילות גדולות (1000/2500/6000) לא מוכפלות אף פעם, גם ברכישה ראשונה.
+  static const Set<String> _firstPurchaseBonusEligibleIds = {coins100Id, coins200Id};
+
   static Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -233,9 +257,30 @@ class IapManager {
     return null;
   }
 
+  /// 🩹 טוען מחדש את פרטי המוצרים מהחנות. init() רץ פעם אחת בלבד בפתיחת האפליקציה -
+  /// אם באותו רגע לא הייתה רשת/החנות עוד לא הייתה מוכנה, products נשאר ריק
+  /// לכל הסשן, והחנות הציגה מחירים (גיבוי) אבל כל לחיצה על "קנה" נכשלה
+  /// ("הרכישה אינה זמינה כרגע"). עכשיו ננסה לטעון שוב כשצריך.
+  static Future<void> reloadProducts() async {
+    try {
+      storeAvailable = await _iap.isAvailable();
+      if (!storeAvailable) return;
+      _sub ??= _iap.purchaseStream.listen(_onPurchaseUpdates, onError: (e) => debugPrint('IAP stream error: $e'));
+      final resp = await _iap.queryProductDetails(_productIds);
+      if (resp.productDetails.isNotEmpty) products = resp.productDetails;
+      if (resp.notFoundIDs.isNotEmpty) debugPrint('IAP: מוצרים שלא נמצאו בקונסולה: ${resp.notFoundIDs}');
+    } catch (e) {
+      debugPrint('IAP reload error: $e');
+    }
+  }
+
   /// התחלת רכישה. מחזיר false אם המוצר לא זמין.
   static Future<bool> buy(String id) async {
-    final p = product(id);
+    var p = product(id);
+    if (p == null) {
+      await reloadProducts(); // ניסיון נוסף לפני שמוותרים
+      p = product(id);
+    }
     if (p == null) return false;
     final param = PurchaseParam(productDetails: p);
     try {
@@ -347,7 +392,12 @@ class IapManager {
     try {
       final deviceId = await DeviceId.get();
       final details = product(purchase.productID);
-      await FirebaseFirestore.instance.collection('purchases').add({
+      // 🩹 מסמך לפי מזהה העסקה (כשקיים) - במקום add() עם מזהה אקראי - כדי
+      // שאותה עסקה שהחנות מחזירה שוב (redelivery/שחזור) לא תיכתב פעמיים
+      // (נראה בפרודקשן: אותה עסקה coins_6000 תועדה פעמיים בהפרש 11 שניות).
+      final purchasesCol = FirebaseFirestore.instance.collection('purchases');
+      final purchaseDoc = (purchase.purchaseID ?? '').isNotEmpty ? purchasesCol.doc(purchase.purchaseID) : purchasesCol.doc();
+      await purchaseDoc.set({
         'deviceId': deviceId,
         'productId': purchase.productID,
         'status': purchase.status.name,
@@ -355,6 +405,11 @@ class IapManager {
         'transactionDate': purchase.transactionDate,
         'price': details?.rawPrice,
         'currency': details?.currencyCode,
+        // 🆕 הקבלה/הטוקן הגולמי מהחנות - כדי שאפשר יהיה לאמת בדיעבד מול
+        // Apple/Google אם רכישה אמיתית נראית חשודה (סביבת Sandbox או אמיתית,
+        // ואם בכלל קיימת אצלם).
+        'verificationSource': purchase.verificationData.source,
+        'verificationToken': purchase.verificationData.serverVerificationData,
         'priceLabel': details?.price,
         'platform': Platform.isIOS ? 'ios' : 'android',
         'createdAt': FieldValue.serverTimestamp(),
@@ -376,10 +431,20 @@ class IapManager {
       currency: details.currencyCode,
       productId: purchase.productID,
     );
+    // 📊 אותו דיווח גם ל-Firebase Analytics (עבור Google Ads) - ראו analytics_service.dart.
+    AnalyticsService.logPurchase(
+      amount: details.rawPrice,
+      currency: details.currencyCode,
+      productId: purchase.productID,
+    );
   }
 
   /// מתן התמורה בפועל אחרי רכישה מאושרת
   static Future<void> _grant(String id) async {
+    // 🐛 מאופס בכל קריאה - בלי זה, בונוס רכישה ראשונה שהודלק ברכישת
+    // מטבעות היה "נדבק" בטעות גם לפופאפ של הרכישה הבאה (למשל ללא-פרסומות)
+    // אם היא קרתה מהר מספיק אחריו בלי שהמסך הספיק לקרוא את הדגל.
+    lastGrantWasFirstPurchaseBonus = false;
     // 🆕 חבילות אנרגיה - מטופלות בנפרד לפני ה-switch (לא נוגעות במטבעות
     // בכלל), כי הכמות תלויה במוצר (ראה _energyProductAmounts).
     final energyAmount = _energyProductAmounts[id];
@@ -408,22 +473,24 @@ class IapManager {
 
     final prefs = await SharedPreferences.getInstance();
     int coins = prefs.getInt('coins') ?? 15;
+    final coinPackBaseAmount = _coinPackAmounts[id];
+    if (coinPackBaseAmount != null) {
+      final isFirstCoinsPurchase = !(prefs.getBool('firstCoinsPurchaseUsed') ?? false);
+      final appliesFirstPurchaseBonus = isFirstCoinsPurchase && _firstPurchaseBonusEligibleIds.contains(id);
+      lastGrantWasFirstPurchaseBonus = appliesFirstPurchaseBonus;
+      final grantedAmount = appliesFirstPurchaseBonus ? coinPackBaseAmount * 2 : coinPackBaseAmount;
+      // 🆕 "הרכישה הראשונה" נצרכת כאן על כל רכישת מטבעות ראשונה - גם אם
+      // זו חבילה גדולה שלא זכאית לבונוס (אין "לשמור" את הזכאות לפעם הבאה).
+      if (isFirstCoinsPurchase) await prefs.setBool('firstCoinsPurchaseUsed', true);
+      await prefs.setInt('coins', coins + grantedAmount);
+    }
     switch (id) {
       case coins100Id:
-        await prefs.setInt('coins', coins + 100);
-        break;
       case coins200Id:
-        await prefs.setInt('coins', coins + 200);
-        break;
       case coins1000Id:
-        await prefs.setInt('coins', coins + 1000);
-        break;
       case coins2500Id:
-        await prefs.setInt('coins', coins + 2500);
-        break;
       case coins6000Id:
-        await prefs.setInt('coins', coins + 6000);
-        break;
+        break; // הזיכוי כבר קרה למעלה (כולל בונוס רכישה ראשונה אם רלוונטי)
       case noAdsMonthlyId:
       case noAdsLifetimeId:
         noAds = true;

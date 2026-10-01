@@ -24,6 +24,7 @@
 // אחת (PresenceService.startHeartbeat) בתוך duel_room_screen.dart בעצמך,
 // או לבטל את ההגבלה על הקובץ הזה.
 import 'dart:async';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class PresenceService {
@@ -40,7 +41,7 @@ class PresenceService {
   static String? _deviceId;
   static String? _mode;
 
-  /// מתחיל לשלוח פעימת חיים תחת מצב מסוים ('duel' | 'race'). קריאה חוזרת
+  /// מתחיל לשלוח פעימת חיים תחת מצב מסוים ('duel' | 'superdual' | 'race'). קריאה חוזרת
   /// עם אותו deviceId+mode לא עושה כלום (כבר רץ) - בטוח לקרוא כמה פעמים.
   static void startHeartbeat(String deviceId, String mode) {
     if (_timer != null && _deviceId == deviceId && _mode == mode) return;
@@ -86,18 +87,91 @@ class PresenceService {
   /// בדיוק כמו listActive למטה, מסננים שרת-צד רק לפי updatedAt (שדה יחיד -
   /// לא דורש אינדקס מורכב) וסופרים לפי mode בצד הלקוח - בלי שום תלות
   /// בהגדרה ידנית בקונסולה של Firebase.
-  static Future<int> countActive(String mode) async {
-    try {
-      final cutoff = Timestamp.fromDate(DateTime.now().subtract(activeWindow));
-      final snap = await _db
-          .collection(_collection)
-          .where('updatedAt', isGreaterThan: cutoff)
-          .limit(500)
-          .get();
-      return snap.docs.where((d) => d.data()['mode'] == mode).length;
-    } catch (_) {
-      return 0;
+  //
+  // 🩹 חיסכון בקריאות Firestore: הפונקציה הזו נקראה פעמיים (duel + race)
+  // כל 30 שניות מכל משתמש שנמצא במסך הבית, ובכל קריאה שלפה את *כל* מסמכי
+  // הנוכחות הפעילים (עד 500) - כלומר עשרות קריאות בכל רענון, לכל משתמש.
+  // עכשיו שאילתה אחת משותפת לשני המצבים, ותוצאתה נשמרת בזיכרון _countsCacheTtl.
+  static const Duration _countsCacheTtl = Duration(seconds: 60);
+  static DateTime? _countsAt;
+  static Map<String, int> _counts = const {};
+  static Future<Map<String, int>>? _countsInFlight;
+
+  static Future<Map<String, int>> _fetchCounts() async {
+    final now = DateTime.now();
+    if (_countsAt != null && now.difference(_countsAt!) < _countsCacheTtl) return _counts;
+    return _countsInFlight ??= () async {
+      try {
+        final cutoff = Timestamp.fromDate(DateTime.now().subtract(activeWindow));
+        final snap = await _db
+            .collection(_collection)
+            .where('updatedAt', isGreaterThan: cutoff)
+            .limit(200)
+            .get();
+        final result = <String, int>{};
+        for (final d in snap.docs) {
+          final m = d.data()['mode'];
+          if (m is String) result[m] = (result[m] ?? 0) + 1;
+        }
+        _counts = result;
+        _countsAt = DateTime.now();
+      } catch (_) {
+        // נשארים עם הערך הקודם
+      } finally {
+        _countsInFlight = null;
+      }
+      return _counts;
+    }();
+  }
+
+  // 🆕 "בוטים מחוברים" - תוספת מדומה שנוספת למספר "X משחקים עכשיו"
+  // שמוצג בתפריט הראשי/מסך בחירת מוד, כדי שהאפליקציה לא תיראה ריקה
+  // כשיש מעט שחקנים אמיתיים. נשלטת מרחוק דרך *אותו* מסמך meta/appConfig
+  // ששולט כבר על הבוטים עצמם (ראו bot_config.dart) - שדות fakeOnlineBoostMin/
+  // fakeOnlineBoostMax (מספרים שלמים, ברירת מחדל 0/0 = כבוי), כתיבה
+  // ידנית בלבד דרך Firebase Console.
+  // 🐛 תוקן: "מסך הבית מראה 4 מחוברים, אבל במסך בחירת המוד רואים 2+2" -
+  // הגרסה הקודמת הגרילה מספר *חדש ואקראי* בכל פעם שהמטמון התרענן, וכל
+  // מסך (בית/בחירת מוד) מרענן בזמנים שונים משלו - אז שני מסכים שנפתחו
+  // בפערי זמן קטנים יכלו לקבל שתי הגרלות שונות, וזה נראה כאילו המספרים
+  // "לא מסתדרים". עכשיו זה לא הגרלה בכלל - זו פונקציה דטרמיניסטית של
+  // (מוד, "חלון הזמן" הנוכחי בן 5 דקות): אותו קלט = תמיד אותה תוצאה,
+  // בכל מסך, בכל רגע נתון - אין שום דרך שהמספרים "לא יסתדרו" יותר. זה
+  // עדיין "חי" (מתחלף כל 5 דקות), ועדיין שונה בין דו-קרב למירוץ.
+  // ⚠️ בכוונה משפיעה *רק* על המספר המוצג כאן - לא נוגעת בשום מקום
+  // בהתאמה/בתור האמיתיים, כדי שלא "לשבור" משחק אמיתי.
+  static const Duration _boostCacheTtl = Duration(seconds: 60);
+  static const Duration _boostChangeWindow = Duration(minutes: 5);
+  static DateTime? _boostConfigAt;
+  static int _boostMin = 0;
+  static int _boostMax = 0;
+
+  static Future<int> _fetchBoost(String mode) async {
+    final now = DateTime.now();
+    if (_boostConfigAt == null || now.difference(_boostConfigAt!) >= _boostCacheTtl) {
+      try {
+        final doc = await _db.collection('meta').doc('appConfig').get().timeout(const Duration(seconds: 4));
+        final data = doc.data();
+        final minV = data?['fakeOnlineBoostMin'];
+        final maxV = data?['fakeOnlineBoostMax'];
+        _boostMin = (minV is int) ? minV.clamp(0, 100000) : 0;
+        _boostMax = (maxV is int) ? maxV.clamp(_boostMin, 100000) : _boostMin;
+        _boostConfigAt = DateTime.now();
+      } catch (_) {
+        // נשארים עם הטווח הקודם (או 0/0 אם עוד לא נטען בהצלחה אף פעם)
+      }
     }
+    final span = _boostMax - _boostMin;
+    if (span <= 0) return _boostMin.clamp(0, 100000);
+    final bucket = now.millisecondsSinceEpoch ~/ _boostChangeWindow.inMilliseconds;
+    final seed = Object.hash(bucket, mode);
+    return _boostMin + Random(seed).nextInt(span + 1);
+  }
+
+  static Future<int> countActive(String mode) async {
+    final counts = await _fetchCounts();
+    final boost = await _fetchBoost(mode);
+    return (counts[mode] ?? 0) + boost;
   }
 
   // 🆕 לצורך מסך המעקב היזמי (presence_admin_screen.dart) - "מי מחובר

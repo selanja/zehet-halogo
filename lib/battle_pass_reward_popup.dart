@@ -44,6 +44,10 @@ Future<void> showBattlePassRewardPopup(
   required int currentPoints,
   int? nextTier,
   VoidCallback? onClaimNext,
+  // 🆕 "כשאוספים מהנתיב החינמי - להראות כמה היו מקבלים בפרימיום": אם לא null,
+  // מוצג כרטיס עם מה שהפרימיום היה נותן בדרגה הזו, ולחיצה עליו קוראת לזה
+  // (המסך הקורא שואל אם לשדרג לפרימיום).
+  VoidCallback? onUpgradeTap,
 }) {
   return showGeneralDialog<void>(
     context: context,
@@ -58,6 +62,7 @@ Future<void> showBattlePassRewardPopup(
       currentPoints: currentPoints,
       nextTier: nextTier,
       onClaimNext: onClaimNext,
+      onUpgradeTap: onUpgradeTap,
     ),
     transitionBuilder: (ctx, anim, sec, child) {
       return FadeTransition(opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut), child: child);
@@ -73,6 +78,7 @@ class _BattlePassRewardPopup extends StatefulWidget {
   final int currentPoints;
   final int? nextTier;
   final VoidCallback? onClaimNext;
+  final VoidCallback? onUpgradeTap;
 
   const _BattlePassRewardPopup({
     required this.tier,
@@ -82,6 +88,7 @@ class _BattlePassRewardPopup extends StatefulWidget {
     required this.currentPoints,
     required this.nextTier,
     required this.onClaimNext,
+    this.onUpgradeTap,
   });
 
   @override
@@ -215,6 +222,10 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
                               ),
                               const SizedBox(height: 16),
                               _buildRewardSummaryPill(pathLabel: pathLabel, tiersCount: tiers.length),
+                              if (!widget.premium && widget.onUpgradeTap != null) ...[
+                                const SizedBox(height: 14),
+                                _buildPremiumTeaser(),
+                              ],
                               const SizedBox(height: 16),
                               _buildProgressBlock(upcomingTier: upcomingTier, barRatio: barRatio),
                               if (widget.nextTier != null && nextTierDesc != null) ...[
@@ -422,6 +433,50 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
           ),
         ),
       ],
+    );
+  }
+
+  // 🆕 "כמה היית יכול לקבל בדרגה הזו עם פרימיום" - מוצג אחרי איסוף מהנתיב
+  // החינמי. לחיצה על הכרטיס פותחת שאלה "לשדרג לפרימיום?" (במסך הקורא).
+  Widget _buildPremiumTeaser() {
+    final def = BattlePassService.tiers.firstWhere((t) => t.tier == widget.tier);
+    final freeCoins = def.freeCoins;
+    final pCoins = def.premiumCoins, pEnergy = def.premiumEnergy;
+    final parts = <String>[];
+    if (pCoins > 0) parts.add('$pCoins מטבעות');
+    if (pEnergy > 0) parts.add('$pEnergy אנרגיה');
+    if (parts.isEmpty) return const SizedBox.shrink();
+    final extraCoins = pCoins - freeCoins;
+    final extraNote = extraCoins > 0 ? ' · פי ${(pCoins / (freeCoins > 0 ? freeCoins : 1)).toStringAsFixed(1)} ממה שקיבלת' : '';
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: widget.onUpgradeTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(colors: [const Color(0xFFFFD979).withValues(alpha: 0.24), const Color(0xFFF59E0B).withValues(alpha: 0.08)]),
+          border: Border.all(color: const Color(0xFFFFD979).withValues(alpha: 0.55)),
+        ),
+        child: Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD979), size: 30),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('עם פרימיום היית מקבל בדרגה הזו', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFFFE9A8), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 2),
+                  Text('${parts.join(' + ')}$extraNote', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_left_rounded, color: Colors.white.withValues(alpha: 0.6)),
+          ],
+        ),
+      ),
     );
   }
 

@@ -53,12 +53,26 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart'; // 🆕 מזהה "אפקטיבי" - uid מקושר (Google/Apple) אם קיים, אחרת deviceId כרגיל
 import 'debug_log.dart';
+import 'device_id.dart'; // 🆕 לדיווח לטבלת השיאים (leaderboard.dart) - אותו deviceId גולמי שכבר נהוג שם, לא ה-id "האפקטיבי"
+import 'leaderboard.dart'; // 🆕 ראו הערה ליד syncCurrentProgress - כל שינוי XP מדווח גם לטבלת השיאים, לא רק ל-players
 
 class CoinsSignal extends ChangeNotifier {
   int? _value;
   int? get value => _value;
   void emit(int newValue) {
     _value = newValue;
+    notifyListeners();
+  }
+}
+
+/// 🆕 "בונוס חבר/הפניה נחת" - שונה מ-CoinsSignal (שרק מודיע על הסכום
+/// הכולל החדש): כאן מודיעים כמה *התווסף עכשיו* ולמה, כדי ש-main.dart
+/// יוכל להציג פופאפ יפה ("קיבלת 30 מטבעות!") במקום רק לרענן מספר בשקט.
+class BonusSignal extends ChangeNotifier {
+  int? _amount;
+  int? get amount => _amount;
+  void emit(int amount) {
+    _amount = amount;
     notifyListeners();
   }
 }
@@ -78,6 +92,10 @@ class PlayerSyncService {
   // אם קובעים בו פעמיים ברצף בדיוק אותו ערך (למשל שני עדכונים ל-15) -
   // המחלקה הקטנה הזו כן מודיעה בכל פעם, כדי שעדכון לא "יבלע" בשקט.
   static final CoinsSignal remoteCoinsUpdate = CoinsSignal();
+  // 🆕 "חבר הצטרף/הותקן דרך הזמנה שלך" - ראו BonusSignal. main.dart מאזין
+  // לזה כדי להציג פופאפ "קיבלת X מטבעות!" (ראו friend_service.dart +
+  // referral_service.dart, ששניהם עוברים דרך pendingBonusCoins).
+  static final BonusSignal referralBonusReceived = BonusSignal();
 
   /// "מהבהב" (משתנה ל-true) בכל פעם שמתבצע איפוס מלא מרחוק - מסכים
   /// שמציגים גם XP/שלב יכולים להאזין לזה כדי לרענן את התצוגה שלהם.
@@ -156,6 +174,25 @@ class PlayerSyncService {
         debugPrint("PLAYER COINS UPDATE (LIVE): המטבעות עודכנו ל-$newCoins מיידית ✅");
         DebugLog.add("PlayerSync: setCoinsTo write done");
       }
+
+      // 🆕 "מביאים חבר למשחק" - בונוס מטבעות ממתין (ראו
+      // friend_service.dart.acceptFriendRequest) - הצד ששלח את בקשת
+      // החברות מקבל אותו כאן, בפעם הראשונה שהאפליקציה שלו פתוחה אחרי
+      // שהחבר אישר. מפחיתים ב-Firestore בדיוק את הסכום שיושם (לא מוחקים
+      // סתם) כדי לא "לבלוע" בונוס נוסף שהתווסף בדיוק באותו רגע.
+      final pendingBonus = _parseCoins(data['pendingBonusCoins']);
+      if (pendingBonus != null && pendingBonus > 0) {
+        DebugLog.add("PlayerSync: pendingBonusCoins=$pendingBonus -> applying");
+        final prefs = await SharedPreferences.getInstance();
+        final newTotal = (prefs.getInt('coins') ?? 15) + pendingBonus;
+        await prefs.setInt('coins', newTotal);
+        await _players.doc(deviceId).set({
+          "pendingBonusCoins": FieldValue.increment(-pendingBonus),
+        }, SetOptions(merge: true));
+        remoteCoinsUpdate.emit(newTotal);
+        referralBonusReceived.emit(pendingBonus);
+        DebugLog.add("PlayerSync: pendingBonusCoins applied, new total=$newTotal");
+      }
     } catch (e) {
       DebugLog.add("PlayerSync._applyRemoteCommands ERROR: $e");
       debugPrint("PLAYER REMOTE COMMAND ERROR: $e");
@@ -196,6 +233,17 @@ class PlayerSyncService {
 
   /// קורא את ההתקדמות המקומית הנוכחית מ-SharedPreferences ושולח אותה
   /// לענן. נוח לקרוא לזה מכל מקום בלי להעביר פרמטרים בעצמך.
+  //
+  // 🩹 תוקן לפי בקשה מפורשת ("כל ניצחון נותן גם XP לטבלה"): עד עכשיו זה
+  // רק עדכן את אוסף "players" (סנכרון בין מכשירים/איפוס מרחוק) - *לא*
+  // את אוסף "leaderboard" שהטבלה הארצית בפועל ממוינת לפיו (ראו
+  // leaderboard.dart.fetchLeaderboard, orderBy('xp')). המקום היחיד
+  // שדיווח לטבלה הארצית היה logo_level_screen.dart בלבד, אז XP שהתקבל
+  // מניצחון בדו-קרב/מירוץ/אתגר יומי (שכולם כבר קוראים לפונקציה הזו אחרי
+  // שמעדכנים xp מקומית) לא היה מופיע בטבלה עד שהשחקן גם פתר שלב רגיל
+  // במצב יחיד. עכשיו כל קריאה לפונקציה הזו (כלומר כל שינוי התקדמות) גם
+  // מדווחת לטבלה הארצית - מקום מרכזי אחד, בלי לפזר קריאות submitScore
+  // בכל קובץ ניצחון בנפרד.
   static Future<void> syncCurrentProgress() async {
     try {
       DebugLog.add("PlayerSync.syncCurrentProgress START");
@@ -204,7 +252,12 @@ class PlayerSyncService {
       final xp = prefs.getInt('xp') ?? 0;
       final maxLevel = prefs.getInt('maxLevel') ?? 1;
       final username = prefs.getString('username');
+      final bestStreak = prefs.getInt('bestRandomStreak') ?? 0;
       await syncToCloud(coins: coins, xp: xp, maxLevel: maxLevel, username: username);
+      if (username != null && username.isNotEmpty) {
+        final deviceId = await DeviceId.get();
+        await LeaderboardService.submitScore(username, xp, streak: bestStreak, deviceId: deviceId);
+      }
       DebugLog.add("PlayerSync.syncCurrentProgress END");
     } catch (e) {
       DebugLog.add("PlayerSync.syncCurrentProgress ERROR: $e");
@@ -227,7 +280,8 @@ class PlayerSyncService {
         DebugLog.add("PlayerSync.checkForRemoteReset: no data");
         return false;
       }
-      if (data['resetRequested'] != true && _parseCoins(data['setCoinsTo']) == null) {
+      final pendingBonus = _parseCoins(data['pendingBonusCoins']);
+      if (data['resetRequested'] != true && _parseCoins(data['setCoinsTo']) == null && (pendingBonus == null || pendingBonus <= 0)) {
         DebugLog.add("PlayerSync.checkForRemoteReset: nothing pending");
         return false;
       }

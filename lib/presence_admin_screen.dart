@@ -66,6 +66,8 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
     switch (mode) {
       case 'duel':
         return 'דו-קרב';
+      case 'superdual':
+        return 'סדרת דו-קרב';
       case 'race':
         return 'מירוץ';
       default:
@@ -77,6 +79,8 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
     switch (mode) {
       case 'duel':
         return const Color(0xFFF43F5E);
+      case 'superdual':
+        return const Color(0xFFF87171);
       case 'race':
         return const Color(0xFF38BDF8);
       default:
@@ -87,7 +91,14 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
   @override
   Widget build(BuildContext context) {
     final counts = _countsByMode;
-    final total = _entries.length;
+    // 🩹 תוקן: "בפנים רשום 3 1 1" (הסה"כ לא שווה לסכום דו-קרב+מירוץ) -
+    // total היה _entries.length, שסופר *כל* מסמך נוכחות כולל מוד לא מוכר
+    // (למשל משאריות ישנות/גרסת אפליקציה קודמת), בעוד שתי הכרטיסיות
+    // למטה מציגות רק 'duel'/'race' במפורש - אז מסמך כזה ניפח את הסה"כ
+    // בלי להופיע באף כרטיסייה. עכשיו הסה"כ מחושב מאותם שני מודים בדיוק
+    // שמוצגים, כך שהוא תמיד שווה לסכומם - אין יותר מוד "רפאים" שסופר
+    // בסה"כ אבל לא נראה בשום מקום.
+    final total = (counts['duel'] ?? 0) + (counts['superdual'] ?? 0) + (counts['race'] ?? 0);
     return Scaffold(
       backgroundColor: const Color(0xFF12081F),
       appBar: AppBar(
@@ -106,10 +117,12 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
                 // שביקשת ("כמה שחקנים מחוברים ברגע זה, איזה מוד").
                 Row(
                   children: [
-                    Expanded(child: _summaryCard("סה״כ מחוברים", '$total', Colors.white)),
-                    const SizedBox(width: 10),
+                    Expanded(child: _summaryCard("סה״כ", '$total', Colors.white)),
+                    const SizedBox(width: 8),
                     Expanded(child: _summaryCard("דו-קרב", '${counts['duel'] ?? 0}', _modeColor('duel'))),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
+                    Expanded(child: _summaryCard("סדרה", '${counts['superdual'] ?? 0}', _modeColor('superdual'))),
+                    const SizedBox(width: 8),
                     Expanded(child: _summaryCard("מירוץ", '${counts['race'] ?? 0}', _modeColor('race'))),
                   ],
                 ),

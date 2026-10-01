@@ -37,6 +37,10 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
   int _coins = 0;
   int? _duelPlayersNow;
   int? _racePlayersNow;
+  // 🆕 "סדרת דו-קרב" - מוד presence נפרד לגמרי מ-'duel' (ראו
+  // duel_lobby_screen.dart/PresenceService.startHeartbeat) - לא אותו
+  // מספר כמו דו-קרב רגיל, לא צריך "להצטרף" לשום סכום אחר.
+  int? _superdualPlayersNow;
 
   // 🆕 "כשמישהו רוצה להזמין חבר בתוך שחק מול אחרים, שתופיע לו למטה
   // רשימת החברים שלו" - לפי בקשה מפורשת. כל חבר מחובר מקבל כאן שני
@@ -56,11 +60,16 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() => _coins = prefs.getInt('coins') ?? 15);
-    final results = await Future.wait([PresenceService.countActive('duel'), PresenceService.countActive('race')]);
+    final results = await Future.wait([
+      PresenceService.countActive('duel'),
+      PresenceService.countActive('race'),
+      PresenceService.countActive('superdual'),
+    ]);
     if (!mounted) return;
     setState(() {
       _duelPlayersNow = results[0];
       _racePlayersNow = results[1];
+      _superdualPlayersNow = results[2];
     });
   }
 
@@ -89,7 +98,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
     if (mounted) _load();
   }
 
-  int get _totalConnected => (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0);
+  int get _totalConnected => (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) + (_superdualPlayersNow ?? 0);
 
   @override
   Widget build(BuildContext context) {
@@ -121,6 +130,33 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildTopBar(),
+                  const SizedBox(height: 18),
+                  // 🆕 "סדרת דו-קרב (הטוב מ-3)" - הועבר להיות המוד הראשון
+                  // שמוצג (לפי בקשה מפורשת) - מוד ארוך יותר: אותו יריב, עד
+                  // 3 סיבובים ברצף (ממשיכים אוטומטית בין סיבוב לסיבוב), מי
+                  // שמנצח 2 ראשון לוקח בונוס מטבעות על כל הסדרה.
+                  _buildModeCard(
+                    icon: '🏆',
+                    title: "סדרת דו-קרב",
+                    subtitle: "הטוב מ-3 מול אותו יריב · בונוס מטבעות על ניצחון בסדרה",
+                    badge: "חדש",
+                    gradient: const [Color(0xFFDC2626), Color(0xFF7C2D12)],
+                    glowColor: const Color(0xFFF87171),
+                    // 🆕 "סדרת דו-קרב" קיבלה מוד presence נפרד משלה
+                    // ('superdual' - ראו duel_lobby_screen.dart/bot_config.dart)
+                    // לפי בקשה מפורשת - זה *לא* אותו מספר כמו "דו־קרב" הרגיל
+                    // למטה (ולא צריך להצטרף אליו לשום סכום), אז אין יותר
+                    // בלבול מהצגת שני מספרים זהים.
+                    playersNow: _superdualPlayersNow,
+                    energyCost: 2,
+                    infoRight: duelLogosLabel,
+                    buttonTextColor: const Color(0xFFB91C1C),
+                    onTap: () async {
+                      AudioManager.playClick();
+                      await Navigator.push(context, MaterialPageRoute(builder: (context) => DuelLobbyScreen(username: widget.username, seriesMode: true)));
+                      if (mounted) _load();
+                    },
+                  ),
                   const SizedBox(height: 18),
                   _buildModeCard(
                     icon: '⚔',
@@ -312,7 +348,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
           child: Column(
             children: [
               const Text("בחר מוד", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-              if (_duelPlayersNow != null || _racePlayersNow != null) ...[
+              if (_duelPlayersNow != null || _racePlayersNow != null || _superdualPlayersNow != null) ...[
                 const SizedBox(height: 3),
                 Row(
                   mainAxisSize: MainAxisSize.min,

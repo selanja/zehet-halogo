@@ -8,6 +8,7 @@
 // עם התוצאה של StarterPackService.variantToShow(maxLevel: ...).
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'iap_manager.dart';
 import 'starter_pack_service.dart';
 import 'app_icons.dart';
@@ -24,6 +25,23 @@ class StarterPackDialog extends StatefulWidget {
       barrierDismissible: true,
       builder: (_) => StarterPackDialog(variantId: variantId),
     );
+  }
+
+  // 🆕 מציג את הצעת המארז (אם זכאי) ברגע חיכוך אמיתי - למשל "אין מספיק
+  // מטבעות"/"נגמרה האנרגיה" - במקום להמתין לחזרה הבאה למסך הבית
+  // (ראו main_menu_screen.dart._maybeShowStarterPack). זה בדיוק הרגע
+  // שבו משתמש חדש הכי פתוח לרכישה - הוא כבר נתקל בבעיה שהמארז פותר.
+  // "פעם אחת בלבד" (starterPackAutoShown) עדיין חל - אם היא כבר הוצגה
+  // (מכאן או ממסך הבית), לא מוצגת שוב. מחזיר true אם ההצעה הוצגה בפועל
+  // (שימושי כדי לדעת אם צריך גם להציג הודעה/דיאלוג חלופי אחר).
+  static Future<bool> maybeShowAtFriction(BuildContext context, {required int maxLevel}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('starterPackAutoShown') ?? false) return false;
+    final variant = await StarterPackService.variantToShow(maxLevel: maxLevel);
+    if (variant == null || !context.mounted) return false;
+    await prefs.setBool('starterPackAutoShown', true);
+    await show(context, variant);
+    return true;
   }
 
   @override

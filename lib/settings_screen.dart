@@ -24,6 +24,7 @@ import 'account_service.dart'; // 🆕 קישור חשבון Google/Apple + מח
 import 'account_link_prompt.dart'; // 🆕 אותו דיאלוג קישור חשבון שמוצג גם מהבית
 import 'app_notification.dart';
 import 'update_notes_screen.dart'; // 🆕 "מה חדש במשחק" - הערות עדכון מ-Firestore
+import 'package:package_info_plus/package_info_plus.dart'; // 🩹 מספר הגרסה בתחתית המסך נשלף אמיתי, לא מוקלד ידנית (היה נתקע ישן בכל עדכון)
 
 class SettingsScreen extends StatefulWidget {
   final String username;
@@ -51,10 +52,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int? _wins; // null = עדיין טוען מ-Firestore
   String? _linkedLabel; // 🆕 null = לא מקושר לחשבון Google/Apple (ראו account_service.dart)
 
+  // 🩹 תוקן: היה טקסט קבוע "גרסה 1.2.0" שנתקע ישן בכל עדכון (שכחנו
+  // לעדכן אותו ידנית בגרסה האחרונה) - עכשיו נשלף אמיתי מ-PackageInfo.
+  String _version = '';
+
   @override
   void initState() {
     super.initState();
     _loadProfileStats();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) setState(() => _version = info.version);
+    } catch (_) {}
   }
 
   Future<void> _loadProfileStats() async {
@@ -180,7 +193,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ],
                 ),
                 Center(
-                  child: Text("גרסה 1.2.0 · © כל הזכויות שמורות", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11, fontWeight: FontWeight.w500)),
+                  child: Text(_version.isEmpty ? "© כל הזכויות שמורות" : "גרסה $_version · © כל הזכויות שמורות", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11, fontWeight: FontWeight.w500)),
                 ),
               ],
             ),
@@ -592,7 +605,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         "📱 אייפון: $_iosStoreLink\n"
         "🤖 אנדרואיד/גלקסי: $_androidStoreLink";
     try {
-      await Share.share(text, subject: "זהה את הלוגו!");
+      // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
+      // (נקודת העיגון של ה-popover ב-iOS, ראו share_helper.dart להסבר המלא).
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(text, subject: "זהה את הלוגו!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
       if (mounted) {
         AppNotification.show(context, "לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", duration: const Duration(seconds: 5));

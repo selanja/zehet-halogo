@@ -48,7 +48,47 @@ class LevelData {
     16: 23, // רכבים חלק ב
     17: 22, // אלקטרוניקה ומכשירי חשמל
     18: 18, // תקשורת וחדשות ישראליות
+    19: 40, // דגלים חלק ג'
+    20: 20, // אלקטרוניקה חלק ב
   };
+
+  // 🩹 תוקן לפי בקשה מפורשת: רמת הקושי לא נקבעת יותר לפי "איזה עולם זה
+  // במספר" (היה בעבר: טווחים לפי מספר העולם, שגוי - למשל עולם 19 נפל
+  // אוטומטית ל"קשה ביותר" רק כי המספר שלו גבוה, למרות שהדגלים בו דווקא
+  // קלים לזיהוי). עכשיו לכל עולם יש רמת קושי משלו, שנקבעת ידנית כאן לפי
+  // התוכן האמיתי שלו - קלה (1) ל"אלוף הדגלים הזה היה קל" ועד קשה (5)
+  // ל"מי בכלל מזהה את זה". ראו worldDifficultyOverrides למטה - זה בדיוק
+  // המקום לשנות רמת קושי לעולם ספציפי בעתיד, בלי לגעת בשום דבר אחר.
+  //
+  // עדיין קובעת איזה עולמות משמשים כמאגר הלוגואים בכל רמת הימור בדו-קרב
+  // (ראו DuelService.worldsForStake ב-duel_service.dart) - הימור ברמת
+  // קושי X מושך לוגואים מכל העולמות עד רמת קושי X *כולל* (מצטבר, לא רק
+  // העולמות ברמת הקושי המדויקת הזו) - "עולים ברמה, הרמות הקודמות עדיין שם".
+  // וגם מוצגת למשתמש במסך "בחר רמה" (ראו levels_screen.dart).
+  const Map<int, int> worldDifficultyOverrides = {
+    1: 1, // חברות חלק א - מותגים ענקיים ומוכרים
+    2: 1, // דגלים חלק א - דגלים נפוצים
+    3: 1, // אפליקציות - אפליקציות פופולריות
+    4: 2, // רכבים
+    5: 2, // סופרים - פחות ויזואלי/מוכר
+    6: 1, // רשתות מוכרות
+    7: 2, // חטיפים וממתקים
+    8: 2, // קבוצות כדורגל
+    9: 4, // ערים בישראל
+    10: 2, // דגלים חלק ב - פחות נפוצים מחלק א
+    11: 3, // בנקים וביטוח
+    12: 2, // חברות חלק ב
+    13: 2, // משחקים מוכרים
+    14: 3, // קבוצות NBA
+    15: 4, // יחידות בצה"ל וכוחות הביטחון - ידע נישתי
+    16: 3, // רכבים חלק ב - פחות נפוצים מחלק א
+    17: 4, // אלקטרוניקה ומכשירי חשמל - מותגי גיימינג/PC נישתיים
+    18: 3, // תקשורת וחדשות ישראליות
+    19: 1, // דגלים חלק ג' - לפי בקשה מפורשת, דגלים מוכרים וקלים
+    20: 2, // אלקטרוניקה חלק ב - מותגי צריכה מוכרים (Sony/Nokia/PlayStation)
+  };
+
+  int worldDifficulty(int world) => worldDifficultyOverrides[world] ?? 5;
 
   final Map<int, LevelData> gameLevels = {
     1: LevelData(ans: "לגו", imagePath: 'assets/images/level1/lego.webp', logoColor: Colors.red, keyboard: ['ו', 'ר', 'ג', 'פ', 'פ', 'כ', 'ל', 'ד', 'ר', 'נ', 'ש', 'ד', 'ח', 'צ']),
@@ -402,7 +442,7 @@ class LevelData {
     349: LevelData(ans: "דורלון", imagePath: 'assets/images/level12/doralon.webp', logoColor: Colors.brown, keyboard: ['ר', 'ד', 'ו', 'ה', 'ב', 'כ', 'צ', 'ו', 'ג', 'ל', 'מ', 'ד', 'ש', 'ן']),
     350: LevelData(ans: "חברת חשמל", imagePath: 'assets/images/level12/hevrat.webp', logoColor: Colors.black, keyboard: ['ל', 'ד', 'ש', 'ר', 'ב', 'ח', 'ב', 'ת', 'ש', 'מ', 'ח', 'ש', 'ח', 'ק']),
     351: LevelData(ans: "מחסני חשמל", imagePath: 'assets/images/level12/hasmal.webp', logoColor: Colors.black, keyboard: ['י', 'ל', 'ק', 'מ', 'ש', 'י', 'מ', 'ח', 'נ', 'צ', 'ח', 'ס', 'ד', 'צ']),
-    352: LevelData(ans: "מנורה מבטחים", imagePath: 'assets/images/level12/mivtach.webp', logoColor: Colors.indigo, keyboard: ['צ', 'ר', 'מ', 'ה', 'ח', 'נ', 'ו', 'ע', 'ם', 'י', 'ט', 'מ', 'ת', 'ב']),
+    352: LevelData(ans: "מבטח סימון ", imagePath: 'assets/images/level12/mivtach.webp', logoColor: Colors.indigo, keyboard: ['צ', 'ר', 'מ', 'ה', 'ח', 'מ', 'ו', 'ס', 'ם', 'י', 'ט', 'מ', 'ן', 'ב']),
     353: LevelData(ans: "מיקה", imagePath: 'assets/images/level12/mika.webp', logoColor: Colors.blueGrey, keyboard: ['פ', 'צ', 'ע', 'ה', 'ס', 'פ', 'מ', 'ו', 'ס', 'ס', 'י', 'ק', 'ק', 'ז']),
     354: LevelData(ans: "FLAPPY BIRD", imagePath: 'assets/images/level13/flappy.webp', logoColor: Colors.green, keyboard: ['A', 'R', 'P', 'D', 'E', 'F', 'W', 'I', 'Y', 'H', 'B', 'L', 'P', 'M']),
     355: LevelData(ans: "CS GO", imagePath: 'assets/images/level13/csgo.webp', logoColor: Colors.black, keyboard: ['S', 'M', 'C', 'Y', 'J', 'G', 'S', 'P', 'O', 'L', 'N', 'M', 'Y', 'A']),
@@ -563,13 +603,73 @@ class LevelData {
     496: LevelData(ans: "וואלה", imagePath: 'assets/images/level18/walla.webp', logoColor: Colors.blue, keyboard: ['ו', 'ב', 'ו', 'נ', 'צ', 'ע', 'א', 'ל', 'י', 'ה', 'ו', 'ע', 'ה', 'ש']),
     497: LevelData(ans: "ידיעות אחרונות", imagePath: 'assets/images/level18/yediot.webp', logoColor: Colors.red.shade700, keyboard: ['ת', 'ת', 'י', 'ו', 'א', 'ש', 'ו', 'ו', 'נ', 'ח', 'ר', 'ע', 'ד', 'י']),
     498: LevelData(ans: "YNET", imagePath: 'assets/images/level18/ynet.webp', logoColor: Colors.red, keyboard: ['K', 'E', 'K', 'H', 'N', 'H', 'C', 'R', 'I', 'F', 'Y', 'T', 'C', 'L']),
+    499: LevelData(ans: "סין", imagePath: 'assets/images/level19/china.webp', logoColor: const Color.fromARGB(255, 238, 28, 37), keyboard: ['א', 'ח', 'ן', 'ג', 'ד', 'צ', 'ד', 'ח', 'ש', 'י', 'ת', 'ס', 'ט', 'ה']),
+    500: LevelData(ans: "אוסטרליה", imagePath: 'assets/images/level19/australia.webp', logoColor: const Color.fromARGB(255, 1, 33, 105), keyboard: ['ק', 'ס', 'ו', 'ה', 'ח', 'א', 'א', 'ו', 'ט', 'ס', 'ר', 'ל', 'י', 'ט']),
+    501: LevelData(ans: "דרום אפריקה", imagePath: 'assets/images/level19/southafrica.webp', logoColor: const Color.fromARGB(255, 0, 20, 137), keyboard: ['י', 'ם', 'ו', 'ט', 'ד', 'ר', 'ה', 'פ', 'א', 'ס', 'ב', 'ר', 'ר', 'ק']),
+    502: LevelData(ans: "ניגריה", imagePath: 'assets/images/level19/nigeria.webp', logoColor: const Color.fromARGB(255, 0, 135, 81), keyboard: ['ח', 'ג', 'ט', 'י', 'נ', 'י', 'ד', 'י', 'ר', 'מ', 'ס', 'ג', 'ה', 'ש']),
+    503: LevelData(ans: "קניה", imagePath: 'assets/images/level19/kenya.webp', logoColor: const Color.fromARGB(255, 0, 102, 0), keyboard: ['כ', 'ט', 'ח', 'ש', 'י', 'ת', 'צ', 'ב', 'נ', 'ו', 'מ', 'ס', 'ק', 'ה']),
+    504: LevelData(ans: "סעודיה", imagePath: 'assets/images/level19/saudi.webp', logoColor: const Color.fromARGB(255, 0, 84, 48), keyboard: ['ש', 'ו', 'ס', 'ד', 'ח', 'צ', 'ע', 'ה', 'ט', 'מ', 'ה', 'ה', 'י', 'ס']),
+    505: LevelData(ans: "האמירויות", imagePath: 'assets/images/level19/uae.webp', logoColor: const Color.fromARGB(255, 0, 132, 61), keyboard: ['ת', 'ס', 'ו', 'מ', 'י', 'י', 'ר', 'ה', 'ל', 'ב', 'ו', 'א', 'ה', 'י']),
+    506: LevelData(ans: "קטאר", imagePath: 'assets/images/level19/qatar.webp', logoColor: const Color.fromARGB(255, 138, 21, 56), keyboard: ['כ', 'ר', 'א', 'ט', 'ט', 'צ', 'ת', 'ש', 'ד', 'ק', 'ד', 'א', 'ת', 'צ']),
+    507: LevelData(ans: "ירדן", imagePath: 'assets/images/level19/jordan.webp', logoColor: const Color.fromARGB(255, 0, 122, 61), keyboard: ['א', 'א', 'ד', 'פ', 'ר', 'צ', 'כ', 'ר', 'ע', 'י', 'ן', 'ו', 'ד', 'ל']),
+    508: LevelData(ans: "עיראק", imagePath: 'assets/images/level19/iraq.webp', logoColor: const Color.fromARGB(255, 205, 17, 37), keyboard: ['י', 'ר', 'ע', 'ע', 'ר', 'ו', 'ט', 'ה', 'ת', 'ק', 'נ', 'פ', 'צ', 'א']),
+    509: LevelData(ans: "איראן", imagePath: 'assets/images/level19/iran.webp', logoColor: const Color.fromARGB(255, 218, 0, 0), keyboard: ['ן', 'ג', 'צ', 'ק', 'א', 'ר', 'כ', 'ח', 'א', 'א', 'א', 'ח', 'ק', 'י']),
+    510: LevelData(ans: "פקיסטן", imagePath: 'assets/images/level19/pakistan.webp', logoColor: const Color.fromARGB(255, 1, 65, 28), keyboard: ['ק', 'ט', 'י', 'פ', 'צ', 'ה', 'ע', 'ן', 'ע', 'ק', 'ק', 'ס', 'ז', 'ח']),
+    511: LevelData(ans: "אינדונזיה", imagePath: 'assets/images/level19/indonesia.webp', logoColor: const Color.fromARGB(255, 255, 0, 0), keyboard: ['כ', 'נ', 'ו', 'א', 'י', 'ד', 'מ', 'ב', 'ז', 'נ', 'י', 'ה', 'ח', 'ד']),
+    512: LevelData(ans: "קובה", imagePath: 'assets/images/level19/cuba.webp', logoColor: const Color.fromARGB(255, 0, 42, 143), keyboard: ['ג', 'ו', 'ב', 'ש', 'א', 'ע', 'ו', 'ח', 'נ', 'ע', 'ב', 'ק', 'צ', 'ה']),
+    513: LevelData(ans: "גואטמלה", imagePath: 'assets/images/level19/guatemala.webp', logoColor: const Color.fromARGB(255, 73, 151, 208), keyboard: ['ט', 'ז', 'ק', 'ו', 'ה', 'מ', 'י', 'א', 'ה', 'ז', 'צ', 'ל', 'ב', 'ג']),
+    514: LevelData(ans: "אורוגוואי", imagePath: 'assets/images/level19/uruguay.webp', logoColor: const Color.fromARGB(255, 0, 56, 168), keyboard: ['ק', 'ח', 'י', 'ר', 'א', 'ג', 'ו', 'ו', 'ו', 'מ', 'א', 'ד', 'ת', 'ו']),
+    515: LevelData(ans: "בלארוס", imagePath: 'assets/images/level19/belarus.webp', logoColor: const Color.fromARGB(255, 206, 23, 32), keyboard: ['ר', 'ה', 'ת', 'א', 'ח', 'ש', 'ט', 'מ', 'ת', 'ב', 'ל', 'ס', 'כ', 'ו']),
+    516: LevelData(ans: "לטביה", imagePath: 'assets/images/level19/latvia.webp', logoColor: const Color.fromARGB(255, 157, 34, 53), keyboard: ['ח', 'י', 'ג', 'ו', 'ר', 'ב', 'ל', 'ט', 'ה', 'צ', 'ל', 'י', 'ס', 'י']),
+    517: LevelData(ans: "אסטוניה", imagePath: 'assets/images/level19/estonia.webp', logoColor: const Color.fromARGB(255, 0, 114, 206), keyboard: ['ר', 'ת', 'ה', 'כ', 'ט', 'ו', 'י', 'ס', 'א', 'ז', 'ט', 'י', 'נ', 'ז']),
+    518: LevelData(ans: "סלובניה", imagePath: 'assets/images/level19/slovenia.webp', logoColor: const Color.fromARGB(255, 255, 0, 0), keyboard: ['י', 'ה', 'ב', 'ו', 'נ', 'ט', 'ה', 'צ', 'נ', 'ו', 'ס', 'ל', 'ס', 'ש']),
+    519: LevelData(ans: "בוסניה", imagePath: 'assets/images/level19/bosnia.webp', logoColor: const Color.fromARGB(255, 0, 35, 149), keyboard: ['ה', 'ד', 'ד', 'ב', 'נ', 'ו', 'מ', 'י', 'ה', 'מ', 'ד', 'ו', 'ב', 'ס']),
+    520: LevelData(ans: "קזחסטן", imagePath: 'assets/images/level19/kazakhstan.webp', logoColor: const Color.fromARGB(255, 0, 171, 194), keyboard: ['ו', 'נ', 'ן', 'ו', 'ח', 'ק', 'נ', 'ז', 'ח', 'ט', 'ס', 'ו', 'א', 'כ']),
+    521: LevelData(ans: "איסלנד", imagePath: 'assets/images/level19/iceland.webp', logoColor: const Color.fromARGB(255, 2, 82, 156), keyboard: ['י', 'ת', 'ל', 'א', 'ס', 'א', 'ח', 'ל', 'ח', 'מ', 'ז', 'י', 'נ', 'ד']),
+    522: LevelData(ans: "ליכטנשטיין", imagePath: 'assets/images/level19/liechtenstein.webp', logoColor: const Color.fromARGB(255, 206, 17, 38), keyboard: ['י', 'ט', 'ל', 'כ', 'י', 'נ', 'ט', 'ב', 'ק', 'ו', 'ש', 'ט', 'ן', 'י']),
+    523: LevelData(ans: "מונקו", imagePath: 'assets/images/level19/monaco.webp', logoColor: const Color.fromARGB(255, 206, 17, 38), keyboard: ['מ', 'ל', 'צ', 'פ', 'נ', 'ק', 'ג', 'ת', 'ו', 'ו', 'נ', 'ת', 'א', 'ז']),
+    524: LevelData(ans: "ותיקן", imagePath: 'assets/images/level19/vatican.webp', logoColor: const Color.fromARGB(255, 255, 242, 0), keyboard: ['ר', 'צ', 'ת', 'י', 'ז', 'ק', 'ת', 'מ', 'ו', 'ו', 'נ', 'ה', 'ן', 'ת']),
+    525: LevelData(ans: "תוניסיה", imagePath: 'assets/images/level19/tunisia.webp', logoColor: const Color.fromARGB(255, 231, 0, 19), keyboard: ['י', 'ו', 'ת', 'ע', 'נ', 'ס', 'ה', 'ת', 'י', 'ז', 'פ', 'ת', 'ס', 'ו']),
+    526: LevelData(ans: "אלגיריה", imagePath: 'assets/images/level19/algeria.webp', logoColor: const Color.fromARGB(255, 0, 102, 51), keyboard: ['צ', 'ז', 'י', 'נ', 'צ', 'ס', 'ל', 'ח', 'י', 'ה', 'ג', 'א', 'ר', 'ש']),
+    527: LevelData(ans: "לוב", imagePath: 'assets/images/level19/libya.webp', logoColor: const Color.fromARGB(255, 35, 158, 70), keyboard: ['ל', 'ס', 'ב', 'ו', 'ו', 'פ', 'ה', 'ב', 'ס', 'צ', 'ס', 'ד', 'ת', 'ח']),
+    528: LevelData(ans: "אזרביגן", imagePath: 'assets/images/level19/azerbaijan.webp', logoColor: const Color.fromARGB(255, 80, 158, 47), keyboard: ['ד', 'ב', 'ר', 'ט', 'א', 'ר', 'ל', 'ג', 'י', 'ס', 'ב', 'ן', 'ז', 'ל']),
+    529: LevelData(ans: "גאורגיה", imagePath: 'assets/images/level19/georgia.webp', logoColor: const Color.fromARGB(255, 255, 0, 0), keyboard: ['ר', 'י', 'ו', 'ג', 'א', 'ה', 'ש', 'ג', 'ה', 'ח', 'ד', 'ט', 'א', 'ח']),
+    530: LevelData(ans: "ארמניה", imagePath: 'assets/images/level19/armenia.webp', logoColor: const Color.fromARGB(255, 242, 168, 0), keyboard: ['ה', 'ר', 'ל', 'מ', 'מ', 'א', 'צ', 'ע', 'י', 'נ', 'א', 'נ', 'י', 'צ']),
+    531: LevelData(ans: "מונגוליה", imagePath: 'assets/images/level19/mongolia.webp', logoColor: const Color.fromARGB(255, 218, 32, 49), keyboard: ['ל', 'נ', 'ו', 'ר', 'ה', 'ג', 'ו', 'א', 'ו', 'מ', 'ה', 'צ', 'ס', 'י']),
+    532: LevelData(ans: "דומיניקנה", imagePath: 'assets/images/level19/dominicanrep.webp', logoColor: const Color.fromARGB(255, 0, 45, 98), keyboard: ['י', 'י', 'נ', 'מ', 'י', 'נ', 'ק', 'ב', 'ד', 'ו', 'ט', 'ו', 'ה', 'ו']),
+    533: LevelData(ans: "גמייקה", imagePath: 'assets/images/level19/jamaica.webp', logoColor: const Color.fromARGB(255, 0, 119, 73), keyboard: ['ח', 'ג', 'ט', 'מ', 'ג', 'י', 'ד', 'ק', 'י', 'מ', 'ס', 'י', 'ה', 'ש']),
+    534: LevelData(ans: "קוסטה ריקה", imagePath: 'assets/images/level19/costarica.webp', logoColor: const Color.fromARGB(255, 0, 20, 137), keyboard: ['ו', 'ה', 'ד', 'י', 'ט', 'ר', 'ק', 'ר', 'ק', 'ל', 'ו', 'ה', 'ס', 'ר']),
+    535: LevelData(ans: "צפון קוריאה", imagePath: 'assets/images/level19/northkorea.webp', logoColor: const Color.fromARGB(255, 236, 29, 37), keyboard: ['ו', 'א', 'י', 'ר', 'ן', 'ש', 'ו', 'צ', 'ח', 'ה', 'ג', 'ק', 'ק', 'פ']),
+    536: LevelData(ans: "טייוואן", imagePath: 'assets/images/level19/taiwan.webp', logoColor: const Color.fromARGB(255, 254, 0, 0), keyboard: ['ט', 'נ', 'י', 'א', 'ו', 'ע', 'ל', 'ו', 'ד', 'ן', 'י', 'נ', 'א', 'ש']),
+    537: LevelData(ans: "בהוטן", imagePath: 'assets/images/level19/bhutan.webp', logoColor: const Color.fromARGB(255, 255, 205, 0), keyboard: ['ר', 'ק', 'ט', 'ן', 'ס', 'ה', 'ט', 'ו', 'ס', 'ג', 'ב', 'כ', 'ח', 'ח']),
+    538: LevelData(ans: "אפגניסטן", imagePath: 'assets/images/level19/afghanistan.webp', logoColor: const Color.fromARGB(255, 0, 122, 54), keyboard: ['ז', 'ג', 'א', 'י', 'צ', 'ט', 'ס', 'פ', 'ר', 'ן', 'ט', 'א', 'נ', 'פ']),
+    539: LevelData(ans: "ביטס", imagePath: 'assets/images/level20/beats.webp', logoColor: const Color.fromARGB(255, 237, 29, 38), keyboard: ['ח', 'מ', 'פ', 'ט', 'ס', 'ק', 'ק', 'ב', 'ב', 'י', 'ר', 'ג', 'ז', 'ט']),
+    540: LevelData(ans: "בוס", imagePath: 'assets/images/level20/bose.webp', logoColor: const Color.fromARGB(255, 0, 0, 0), keyboard: ['ה', 'נ', 'ת', 'ז', 'ב', 'ז', 'ס', 'כ', 'ב', 'ו', 'ו', 'ר', 'ח', 'א']),
+    541: LevelData(ans: "קסיו", imagePath: 'assets/images/level20/casio.webp', logoColor: const Color.fromARGB(255, 0, 50, 151), keyboard: ['ו', 'ג', 'ד', 'ט', 'ל', 'ו', 'ק', 'ש', 'ת', 'ס', 'ע', 'י', 'צ', 'ה']),
+    542: LevelData(ans: "דייסון", imagePath: 'assets/images/level20/dyson.webp', logoColor: const Color.fromARGB(255, 34, 29, 31), keyboard: ['י', 'ס', 'י', 'נ', 'ט', 'ן', 'א', 'ו', 'ו', 'ד', 'כ', 'ד', 'ז', 'ה']),
+    543: LevelData(ans: "גרמין", imagePath: 'assets/images/level20/garmin.webp', logoColor: const Color.fromARGB(255, 0, 0, 0), keyboard: ['ג', 'פ', 'ק', 'י', 'ן', 'מ', 'פ', 'ו', 'ת', 'ה', 'ר', 'ב', 'ע', 'מ']),
+    544: LevelData(ans: "גיגהבייט", imagePath: 'assets/images/level20/gigabyte.webp', logoColor: const Color.fromARGB(255, 45, 104, 175), keyboard: ['ת', 'ג', 'נ', 'י', 'ה', 'י', 'ב', 'כ', 'ע', 'ב', 'פ', 'ג', 'י', 'ט']),
+    545: LevelData(ans: "הייר", imagePath: 'assets/images/level20/haier.webp', logoColor: const Color.fromARGB(255, 0, 93, 170), keyboard: ['ג', 'ה', 'ט', 'י', 'י', 'ת', 'ה', 'צ', 'ט', 'ש', 'ר', 'כ', 'ה', 'ש']),
+    546: LevelData(ans: "וואווי", imagePath: 'assets/images/level20/hawa.webp', logoColor: const Color.fromARGB(255, 255, 21, 31), keyboard: ['ת', 'ט', 'י', 'פ', 'ו', 'כ', 'ה', 'צ', 'ו', 'ו', 'מ', 'א', 'ו', 'צ']),
+    547: LevelData(ans: "היטאצי", imagePath: 'assets/images/level20/hitachi.webp', logoColor: const Color.fromARGB(255, 0, 0, 0), keyboard: ['י', 'ה', 'פ', 'ד', 'א', 'י', 'כ', 'י', 'ט', 'צ', 'ו', 'מ', 'ו', 'ט']),
+    548: LevelData(ans: "איי רובוט", imagePath: 'assets/images/level20/irobot.webp', logoColor: const Color.fromARGB(255, 108, 184, 106), keyboard: ['ו', 'א', 'י', 'י', 'ג', 'א', 'ח', 'ר', 'נ', 'ק', 'ו', 'ב', 'ב', 'ט']),
+    549: LevelData(ans: "JVC", imagePath: 'assets/images/level20/jvc.webp', logoColor: const Color.fromARGB(255, 254, 1, 0), keyboard: ['Y', 'E', 'X', 'Y', 'E', 'O', 'V', 'C', 'O', 'V', 'J', 'M', 'Q', 'W']),
+    550: LevelData(ans: "MSI", imagePath: 'assets/images/level20/msi.webp', logoColor: const Color.fromARGB(255, 254, 23, 31), keyboard: ['S', 'M', 'E', 'I', 'D', 'M', 'I', 'K', 'A', 'O', 'M', 'C', 'Y', 'C']),
+    551: LevelData(ans: "נספרסו", imagePath: 'assets/images/level20/nesspres.webp', logoColor: const Color.fromARGB(255, 30, 30, 32), keyboard: ['ר', 'ג', 'א', 'ס', 'ו', 'ק', 'נ', 'ס', 'ה', 'ר', 'ד', 'ד', 'כ', 'פ']),
+    552: LevelData(ans: "נוקיה", imagePath: 'assets/images/level20/nokia.webp', logoColor: const Color.fromARGB(255, 28, 69, 153), keyboard: ['נ', 'ע', 'ז', 'ק', 'ל', 'ו', 'ש', 'ס', 'ה', 'ה', 'י', 'מ', 'מ', 'ו']),
+    553: LevelData(ans: "פלייסטיישן", imagePath: 'assets/images/level20/playstation.webp', logoColor: const Color.fromARGB(255, 31, 31, 31), keyboard: ['מ', 'ב', 'י', 'י', 'ל', 'י', 'פ', 'ק', 'י', 'י', 'ש', 'ן', 'ס', 'ט']),
+    554: LevelData(ans: "סנדיסק", imagePath: 'assets/images/level20/sandisk.webp', logoColor: const Color.fromARGB(255, 245, 28, 37), keyboard: ['ד', 'ע', 'ס', 'ג', 'י', 'ג', 'נ', 'ק', 'י', 'ס', 'נ', 'ת', 'ה', 'ד']),
+    555: LevelData(ans: "שארפ", imagePath: 'assets/images/level20/sharp.webp', logoColor: const Color.fromARGB(255, 231, 0, 11), keyboard: ['ק', 'פ', 'ת', 'ס', 'ט', 'ר', 'א', 'ו', 'פ', 'י', 'ז', 'ג', 'ר', 'ש']),
+    556: LevelData(ans: "סוני", imagePath: 'assets/images/level20/sony.webp', logoColor: const Color.fromARGB(255, 0, 0, 0), keyboard: ['נ', 'נ', 'י', 'א', 'נ', 'ש', 'א', 'כ', 'פ', 'ב', 'ס', 'ס', 'ק', 'ו']),
+    557: LevelData(ans: "TCL", imagePath: 'assets/images/level20/tcl.webp', logoColor: const Color.fromARGB(255, 237, 29, 38), keyboard: ['S', 'M', 'C', 'T', 'G', 'L', 'H', 'K', 'T', 'R', 'Z', 'I', 'Q', 'F']),
+    558: LevelData(ans: "טושיבה", imagePath: 'assets/images/level20/toshiba.webp', logoColor: const Color.fromARGB(255, 230, 30, 29), keyboard: ['י', 'י', 'ש', 'ב', 'ט', 'ל', 'ו', 'ו', 'פ', 'ת', 'ה', 'ט', 'מ', 'ב']),
   };
 
 // 🆕 ה-IDs הגלובליים ב-gameLevels מוקצים ברצף לפי סדר ה"רמות" (עולמות)
 // ב-levelsCounts: רמה 1 מקבלת 1..levelsCounts[1], רמה 2 ממשיכה מאיפה
 // שרמה 1 נגמרה, וכן הלאה. הפונקציה הזו מחזירה את כל ה-IDs ששייכים
 // לרשימת "רמות" נתונה - משמש כדי לסנן מאגר לוגואים לדו-קרב לפי רמת
-// הימור (ראו DuelService.stakeWorlds ב-duel_service.dart).
+// הימור (ראו DuelService.worldsForStake ב-duel_service.dart).
 List<int> logoIdsForWorlds(List<int> worlds) {
   final ids = <int>[];
   final sortedWorldKeys = levelsCounts.keys.toList()..sort();

@@ -25,6 +25,9 @@ import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשי
 import 'reward_popups.dart'; // 🆕 פופאפ "קיבלת אנרגיה" החדש (מסך מלא, לפי המוקאפ)
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית
 import 'app_notification.dart';
+import 'not_enough_coins_dialog.dart'; // 🆕 "אין מספיק מטבעות" - עכשיו מקשר ישר לחנות
+import 'starter_pack_dialog.dart'; // 🆕 מציג מארז פתיחה ברגע חיכוך אם עדיין זכאי
+import 'out_of_resource.dart'; // 🆕 "נגמרו המטבעות" - פרסומת/חנות
 
 enum _LobbyState { checking, banned, notEnoughEnergy, notEnoughCoins, selectingStake, searching, found, noPlayers, error }
 
@@ -46,7 +49,11 @@ class DuelLobbyScreen extends StatefulWidget {
   // ישר לחיפוש יריב בלי להציג שוב את בורר ההימור של המסך הזה. אם null
   // (או לא תקין/לא ניתן להרשות) - מתנהג בדיוק כמו קודם (מציג את הבורר).
   final int? initialStake;
-  const DuelLobbyScreen({super.key, required this.username, this.initialStake});
+  // 🆕 "סדרת דו-קרב (הטוב מ-3)" - אותו לובי/בורר הימור בדיוק, רק שהחיפוש
+  // מחפש יריב שגם הוא ביקש סדרה, ואחרי כל סיבוב ממשיכים אוטומטית לסיבוב
+  // הבא (ראו DuelService.findMatch(wantsSeries) ו-duel_room_screen.dart).
+  final bool seriesMode;
+  const DuelLobbyScreen({super.key, required this.username, this.initialStake, this.seriesMode = false});
 
   @override
   State<DuelLobbyScreen> createState() => _DuelLobbyScreenState();
@@ -145,7 +152,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
     // המשחק עצמו קורה) המסך הזה נסגר, ה-dispose שלו עוצר את הפעימה, וזה
     // "מפספס" שחקנים שכבר באמצע דו-קרב פעיל. זו הערכה סבירה, לא ספירה
     // מדויקת - ראו ההערה המלאה ב-presence_service.dart.
-    PresenceService.startHeartbeat(deviceId, 'duel');
+    // 🆕 "סדרת דו-קרב" קיבלה מוד presence נפרד משלה ('superdual') - לפי
+    // בקשה מפורשת, כדי ששני המודים (רגיל/סדרה) יספרו ויקבלו בוטים
+    // *בנפרד לגמרי*, במקום לחלוק אותו תור/מספר ולבלבל בתצוגה.
+    PresenceService.startHeartbeat(deviceId, widget.seriesMode ? 'superdual' : 'duel');
     final forfeitStatus = await DuelService.getForfeitStatus(deviceId);
     if (!mounted) return;
     if (DuelService.isBanned(forfeitStatus)) {
@@ -294,17 +304,17 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
     if (!mounted) return;
 
     final stakeForSearch = _selectedStake ?? DuelService.stakeOptions.first;
-    // 🆕 מאגר הלוגואים נבחר לפי רמת ההימור (ראו DuelService.stakeWorlds) -
-    // אם משום מה הרשימה יוצאת ריקה (למשל הגדרה שגויה של מספרי רמה),
-    // logoIdsForWorlds/logoPoolForStake כבר נופלים חזרה לכל הלוגואים
-    // כדי שלעולם לא ייתקע חיפוש על מאגר ריק.
-    final worldsForStake = DuelService.stakeWorlds[stakeForSearch];
-    final poolIds = worldsForStake != null ? logoIdsForWorlds(worldsForStake) : gameLevels.keys.toList();
+    // 🆕 מאגר הלוגואים נבחר לפי רמת ההימור (ראו DuelService.worldsForStake) -
+    // אם משום מה הרשימה יוצאת ריקה, logoIdsForWorlds כבר נופל חזרה
+    // לכל הלוגואים כדי שלעולם לא ייתקע חיפוש על מאגר ריק.
+    final worldsForStake = DuelService.worldsForStake(stakeForSearch);
+    final poolIds = logoIdsForWorlds(worldsForStake);
     final result = await _duelService.findMatch(
       deviceId: deviceId,
       username: widget.username,
       allLevelIds: poolIds.isEmpty ? gameLevels.keys.toList() : poolIds,
       stake: stakeForSearch,
+      wantsSeries: widget.seriesMode,
     );
 
     if (!mounted) return;
@@ -741,16 +751,15 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                 textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900),
               ),
-              const SizedBox(height: 6),
-              Text(
-                "ההימור נלקח משני השחקנים",
-                textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 22),
-              ...[15, 50, 200].map((stake) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
+              const SizedBox(height: 18),
+              // 🩹 תוקן: הוסרו כאן בכוונה כמה אלמנטים שהצטברו והפכו את
+              // הגליון ל"עמוס" (לפי בקשה מפורשת) - תת-הכותרת שהייתה כאן
+              // ("ההימור נלקח משני השחקנים") הוסרה כי המידע כבר ברור מ-
+              // "המנצח לוקח X" שמופיע על כל כרטיס, וכפתור "שחק" הנפרד על
+              // כל כרטיס הוסר כי כל הכרטיס עצמו כבר לחיץ (ראו _stakeOption) -
+              // אין צורך בכפתור נוסף שרק חוזר על אותה פעולה.
+              ...[15, 50, 100, 200, 500].map((stake) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
                     child: _stakeOption(stake, sheetContext),
                   )),
               const SizedBox(height: 6),
@@ -828,6 +837,28 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
     );
   }
 
+  // 🆕 "אין מספיק מטבעות להימור" - אם יש עדיין הצעת "מארז פתיחה" זכאית
+  // שלא הוצגה בכלל, מציגים אותה קודם (ממירה הרבה יותר טוב, ובדיוק ברגע
+  // שהמשתמש פתוח לזה) - אחרת מציגים את דיאלוג הקנייה הרגיל עם החבילה
+  // הנכונה מודגשת בחנות.
+  Future<void> _showNotEnoughCoinsForStake(int stake) async {
+    final prefs = await SharedPreferences.getInstance();
+    final maxLevel = prefs.getInt('maxLevel') ?? 1;
+    if (!mounted) return;
+    final shownStarterPack = await StarterPackDialog.maybeShowAtFriction(context, maxLevel: maxLevel);
+    if (shownStarterPack) return;
+    showNotEnoughCoinsDialog(
+      context,
+      cost: stake,
+      coins: _coins,
+      onReturnedFromShop: () async {
+        final fresh = await SharedPreferences.getInstance();
+        if (!mounted) return;
+        setState(() => _coins = fresh.getInt('coins') ?? _coins);
+      },
+    );
+  }
+
   // 🆕 כל רמת הימור מקבלת "אישיות" ויזואלית משלה, בדיוק כמו בעיצוב
   // שסופק: 15 = ירוק/"חימום" (משחק קצר, 5 לוגואים), 50 = כרטיס זהב
   // בולט עם ברק ותג "הכי פופולרי" (7 לוגואים), 200 = סגול/"אלופים"
@@ -848,7 +879,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         _pendingStake = stake;
         Navigator.pop(sheetContext);
       } else {
-        AppNotification.show(context, "חסרים לך מטבעות לרמה הזו (יש לך $_coins)", type: AppNotificationType.error);
+        // 🐛 תוקן: היה AppNotification חולף בלי אפשרות לקנות - עכשיו
+        // מקשר ישר לחנות עם החבילה הנכונה מודגשת (ראו not_enough_coins_dialog.dart).
+        Navigator.pop(sheetContext);
+        _showNotEnoughCoinsForStake(stake);
       }
     }
 
@@ -900,12 +934,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                             ],
                           ),
                         ),
-                        const SizedBox(width: 14),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(color: const Color(0xFF2A1740), borderRadius: BorderRadius.circular(15)),
-                          child: const Text('שחק', style: TextStyle(color: Color(0xFFFFD86B), fontSize: 13.5, fontWeight: FontWeight.w900)),
-                        ),
                       ],
                     ),
                   ),
@@ -930,17 +958,29 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       );
     }
 
-    // כרטיסי 5 (ציאן, "בזק" - חדש), 15 (ירוק, "חימום") ו-200 (סגול,
-    // "אלופים") - עיצוב זהה עם צבע/אייקון/תג שונים לכל רמה.
+    // כרטיסי 5 (ציאן, "בזק"), 15 (ירוק, "חימום"), 100 (כתום, "מנוסים"),
+    // 200 (סגול, "מקצועי") ו-500 (אדום-זהב, "מקסימלי") - עיצוב זהה עם
+    // צבע/אייקון/תג שונים לכל רמה, כדי שכל רמה תרגיש שונה גם בעיצוב
+    // ולא רק במספר.
     final bool isBlitz = stake == 5;
     final bool isCheap = stake == 15;
-    final bool needsDarkText = isBlitz || isCheap; // רקעים בהירים (ציאן/ירוק) לעומת סגול כהה ל-200
-    final Color accent = isBlitz ? const Color(0xFF38BDF8) : (isCheap ? const Color(0xFF34D399) : const Color(0xFFC084FC));
-    final Color accentDark = isBlitz ? const Color(0xFF0284C7) : (isCheap ? const Color(0xFF16A46F) : const Color(0xFF7C3AED));
-    final IconData stakeIcon = isBlitz ? Icons.bolt_rounded : (isCheap ? Icons.monetization_on_rounded : Icons.diamond_rounded);
-    final String badgeText = isBlitz ? 'בזק ⚡' : (isCheap ? 'חימום' : 'אלופים');
+    final bool isMid = stake == 100;
+    final bool isHighRoller = stake == 500;
+    final bool needsDarkText = isBlitz || isCheap; // רקעים בהירים (ציאן/ירוק) לעומת סגול/כתום/אדום כהים
+    final Color accent = isBlitz
+        ? const Color(0xFF38BDF8)
+        : (isCheap ? const Color(0xFF34D399) : (isMid ? const Color(0xFFFB923C) : (isHighRoller ? const Color(0xFFF43F5E) : const Color(0xFFC084FC))));
+    final Color accentDark = isBlitz
+        ? const Color(0xFF0284C7)
+        : (isCheap ? const Color(0xFF16A46F) : (isMid ? const Color(0xFFC2410C) : (isHighRoller ? const Color(0xFF9F1239) : const Color(0xFF7C3AED))));
+    final IconData stakeIcon = isBlitz
+        ? Icons.bolt_rounded
+        : (isCheap ? Icons.monetization_on_rounded : (isMid ? Icons.local_fire_department_rounded : (isHighRoller ? Icons.workspace_premium_rounded : Icons.diamond_rounded)));
+    // 🩹 תוקן: "היי-רולר"/"אלופים" הוחלפו לפי בקשה מפורשת בתגים פשוטים
+    // ונורמליים יותר (בלי סלנג הימורים/תחושת "תואר מפואר").
+    final String badgeText = isBlitz ? 'בזק ⚡' : (isCheap ? 'חימום' : (isMid ? 'מנוסים' : (isHighRoller ? 'מקסימלי' : 'מקצועי')));
     final Color? badgeColor = needsDarkText ? accent : null;
-    final Gradient? badgeGradient = needsDarkText ? null : const LinearGradient(colors: [Color(0xFFC084FC), Color(0xFF7DD3FC)]);
+    final Gradient? badgeGradient = needsDarkText ? null : LinearGradient(colors: isHighRoller ? const [Color(0xFFFFD86B), Color(0xFFF43F5E)] : const [Color(0xFFC084FC), Color(0xFF7DD3FC)]);
     final Color badgeTextColor = needsDarkText ? const Color(0xFF08281C) : const Color(0xFF2A1740);
 
     return Opacity(
@@ -996,12 +1036,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                       Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w500)),
                     ],
                   ),
-                ),
-                const SizedBox(width: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-                  decoration: BoxDecoration(gradient: LinearGradient(colors: [accent, accentDark]), borderRadius: BorderRadius.circular(14)),
-                  child: Text('שחק', style: TextStyle(color: needsDarkText ? const Color(0xFF08281C) : Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
                 ),
               ],
             ),
@@ -1289,6 +1323,9 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
+        // 🆕 במקום רק "חזרה" - אפשר לקבל מטבעות בפרסומת או לקנות בחנות
+        ...OutOfResource.offerButtons(context, coins: true, onGranted: _loadRequirementsThenPickStake),
+        const SizedBox(height: 12),
         _buildTextButton("חזרה", onTap: () => Navigator.pop(context)),
       ],
     );

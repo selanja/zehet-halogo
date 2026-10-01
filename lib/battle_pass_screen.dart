@@ -153,6 +153,9 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
               Navigator.of(context).pop();
               _claim(nextPending!.tier, premium: premium);
             },
+      // 🆕 אחרי איסוף מהנתיב החינמי (ומי שעוד לא פרימיום) - מראים כמה היה
+      // מקבל בפרימיום, ולחיצה שואלת אם לשדרג.
+      onUpgradeTap: (!premium && !_premium) ? _askUpgradeToPremium : null,
     );
     if (!mounted) return;
     await _load();
@@ -183,6 +186,36 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     // בהצלחה - _onPurchaseUpdated יטען מחדש ויכבה את _buying דרך _load אינו
     // מכבה אותו ישירות, לכן מכבים כאן גם למקרה שהמשתמש ביטל את חלון הרכישה.
     if (mounted) setState(() => _buying = false);
+  }
+
+  // 🆕 שאלת אישור אחרי לחיצה על "עם פרימיום היית מקבל" בפופאפ האיסוף.
+  Future<void> _askUpgradeToPremium() async {
+    final priceLabel = IapManager.product(IapManager.battlePassPremiumId)?.price ?? '₪24.90';
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF241a4f),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('לשדרג לפרימיום?', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(
+          'תקבל את כל פרסי הפרימיום של העונה, כולל אלה שכבר פתחת, במחיר $priceLabel.',
+          textDirection: TextDirection.rtl,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('לא עכשיו')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740)),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text('כן, לשדרג · $priceLabel', style: const TextStyle(fontWeight: FontWeight.w900)),
+          ),
+        ],
+      ),
+    );
+    if (yes == true && mounted) {
+      Navigator.of(context).maybePop(); // סוגר את פופאפ האיסוף מתחת לדיאלוג
+      await _buyPremium();
+    }
   }
 
   // 🆕 דיאלוג "שדרג לפרימיום" - לפי בקשה מפורשת: "ברגע שמישהו לוחץ על

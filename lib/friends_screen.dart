@@ -21,6 +21,7 @@ import 'app_background.dart';
 import 'app_notification.dart';
 import 'friend_challenge_screen.dart';
 import 'friend_service.dart';
+import 'referral_service.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון קבוע - חסר היה במסך הזה בלבד
 
 class FriendsScreen extends StatefulWidget {
@@ -128,15 +129,28 @@ class _FriendsScreenState extends State<FriendsScreen> {
     }
   }
 
-  String get _inviteText =>
-      "בואו לשחק איתי במשחק 🎮 \"זהה את הלוגו!\" - מי מכיר הכי הרבה לוגואים? 🔥\n\n"
-      "📱 אייפון: $_iosStoreLink\n"
-      "🤖 אנדרואיד/גלקסי: $_androidStoreLink";
+  // 🩹 תוקן: זה כפתור ה-CTA הראשי "הזמנה למשחק" - עד עכשיו שלח רק קישור
+  // רגיל לחנות, בלי שום זיהוי של מי הזמין את מי. עכשיו שולח קישור אחד
+  // לדף נחיתה (ReferralService.shareLink) שכבר יודע לבד להפנות לחנות
+  // הנכונה (אנדרואיד/אייפון) *עם הקוד האישי מוטמע בתוכו* - כשהחבר
+  // מתקין ופותח את האפליקציה, שניכם מקבלים מטבעות אוטומטית, בלי להזין
+  // שום קוד ידנית ובלי קשר בכלל למערכת החברים בתוך האפליקציה (ראו
+  // referral_service.dart).
+  String get _inviteText {
+    final code = _myCode;
+    final link = code != null ? ReferralService.shareLink(code) : _androidStoreLink;
+    return "בואו לשחק איתי במשחק 🎮 \"זהה את הלוגו!\" - מי מכיר הכי הרבה לוגואים? 🔥\n\n"
+        "$link\n\n"
+        "שנינו נקבל ${ReferralService.bonusCoins} מטבעות במתנה ברגע שתתקינו ✨";
+  }
 
   Future<void> _inviteToGame() async {
     HapticFeedback.lightImpact();
     try {
-      await Share.share(_inviteText, subject: "זהה את הלוגו!");
+      // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
+      // (נקודת העיגון של ה-popover ב-iOS, ראו share_helper.dart להסבר המלא).
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(_inviteText, subject: "זהה את הלוגו!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
       if (!mounted) return;
       Clipboard.setData(ClipboardData(text: _inviteText));
@@ -156,7 +170,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
         "(פותחים את האפליקציה -> חברים -> \"יש לי קוד\" ומזינים אותו)\n\n"
         "עוד לא הורדת? 📱 אייפון: $_iosStoreLink\n🤖 אנדרואיד/גלקסי: $_androidStoreLink";
     try {
-      await Share.share(text, subject: "בוא נהיה חברים!");
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(text, subject: "בוא נהיה חברים!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
       if (!mounted) return;
       Clipboard.setData(ClipboardData(text: text));
@@ -865,7 +880,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            "שלח לחברים קישור להורדת האפליקציה - וואטסאפ, מסרונים או כל אפליקציה אחרת",
+            "שלח לחברים קישור להורדת האפליקציה - וואטסאפ, מסרונים או כל אפליקציה אחרת. שניכם תקבלו ${ReferralService.bonusCoins} מטבעות אוטומטית כשהם יתקינו!",
             textAlign: TextAlign.center,
             textDirection: TextDirection.rtl,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5),
@@ -879,7 +894,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: ElevatedButton(
-                onPressed: _inviteToGame,
+                // 🩹 עכשיו שההזמנה כוללת את הקוד האישי - ממתינים שהוא
+                // ייטען (ראו _load) לפני שמאפשרים לשתף, כדי שלא תישלח
+                // הודעה עם "----" במקום קוד אמיתי.
+                onPressed: _myCode == null ? null : _inviteToGame,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.transparent,
                   shadowColor: Colors.transparent,

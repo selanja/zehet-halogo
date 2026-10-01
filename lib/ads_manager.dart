@@ -110,6 +110,7 @@ class AdsManager {
   // ==================== Interstitial - כל 7 שלבים ====================
 
   static void _loadInterstitial() {
+    if (!_initialized) return; // האתחול רץ אחרי בקשת ה-ATT (ראו main.dart) - לא טוענים לפניו
     if (_interstitialLoading || _interstitialAd != null) return;
     _interstitialLoading = true;
     _interstitialRetryTimer?.cancel();
@@ -346,6 +347,7 @@ class AdsManager {
   // ==================== Rewarded - פרסומת תמורת רמז ====================
 
   static void _loadRewarded() {
+    if (!_initialized) return; // האתחול רץ אחרי בקשת ה-ATT (ראו main.dart) - לא טוענים לפניו
     if (_rewardedLoading || _rewardedAd != null) return;
     _rewardedLoading = true;
     _rewardedRetryTimer?.cancel();

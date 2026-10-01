@@ -11,6 +11,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'sub_levels_screen.dart';
+import 'level_data.dart' show worldDifficulty;
 import 'audio_manager.dart';
 import 'iap_manager.dart';
 import 'app_notification.dart';
@@ -111,6 +112,8 @@ class _LevelsScreenState extends State<LevelsScreen> {
     16: 23, // רכבים חלק ב
     17: 22, // אלקטרוניקה ומכשירי חשמל
     18: 18, // תקשורת וחדשות ישראליות
+    19: 40, // דגלים חלק ג'
+    20: 20, // אלקטרוניקה חלק ב
   };
 
   String getWorldName(int worldNum) {
@@ -151,6 +154,10 @@ class _LevelsScreenState extends State<LevelsScreen> {
         return "אלקטרוניקה ומכשירי חשמל";
       case 18:
         return "תקשורת וחדשות ישראליות";
+      case 19:
+        return "דגלים חלק ג'";
+      case 20:
+        return "אלקטרוניקה ומכשירי חשמל חלק ב";
       default:
         return "כללי";
     }
@@ -191,8 +198,32 @@ class _LevelsScreenState extends State<LevelsScreen> {
         return Icons.devices_rounded;
       case 18:
         return Icons.newspaper_rounded;
+      case 19:
+        return Icons.flag_circle_rounded;
+      case 20:
+        return Icons.devices_other_rounded;
       default:
         return Icons.help_outline_rounded;
+    }
+  }
+
+  // רמת הקושי המספרית (1-5) של כל עולם מגיעה מ-worldDifficulty ב-
+  // level_data.dart (מקור יחיד לאמת, אותו בדיוק משמש גם ב-
+  // DuelService.worldsForStake ב-duel_service.dart: ככל שההימור בדו-קרב
+  // גבוה יותר, מאגר העולמות האפשריים גדל וכולל גם את כל רמות הקושי
+  // הנמוכות ממנו - כך שסכום ההימור כבר מבטא בעצמו רמת קושי מצטברת).
+  Color getDifficultyColor(int difficulty) {
+    switch (difficulty) {
+      case 1:
+        return const Color(0xFF6EE7B7);
+      case 2:
+        return const Color(0xFF7DD3FC);
+      case 3:
+        return const Color(0xFFFFB24D);
+      case 4:
+        return const Color(0xFFFF8A65);
+      default:
+        return const Color(0xFFFB7185);
     }
   }
 
@@ -425,6 +456,8 @@ class _LevelsScreenState extends State<LevelsScreen> {
                             mainLevel: mainLevel,
                             icon: getWorldIcon(mainLevel),
                             categoryName: getWorldName(mainLevel),
+                            difficulty: "קושי ${worldDifficulty(mainLevel)}",
+                            difficultyColor: getDifficultyColor(worldDifficulty(mainLevel)),
                             solved: done,
                             total: total,
                             isLocked: isLocked,
@@ -492,6 +525,8 @@ class _LevelRow extends StatelessWidget {
   final int mainLevel;
   final IconData icon;
   final String categoryName;
+  final String difficulty;
+  final Color difficultyColor;
   final int solved;
   final int total;
   final bool isLocked;
@@ -504,6 +539,8 @@ class _LevelRow extends StatelessWidget {
     required this.mainLevel,
     required this.icon,
     required this.categoryName,
+    required this.difficulty,
+    required this.difficultyColor,
     required this.solved,
     required this.total,
     required this.isLocked,
@@ -544,7 +581,23 @@ class _LevelRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(categoryName, textDirection: TextDirection.rtl, style: TextStyle(color: isLocked ? Colors.white.withValues(alpha: 0.8) : accent, fontSize: 15.5, fontWeight: FontWeight.w900)),
+                Row(
+                  textDirection: TextDirection.rtl,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: Text(categoryName, textDirection: TextDirection.rtl, style: TextStyle(color: isLocked ? Colors.white.withValues(alpha: 0.8) : accent, fontSize: 15.5, fontWeight: FontWeight.w900))),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: difficultyColor.withValues(alpha: isLocked ? 0.1 : 0.18),
+                        border: Border.all(color: difficultyColor.withValues(alpha: isLocked ? 0.25 : 0.5)),
+                      ),
+                      child: Text(difficulty, textDirection: TextDirection.rtl, style: TextStyle(color: isLocked ? difficultyColor.withValues(alpha: 0.6) : difficultyColor, fontSize: 10, fontWeight: FontWeight.w800)),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
                   isLocked ? "נעול · ניתן לפתוח בתשלום" : "$solved מתוך $total שלבים",

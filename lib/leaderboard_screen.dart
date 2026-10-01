@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'leaderboard.dart';
 import 'device_id.dart';
 import 'audio_manager.dart';
+import 'league_screen.dart';
+import 'achievements_screen.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - גם כאן, לא רק במסך הבית
 
 class LeaderboardScreen extends StatefulWidget {
@@ -14,9 +16,13 @@ class LeaderboardScreen extends StatefulWidget {
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-// 🆕 שתי תצוגות לטבלה הארצית: לפי נקודות (XP, ברירת מחדל) או לפי שיא
-// הרצף הכי גבוה. הבחירה נעשית דרך שני "כפתורים" בכותרת (ראו _buildModeSwitch).
-enum _BoardMode { points, streak }
+// 🆕 שתי תצוגות לטבלה הארצית: לפי מדליות (ברירת מחדל, דירוג הוגן במקום
+// XP גולמי) או לפי נקודות (XP). הבחירה נעשית דרך שני "כפתורים" בכותרת
+// (ראו _buildModeSwitch).
+// 🐛 תוקן: הוסרה תצוגת "רצף" השלישית - לפי בקשה מפורשת ("הטבלה עמוסה
+// מדי") - הרצף עדיין מוצג כסטטיסטיקה משנית קטנה בתוך תצוגת הנקודות
+// (ראו _buildMyStatsRow/_buildRow למטה), רק לא כתצוגה/מיון נפרד משלו.
+enum _BoardMode { medals, points }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   // מגבילים את מספר השורות שמוצגות בטבלה - בלי זה, ככל שיותר אנשים
@@ -25,14 +31,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   // אם אני לא בין 10 הראשונים - מוצג תג צף עם המיקום האמיתי שלי
   static const int _floatingThreshold = 10;
 
-  _BoardMode _mode = _BoardMode.points;
-  bool get _byStreak => _mode == _BoardMode.streak;
+  _BoardMode _mode = _BoardMode.medals;
+  bool get _byMedals => _mode == _BoardMode.medals;
+
+  String get _metricKey => _byMedals ? 'medals' : 'xp';
 
   List<Map<String, dynamic>> entries = [];
   bool isLoading = true;
   String? error;
   String myName = "";
   String myDeviceId = "";
+
+  // 🐛 תוקן: "התוכן למעלה ולמטה מסתיר חלק מהטבלה" - הכותרת העליונה
+  // (כותרת+מתג+שורת קיצורים) גדלה עם הזמן (נוספה שורת הקיצורים) אבל
+  // הריפוד העליון של הרשימה נשאר מספר קבוע ("קסם") שלא עודכן יחד איתה -
+  // אז החלק העליון של הרשימה נגלל מתחת לכותרת ומוסתר בפועל. במקום עוד
+  // מספר קבוע ש"ישבר" שוב בפעם הבאה שהכותרת תשתנה - מודדים את הגובה
+  // האמיתי שלה בפועל (ראו _headerKey/_measureHeaderHeight) ומשתמשים בו
+  // כריפוד. _headerHeight מתחיל מהערכה סבירה עד המדידה הראשונה בפועל.
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 190;
 
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _myRowKey = GlobalKey();
@@ -61,7 +79,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     final deviceId = await DeviceId.get();
-    final data = _byStreak ? await LeaderboardService.fetchLeaderboardByStreak() : await LeaderboardService.fetchLeaderboard();
+    final data = _byMedals ? await LeaderboardService.fetchLeaderboardByMedals() : await LeaderboardService.fetchLeaderboard();
 
     if (!mounted) return; // המסך נסגר בזמן שהבקשה עוד הייתה באוויר
     setState(() {
@@ -139,8 +157,23 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     }
   }
 
+  /// מודד את הגובה האמיתי של הכותרת הקבועה (אחרי כל build, ברגע שה-
+  /// frame כבר צויר) ומעדכן את _headerHeight אם הוא השתנה - כדי שריפוד
+  /// הרשימה תמיד יתאים לגובה האמיתי, גם אם הכותרת תשתנה שוב בעתיד.
+  void _measureHeaderHeight() {
+    final ctx = _headerKey.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final h = box.size.height;
+    if ((h - _headerHeight).abs() > 0.5 && mounted) {
+      setState(() => _headerHeight = h);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureHeaderHeight());
     return Scaffold(
       backgroundColor: const Color(0xFF120C2E),
       body: Stack(
@@ -180,6 +213,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
+            key: _headerKey,
             padding: EdgeInsets.fromLTRB(18, MediaQuery.of(context).padding.top + 14, 18, 14),
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -192,7 +226,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ],
               ),
             ),
+            // 🩹 תוקן: "הורדת את כפתור החזרה/הבית, הם ירדו למטה" - עם הוספת
+            // _buildShortcutsRow (ליגה/הישגים) מתחת למתג נקודות/רצף, העמודה
+            // הימנית נהייתה גבוהה יותר. ה-Row החיצוני הזה לא הגדיר
+            // crossAxisAlignment בכלל (ברירת מחדל: center) - כך שכפתורי
+            // הבית/רענון (שלא גדלים) התמרכזו כלפי מטה יחד עם העמודה
+            // הגבוהה יותר, במקום להישאר צמודים לחלק העליון. crossAxisAlignment.start
+            // מצמיד את שניהם לראש הכותרת תמיד, בלי קשר לגובה הצד השני.
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _GlassIconButton(
                   icon: Icons.home_rounded,
@@ -215,12 +257,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         Text("🏆", style: TextStyle(fontSize: 18)),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text("זהה את הלוגו · עדכון בזמן אמת",
-                        textDirection: TextDirection.rtl,
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11.5, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 10),
                     _buildModeSwitch(),
+                    const SizedBox(height: 8),
+                    _buildShortcutsRow(),
                   ],
                 ),
               ],
@@ -228,6 +268,20 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // 🆕 "ליגה" ו"הישגים" - שורה נפרדת מתחת למתג נקודות/רצף, כדי שלא יידחסו
+  // יחד עם שני הצ'יפים הקיימים לרוחב אחד צר מדי במסכים קטנים.
+  Widget _buildShortcutsRow() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      textDirection: TextDirection.rtl,
+      children: [
+        _linkChip(label: "ליגה שבועית", emoji: "🏅", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LeagueScreen()))),
+        const SizedBox(width: 8),
+        _linkChip(label: "הישגים", emoji: "🎖️", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()))),
+      ],
     );
   }
 
@@ -245,10 +299,33 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         mainAxisSize: MainAxisSize.min,
         textDirection: TextDirection.rtl,
         children: [
-          _modeChip(label: "נקודות", emoji: "🏆", mode: _BoardMode.points),
+          _modeChip(label: "מדליות", emoji: "🎖️", mode: _BoardMode.medals),
           const SizedBox(width: 4),
-          _modeChip(label: "רצף", emoji: "🔥", mode: _BoardMode.streak),
+          _modeChip(label: "נקודות", emoji: "🏆", mode: _BoardMode.points),
         ],
+      ),
+    );
+  }
+
+  // 🆕 צ'יפ שמנווט למסך אחר (ליגה שבועית / הישגים) במקום לשנות את מצב הטבלה.
+  Widget _linkChip({required String label, required String emoji, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: () {
+        AudioManager.playClick();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: Colors.white.withValues(alpha: 0.08)),
+        child: Row(
+          textDirection: TextDirection.rtl,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 12.5)),
+            const SizedBox(width: 4),
+            Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w900)),
+          ],
+        ),
       ),
     );
   }
@@ -335,7 +412,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     final capped = entries.take(_maxDisplayed).toList();
     final top3 = capped.take(3).toList();
     final rest = capped.length > 3 ? capped.sublist(3) : <Map<String, dynamic>>[];
-    final topXp = capped.isNotEmpty ? max(1, _asInt(capped.first[_byStreak ? "streak" : "xp"])) : 1;
+    final topXp = capped.isNotEmpty ? max(1, _asInt(capped.first[_metricKey])) : 1;
 
     // האם השורה שלי כבר קיימת בתוך ה-50 הראשונים (רק לא בהכרח בטופ 10)
     final bool myRowIsInCappedList = myRank != null && myRank <= _maxDisplayed;
@@ -361,7 +438,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             // 🆕 +108 לריפוד התחתון כדי שהתוכן יגלול מעל סרגל הניווט הקבוע החדש
-            padding: EdgeInsets.fromLTRB(16, MediaQuery.of(context).padding.top + 86, 16, (needsFloating ? 106 : 30) + 108),
+            // 🐛 תוקן: הריפוד התחתון היה קבוע (108) ולא כלל את
+            // MediaQuery.padding.bottom (אזור הבטוח התחתון - למשל פס
+            // המחוות באנדרואיד/הבית ב-iPhone) - בדיוק כמו ש-AppBottomNav
+            // עצמו מוסיף אותו לגובה שלו (ראו app_bottom_nav.dart:136).
+            // במכשירים עם אזור בטוח תחתון, הסרגל היה בפועל גבוה יותר
+            // מהריפוד שחישבנו לו, ומכסה את השורה האחרונה בטבלה.
+            padding: EdgeInsets.fromLTRB(16, _headerHeight + 12, 16, (needsFloating ? 106 : 30) + 108 + MediaQuery.of(context).padding.bottom),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -371,7 +454,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 _FadeSlideIn(index: 1, child: _buildMyStatsRow(entries[myIndex], myRank)),
               ],
               const SizedBox(height: 20),
-              _buildSectionDivider(_byStreak ? "$_maxDisplayed שיאני הרצף" : "$_maxDisplayed המובילים"),
+              _buildSectionDivider(_byMedals ? "$_maxDisplayed לפי מדליות" : "$_maxDisplayed המובילים"),
               const SizedBox(height: 12),
               for (int i = 0; i < rest.length; i++)
                 Padding(
@@ -473,9 +556,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           children: [
             Expanded(child: _miniStat("#$rank", "המקום שלך", const Color(0xFFFFC64B))),
             const SizedBox(width: 8),
-            // 🆕 בתצוגת "רצף" - הרצף מוצג לפני ה-XP, כדי שיתאים למה שממויין כרגע
-            if (_byStreak) ...[
-              Expanded(child: _miniStat("🔥 $streak", "שיא רצף", const Color(0xFFFF8A5B))),
+            if (_byMedals) ...[
+              Expanded(child: _miniStat("🎖️ ${_asInt(me["medals"])}", "מדליות", const Color(0xFFFFD86B))),
               const SizedBox(width: 8),
               Expanded(child: _miniStat("${_asInt(me["xp"])}", "XP שלך", const Color(0xFF93C5FD))),
             ] else ...[
@@ -584,21 +666,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     Column(
                       textDirection: TextDirection.rtl,
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: _byStreak
-                          ? [
-                              Text("🔥 $streak",
-                                  style: const TextStyle(color: Color(0xFF2A1740), fontSize: 13.5, fontWeight: FontWeight.w900)),
-                              const SizedBox(height: 1),
-                              Text("${_asInt(entry["xp"])} XP",
-                                  style: TextStyle(color: const Color(0xFF2A1740).withValues(alpha: 0.7), fontSize: 10, fontWeight: FontWeight.w900)),
-                            ]
-                          : [
-                              Text("${_asInt(entry["xp"])} XP",
-                                  style: const TextStyle(color: Color(0xFF2A1740), fontSize: 13.5, fontWeight: FontWeight.w900)),
-                              const SizedBox(height: 1),
-                              Text("🔥 $streak",
-                                  style: TextStyle(color: const Color(0xFF2A1740).withValues(alpha: 0.7), fontSize: 10, fontWeight: FontWeight.w900)),
-                            ],
+                      children: [
+                        Text("${_asInt(entry["xp"])} XP",
+                            style: const TextStyle(color: Color(0xFF2A1740), fontSize: 13.5, fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 1),
+                        Text("🔥 $streak",
+                            style: TextStyle(color: const Color(0xFF2A1740).withValues(alpha: 0.7), fontSize: 10, fontWeight: FontWeight.w900)),
+                      ],
                     ),
                     const SizedBox(width: 4),
                     const _BouncingChevron(),
@@ -727,7 +801,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.92), fontSize: isFirst ? 16 : 13.5, fontWeight: FontWeight.bold),
               ),
         const SizedBox(height: 3),
-        if (_byStreak)
+        if (_byMedals)
           Text("${_asInt(entry["xp"])} XP", style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.bold))
         else if (streak > 0)
           Text("🔥 $streak", style: const TextStyle(color: Color(0xFFFF8A5B), fontSize: 11.5, fontWeight: FontWeight.bold)),
@@ -763,9 +837,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       fontSize: isFirst ? 30 : 22,
                       fontWeight: FontWeight.w900)),
               SizedBox(height: isFirst ? 8 : 5),
-              Text(_byStreak ? "$streak" : "${_asInt(entry["xp"])}",
+              Text(_byMedals ? "${_asInt(entry["medals"])}" : "${_asInt(entry["xp"])}",
                   style: TextStyle(color: Colors.white, fontSize: isFirst ? 19 : 15, fontWeight: FontWeight.w900)),
-              Text(_byStreak ? "רצף" : "XP", style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 0.7 : 0.55), fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 1)),
+              Text(_byMedals ? "מדליות" : "XP", style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 0.7 : 0.55), fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 1)),
             ],
           ),
         ),
@@ -811,9 +885,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     bool isMe = (entry["deviceId"] ?? "") == myDeviceId && myDeviceId.isNotEmpty && (entry["deviceId"] ?? "").isNotEmpty;
     int streak = _asInt(entry["streak"]);
     int xp = _asInt(entry["xp"]);
-    // 🆕 בתצוגת "רצף" - פס ההתקדמות מחושב לפי הרצף (לא XP), כדי שהאורך
-    // שלו ישקף נכון את המדד שלפיו ממוינת הרשימה כרגע.
-    double pct = ((_byStreak ? streak : xp) / topXp).clamp(0.02, 1.0);
+    int medals = _asInt(entry["medals"]);
+    double pct = ((_byMedals ? medals : xp) / topXp).clamp(0.02, 1.0);
     String name = _asString(entry["name"]);
 
     // ⚠️ עוטפים ב-Material+InkWell (לא רק את התג הצף!) כדי שלחיצה על
@@ -939,16 +1012,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // 🆕 בתצוגת "רצף" המספר הבולט (הגדול) הוא שיא הרצף, וה-XP
-                // מוצג קטן מתחתיו כמשני - בתצוגת "נקודות" זה הפוך, כמו קודם.
                 Column(
                   textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _byStreak
+                  children: _byMedals
                       ? [
-                          Text("🔥 $streak",
+                          Text("🎖️ $medals",
                               style: TextStyle(
-                                  color: isMe ? const Color(0xFFFFE7A8) : const Color(0xFFFF8A5B),
+                                  color: isMe ? const Color(0xFFFFE7A8) : const Color(0xFFFFD86B),
                                   fontSize: isMe ? 14.5 : 14,
                                   fontWeight: FontWeight.w900)),
                           const SizedBox(height: 2),

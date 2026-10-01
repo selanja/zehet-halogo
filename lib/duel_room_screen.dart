@@ -19,7 +19,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:share_plus/share_plus.dart';
+import 'share_helper.dart'; // 🐛 שיתוף עם sharePositionOrigin - תוקן כשל שיתוף ב-iOS
 import 'duel_service.dart';
 import 'duel_lobby_screen.dart';
 import 'missions_service.dart';
@@ -32,6 +32,9 @@ import 'ads_manager.dart'; // 🆕 פרסומת אחרי סיום דו-קרב + 
 import 'level_override_service.dart'; // 🆕 תיקוני שלבים מרחוק - חייב לחול גם בדו-קרב, לא רק במשחק הרגיל
 import 'battle_pass_service.dart'; // 🆕 נקודות "באטל פאס" על ניצחון בדו-קרב
 import 'app_notification.dart';
+import 'not_enough_coins_dialog.dart'; // 🆕 "אין מספיק מטבעות" - עכשיו מקשר ישר לחנות
+import 'starter_pack_dialog.dart'; // 🆕 מציג מארז פתיחה ברגע חיכוך אם עדיין זכאי
+import 'achievements_service.dart';
 import 'active_match_service.dart'; // 🆕 "חזרה למשחק" אחרי שהאפליקציה נסגרה לגמרי
 
 class DuelRoomScreen extends StatefulWidget {
@@ -125,8 +128,94 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   // שהמזהה של הדו-קרב החדש מופיע על המשחק הישן (rematchMatchId) -
   // עוברים אליו ישירות, אצל שני השחקנים, בלי צורך בשום פעולה נוספת.
   bool _rematchNavigated = false;
+  // 🆕 "סדרת דו-קרב (הטוב מ-3)" - ראו _maybeContinueSeries/_showSeriesRoundResultDialog.
+  bool _seriesContinueTriggered = false;
+  bool _seriesBonusGranted = false;
 
   late final AnimationController _waitingSpinController;
+
+  // 🆕 יריב-בוט (ראו DuelService.botFallbackEnabled) - הלקוח שלי "מנגן"
+  // בשם הבוט: מדווח התקדמות בהשהיות אקראיות. בלי פעימות חיים (וגם לא
+  // מכריזים עליו כמנותק), בלי סטטיסטיקות ובלי רימאץ'.
+  Timer? _botTimer;
+  bool _botStarted = false;
+  final Random _botRandom = Random();
+  // 🩹 תוקן: "הבוטים חלשים מדי, נורא קל לנצח אותם" - קודם דיוק קבוע
+  // 65% לכל הבוטים תמיד, ללא שום שונות. עכשיו כמו במרוץ (logo_race_screen.dart) -
+  // רמת מיומנות אקראית לכל דו-קרב, ובאופן כללי מעט חזקה יותר בממוצע.
+  late final double _botSkill = _botRandom.nextDouble();
+  double get _botAccuracy => 0.45 + _botSkill * 0.5; // 45%-95%, ממוצע ~70% (היה קבוע 65%)
+  double get _botSpeedMul => 1.25 - _botSkill * 0.7; // מכפיל זמן: 1.25x איטי .. 0.55x מהיר
+  bool _isBotMatch(DuelMatch m) => DuelService.isBotId(m.opponentIdFor(widget.myDeviceId));
+
+  // 🐛 תוקן: דווח שהבוט "נתקע" באמצע סיבוב (הפסיק להתקדם) בלי שום סיבה
+  // נראית לעין - במקום שהמשחק יישאר תקוע בלי שום דרך להתאושש, שומרים
+  // עכשיו "שומר" תקופתי (_botWatchdog) שבודק כל 5 שניות אם היה אמור להיות
+  // טיימר בוט פעיל כרגע (המשחק playing, זה משחק מול בוט, הבוט עוד לא
+  // סיים) אבל אין - ואם כן, מתזמן אותו מחדש. זו רשת ביטחון שמגבילה כל
+  // "תקיעה" עתידית לכמה שניות במקום שתישאר לצמיתות, גם אם הסיבה המדויקת
+  // (למשל הפרעת רשת חד-פעמית שגרמה ל-Timer לא להירשם) לא ידועה בוודאות.
+  Timer? _botWatchdog;
+
+  void _startBotIfNeeded(DuelMatch match) {
+    if (!_isBotMatch(match) || match.status == 'finished') return;
+    _botWatchdog ??= Timer.periodic(const Duration(seconds: 5), (_) => _watchdogCheckBot());
+    if (_botStarted || match.status != 'playing') return;
+    _botStarted = true;
+    _scheduleBotStep();
+  }
+
+  void _watchdogCheckBot() {
+    final match = _match;
+    if (!mounted || match == null || match.status != 'playing' || !_isBotMatch(match)) return;
+    final botIsP1 = match.player1Id != widget.myDeviceId;
+    final done = botIsP1 ? match.player1Progress : match.player2Progress;
+    if (done >= match.totalQuestions) return; // הבוט כבר סיים את כל הלוגואים שלו - אין למה לחכות
+    if (_botTimer == null || !_botTimer!.isActive) {
+      debugPrint('BOT WATCHDOG: no active bot timer while match is playing - rescheduling');
+      _scheduleBotStep();
+    }
+  }
+
+  void _scheduleBotStep() {
+    _botTimer?.cancel(); // 🩹 מונע שני טיימרי-בוט פעילים בו-זמנית אם נקרא פעמיים ברצף
+    final match = _match;
+    if (!mounted || match == null || match.status == 'finished') return;
+    final botIsP1 = match.player1Id != widget.myDeviceId;
+    final done = botIsP1 ? match.player1Progress : match.player2Progress;
+    if (done >= match.totalQuestions) return;
+    final timeout = DuelService.logoTimeoutForStake(match.stake);
+    // דיוק ומהירות לפי רמת המיומנות שהוגרלה לדו-קרב הזה (ראו _botSkill) -
+    // תשובה נכונה לוקחת 20%-65% מהזמן (מוכפל במהירות הבוט).
+    // 🩹 תוקן: טעות הייתה לוקחת את מלוא ה-timeout (עד 30 שניות) - עם בוט
+    // חלש (דיוק נמוך) וכמה שאלות ברצף שהוא טועה בהן, הזמן המצטבר שהשחקן
+    // האמיתי (שכבר סיים את התור שלו) מחכה לבוט תפח לדקות שלמות ("מוגזם
+    // ומגוחך", 3+ דקות דווח בפועל) - בעיקר בהימורים הגדולים (30s timeout
+    // × עד 12 שאלות). עכשיו גם טעות לוקחת זמן קצוב וקצר (6-12 שניות,
+    // מוכפל במהירות הבוט) - עדיין "לוקח לו יותר זמן כשהוא טועה" מבחינת
+    // התחושה, אבל לא תלוי ב-timeout המלא של ההימור.
+    final correct = _botRandom.nextDouble() < _botAccuracy;
+    final seconds = correct
+        ? (timeout * (0.2 + _botRandom.nextDouble() * 0.45) * _botSpeedMul).clamp(2.0, timeout - 1)
+        : (6.0 + _botRandom.nextDouble() * 6.0) * _botSpeedMul;
+    _botTimer = Timer(Duration(milliseconds: (seconds * 1000).round()), () async {
+      // 🩹 קוראים מחדש את ההתקדמות העדכנית ביותר (לא סומכים על `done`
+      // שנתפס למעלה - אם הגיע ביניים עדכון אחר, זה היה עלול לגרום
+      // ל-advanceLogo להיכשל בשקט על "עדכון מיושן" ולא להתקדם בכלל).
+      final m = _match;
+      if (!mounted || m == null || m.status == 'finished') return;
+      final freshDone = botIsP1 ? m.player1Progress : m.player2Progress;
+      try {
+        await DuelService.advanceLogo(
+          matchId: widget.matchId,
+          isPlayer1: botIsP1,
+          newProgress: freshDone + 1,
+          gotItRight: correct,
+        );
+      } catch (_) {}
+      _scheduleBotStep();
+    });
+  }
 
   @override
   void initState() {
@@ -183,6 +272,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     _stake = match.stake;
     _startHeartbeatIfNeeded();
     _checkOpponentHeartbeat(match);
+    _startBotIfNeeded(match);
 
     if (_prevStatus == null && match.status == 'countdown') {
       _runCountdownThenStart(match);
@@ -198,7 +288,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     }
 
     if (match.status == 'finished' && _prevStatus != 'finished') {
-      _showResultDialog(match);
+      if (match.seriesMode && !match.seriesDecided) {
+        _showSeriesRoundResultDialog(match);
+        _maybeContinueSeries(match);
+      } else {
+        _showResultDialog(match);
+      }
     }
 
     // 🆕 שני הצדדים ביקשו "שחק שוב" ודו-קרב חדש נוצר - עוברים אליו ישירות.
@@ -224,6 +319,165 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     _opponentAnsweredBannerTimer = Timer(const Duration(milliseconds: 1800), () {
       if (!mounted) return;
       setState(() => _showOpponentAnsweredBanner = false);
+    });
+  }
+
+  // 🆕 אותו מאגר לוגואים בדיוק כמו בלובי (לפי רמת ההימור) - ראו
+  // duel_lobby_screen.dart. משותף בין כפתור "שחק שוב" הרגיל ובין המשך
+  // אוטומטי של סדרת דו-קרב, כדי שרמת הקושי תישאר עקבית בשני המקרים.
+  List<int> _levelPoolFor(int stake) {
+    final poolIds = logoIdsForWorlds(DuelService.worldsForStake(stake));
+    return poolIds.isEmpty ? gameLevels.keys.toList() : poolIds;
+  }
+
+  // 🆕 באנר קליל "ניצחת/הפסדת בסיבוב X" - מוצג באמצע סדרת דו-קרב (לא
+  // הוכרעה עדיין), במקום מסך התוצאה המלא עם כפתורי "שחק שוב"/"שיתוף" -
+  // הסיבוב הבא מתחיל לבד תוך כמה שניות (ראו _maybeContinueSeries), אין
+  // צורך בשום פעולה מהשחקן. נסגר אוטומטית ברגע ש-_goToRematch רץ (הוא
+  // תמיד מנסה לסגור דיאלוג פתוח קודם - ראו למטה).
+  void _showSeriesRoundResultDialog(DuelMatch match) {
+    final iWon = match.winnerId == widget.myDeviceId;
+    final isDraw = match.winnerId == null;
+    _settleCoinsAfterMatch(iWon: iWon, isDraw: isDraw);
+    if (iWon) {
+      _grantWinXp(_winXpReward);
+      BattlePassService.addPoints(_winBattlePassPoints);
+      AchievementsService.inc('duelWins');
+    }
+    if (iWon) {
+      AudioManager.playSuccess('audio/level_complete.mp3');
+    } else if (isDraw) {
+      AudioManager.playSuccess('audio/win.mp3');
+    } else {
+      AudioManager.playLose();
+    }
+    final myWins = match.seriesWinsFor(widget.myDeviceId);
+    final oppId = match.opponentIdFor(widget.myDeviceId);
+    final oppWins = match.seriesWinsFor(oppId);
+    final oppName = widget.myDeviceId == match.player1Id ? match.player2Name : match.player1Name;
+    final oppProgress = match.opponentCorrectFor(widget.myDeviceId);
+    final myFinalProgress = _myCorrectCount.clamp(0, match.totalQuestions);
+    // 🩹 עוצב מחדש - לפי בקשה מפורשת ("שתראה כמו מסך ניצחון"): אותו קונטיינר/
+    // אנימציה/כרטיסי פודיום בדיוק כמו _showResultDialog (מסך התוצאה הרגיל),
+    // רק עם ניקוד הסדרה במקום זמן, ובלי כפתורי "שחק שוב"/"שיתוף" בתחתית -
+    // "עוברים לסיבוב הבא..." במקומם, כי זה קורה אוטומטית (ראו _maybeContinueSeries).
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.55, end: 1.0),
+          duration: const Duration(milliseconds: 550),
+          curve: Curves.elasticOut,
+          builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+          child: Container(
+            width: 340,
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.86),
+            padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              gradient: const LinearGradient(colors: [Color(0xFF2A1B57), Color(0xFF170F38)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+              border: iWon ? Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.45), width: 1.5) : null,
+              boxShadow: iWon
+                  ? [
+                      BoxShadow(color: const Color(0xFFFFD86B).withValues(alpha: 0.4), blurRadius: 60, spreadRadius: 6),
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 24, offset: const Offset(0, 12)),
+                    ]
+                  : [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 10))],
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      color: const Color(0xFFF87171).withValues(alpha: 0.16),
+                      border: Border.all(color: const Color(0xFFF87171).withValues(alpha: 0.4)),
+                    ),
+                    child: Text('🏆 סיבוב ${match.seriesRound}/3 בסדרה', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFECACA), fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  ),
+                  if (!iWon) ...[
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      height: 92,
+                      width: 180,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [Icon(isDraw ? Icons.handshake_rounded : Icons.sentiment_dissatisfied_rounded, color: isDraw ? Colors.white70 : Colors.white54, size: 58)],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ] else
+                    const SizedBox(height: 22),
+                  if (iWon)
+                    ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFFB24D)]).createShader(bounds),
+                      child: const Text("ניצחת בסיבוב!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
+                    )
+                  else
+                    Text(isDraw ? "תיקו בסיבוב" : "היריב ניצח בסיבוב", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text('הסדרה: $myWins - $oppWins מול $oppName', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 20),
+                  // 🐛 תוקן: הוסרה כאן בכוונה תיבת "הפרס על הסיבוב" (מטבעות/XP)
+                  // שהיתה קודם - לפי בקשה מפורשת, כי היא נראתה כאילו הסדרה
+                  // כולה הסתיימה ("קיבל 100 מטבעות") בזמן שזה רק ניצחון בסיבוב
+                  // בודד מתוך 3. הזיכוי בפועל עדיין קורה (_settleCoinsAfterMatch
+                  // למעלה) - רק לא מוצג כאן בבליטות של "פרס סופי".
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(child: _podiumCard(name: widget.myUsername, progress: myFinalProgress, totalQuestions: match.totalQuestions, isWinner: !isDraw && iWon, isDimmed: !isDraw && !iWon, ringColors: const [Color(0xFFFFD86B), Color(0xFFFF9A3C)])),
+                      Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text("VS", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 14, fontWeight: FontWeight.w900))),
+                      Expanded(child: _podiumCard(name: oppName, progress: oppProgress, totalQuestions: match.totalQuestions, isWinner: !isDraw && !iWon, isDimmed: !isDraw && iWon, ringColors: const [Color(0xFFFDA4AF), Color(0xFFE11D74)])),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 2.4)),
+                      const SizedBox(width: 10),
+                      Text('עוברים לסיבוב הבא...', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 🆕 מריץ את הסיבוב הבא בסדרה אוטומטית (בלי לחכות שהשחקן ילחץ על שום
+  // כפתור). מול שחקן אמיתי - מבקש רימאץ' בדיוק כמו הכפתור הרגיל (ברגע
+  // ששני הצדדים "ביקשו" - כאן זה קורה אוטומטית משני הצדדים - נוצר משחק
+  // חדש ו-_onMatchUpdate הקיים כבר מזהה rematchMatchId ומנווט לבד).
+  // מול בוט - אין צד שני אמיתי שיקרא לפונקציה, אז יוצרים ישירות.
+  void _maybeContinueSeries(DuelMatch match) {
+    if (_seriesContinueTriggered) return;
+    _seriesContinueTriggered = true;
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (!mounted) return;
+      final poolIds = _levelPoolFor(match.stake);
+      if (_isBotMatch(match)) {
+        await DuelService.createNextSeriesRoundVsBot(oldMatchId: match.matchId, allLevelIds: poolIds);
+      } else {
+        await DuelService.requestRematch(oldMatchId: match.matchId, myDeviceId: widget.myDeviceId, allLevelIds: poolIds);
+      }
+      // אם מסיבה כלשהי rematchMatchId עוד לא הגיע דרך ה-listener הרגיל
+      // (למשל הפרעת רשת רגעית) - בודקים ישירות פעם אחת נוספת כרשת ביטחון.
+      if (!mounted || _rematchNavigated) return;
+      final fresh = await DuelService.watchMatch(match.matchId).first.catchError((_) => match);
+      if (!mounted || _rematchNavigated) return;
+      if (fresh.rematchMatchId != null) {
+        _rematchNavigated = true;
+        _goToRematch(fresh.rematchMatchId!);
+      }
     });
   }
 
@@ -264,6 +518,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   // (בלי אינטרנט) לא יגיע שום snapshot חדש שיפעיל בדיקה מחדש.
   void _checkOpponentHeartbeat(DuelMatch match) {
     if (match.status != 'playing') return; // לא בספירה לאחור/לפני שהתחיל/אחרי שנגמר
+    if (_isBotMatch(match)) return; // בוט לא שולח פעימות - לא מנותק
     final oppLastSeen = match.opponentLastSeenFor(widget.myDeviceId);
     if (oppLastSeen != null && oppLastSeen != _oppLastSeenServerValuePrev) {
       _oppLastSeenServerValuePrev = oppLastSeen;
@@ -307,6 +562,16 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   void _runCountdownThenStart(DuelMatch match) {
     if (_countdownStarted) return;
     _countdownStarted = true;
+    // 🩹 בסיבוב המשך בסדרה (round > 1) - היריב כבר "נמצא" (זה אותו יריב
+    // מהסיבוב הקודם), אז לפי בקשה מפורשת אין ספירה לאחור 3-2-1 מוצגת -
+    // רק המתנה קצרה (טעינת המסך הבא) ואז מתחילים ישר, בלי מספרים.
+    if (match.seriesMode && match.seriesRound > 1) {
+      Timer(const Duration(milliseconds: 900), () async {
+        if (!mounted) return;
+        await DuelService.startMatchIfNeeded(widget.matchId);
+      });
+      return;
+    }
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
       if (!mounted) return;
       setState(() => _countdownValue--);
@@ -528,8 +793,14 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     await _advanceToNextLogo(gotItRight: true);
   }
 
+  bool get _hintsAllowed => DuelService.hintsAllowedForStake(_stake);
+
   void _showHintMenu() {
     if (_match == null || _myProgress >= _match!.totalQuestions) return;
+    if (!_hintsAllowed) {
+      AppNotification.show(context, "רמזים לא זמינים בהימור הזה - זמינים רק מ-100 מטבעות ומעלה", type: AppNotificationType.error);
+      return;
+    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -552,7 +823,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
               icon: Icons.font_download_outlined,
               title: "חשוף אות",
               subtitle: "אות אחת נוספת מתגלה מיד",
-              price: DuelService.letterHintCost,
+              price: DuelService.letterHintCostForStake(_stake),
               accent: const Color(0xFFFFB24D),
               onTap: () {
                 Navigator.pop(context);
@@ -564,7 +835,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
               icon: Icons.abc_rounded,
               title: "פתור את כל המילה",
               subtitle: "כל האותיות מתגלות בבת אחת",
-              price: DuelService.wordHintCost,
+              price: DuelService.wordHintCostForStake(_stake),
               accent: const Color(0xFF9333EA),
               onTap: () {
                 Navigator.pop(context);
@@ -584,15 +855,27 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     );
   }
 
-  void _showNotEnoughCoins(int price) {
-    AppNotification.show(context, "אין מספיק מטבעות (צריך $price)", type: AppNotificationType.error);
+  // 🐛 תוקן: היה AppNotification חולף בלי אפשרות לקנות - הרגע הזה
+  // (בדיוק חסרים לך מטבעות לרמז) הוא רגע רכישה אידיאלי, בדיוק כמו בחלון
+  // הרמזים במסך הרמות הרגיל (ראו logo_level_screen.dart) - עכשיו יש
+  // דיאלוג עם קישור ישיר לחנות, עם החבילה הנכונה מודגשת. אם יש עדיין
+  // הצעת "מארז פתיחה" זכאית שלא הוצגה בכלל - היא מוצגת קודם (ממירה
+  // הרבה יותר טוב מרכישת מטבעות בודדת, ובדיוק ברגע שהמשתמש פתוח לזה).
+  void _showNotEnoughCoins(int price) async {
+    final prefs = await SharedPreferences.getInstance();
+    final maxLevel = prefs.getInt('maxLevel') ?? 1;
+    if (!mounted) return;
+    final shownStarterPack = await StarterPackDialog.maybeShowAtFriction(context, maxLevel: maxLevel);
+    if (shownStarterPack) return;
+    showNotEnoughCoinsDialog(context, cost: price, coins: _coins, onReturnedFromShop: _loadCoins);
   }
 
   void _revealLetterHint() {
     final level = _currentLevel;
     if (level == null) return;
-    if (_coins < DuelService.letterHintCost) {
-      _showNotEnoughCoins(DuelService.letterHintCost);
+    final cost = DuelService.letterHintCostForStake(_stake);
+    if (_coins < cost) {
+      _showNotEnoughCoins(cost);
       return;
     }
     final emptySlots = <int>[];
@@ -608,7 +891,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       _guessSlots[randomSlot] = revealedLetter;
       _hintedPositions.add(randomSlot);
       _typedOrder.add(randomSlot);
-      _coins -= DuelService.letterHintCost;
+      _coins -= cost;
       // גם המקש המתאים במקלדת "נעלם" - כדי שהמקלדת תישאר עקבית עם מה
       // שכבר גלוי בתאים, בדיוק כמו במסך הרמות הרגיל.
       for (int i = 0; i < level.keyboard.length; i++) {
@@ -626,8 +909,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   void _revealWordHint() {
     final level = _currentLevel;
     if (level == null) return;
-    if (_coins < DuelService.wordHintCost) {
-      _showNotEnoughCoins(DuelService.wordHintCost);
+    final cost = DuelService.wordHintCostForStake(_stake);
+    if (_coins < cost) {
+      _showNotEnoughCoins(cost);
       return;
     }
     setState(() {
@@ -636,7 +920,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         _guessSlots[i] = answerNoSpaces[i];
       }
       _hintedPositions = Set<int>.from(List.generate(answerNoSpaces.length, (i) => i));
-      _coins -= DuelService.wordHintCost;
+      _coins -= cost;
 
       _pressedKeyIndices.clear();
       _slotToKeyIndex.clear();
@@ -658,6 +942,25 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   }
 
   static const int _winXpReward = 50;
+  // 🩹 תוקן: עד עכשיו ניצחון בדו-קרב זיכה גם נקודות "באטל פאס" בכמות
+  // זהה ל-XP הרגיל (50) - פי כמה מכל מקור נקודות אחר (פתרון לוגו ~1-15,
+  // משימה יומית 2-4, אתגר יומי 30) - מה שהפך את "לסיים את כל הבאטל פאס"
+  // לקל מדי (כמה דו-קרבים מהירים ביום = כל העונה). ה-XP הרגיל (ולוח
+  // התוצאה/לידרבורד) לא השתנה - רק הנקודות שמתקדמות את הבאטל פאס.
+  static const int _winBattlePassPoints = 10;
+
+  Future<void> _grantSeriesBonus() async {
+    while (!_coinsLoaded) {
+      await Future.delayed(const Duration(milliseconds: 40));
+      if (!mounted) return;
+    }
+    setState(() => _coins += _seriesWinBonusCoins);
+    await _saveCoins();
+    // 🆕 לפי בקשה מפורשת ("כל ניצחון נותן גם XP") - עד עכשיו ניצחון
+    // הסדרה כולה (לא כל סיבוב בנפרד, שכבר מזכה XP דרך _grantWinXp) נתן
+    // רק מטבעות, בלי שום XP נוסף על ההישג המיוחד הזה.
+    await _grantWinXp(_seriesWinBonusXp);
+  }
 
   Future<void> _grantWinXp(int amount) async {
     final prefs = await SharedPreferences.getInstance();
@@ -700,9 +1003,21 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  static const int _seriesWinBonusCoins = 40;
+  static const int _seriesWinBonusXp = 30; // 🆕 בונוס XP על ניצחון הסדרה כולה (מעבר ל-50 XP שכל סיבוב כבר מזכה)
+
   void _showResultDialog(DuelMatch match) {
     final iWon = match.winnerId == widget.myDeviceId;
     final isDraw = match.winnerId == null;
+    final mySeriesWins = match.seriesWinsFor(widget.myDeviceId);
+    final oppSeriesWins = match.seriesWinsFor(match.opponentIdFor(widget.myDeviceId));
+    // 🆕 סדרת דו-קרב שהוכרעה עכשיו (מישהו הגיע ל-2 ניצחונות) - בונוס
+    // מטבעות חד-פעמי על כל הסדרה, מעבר לזיכוי הרגיל על הסיבוב האחרון.
+    final seriesJustWon = match.seriesMode && match.seriesDecided && iWon && !_seriesBonusGranted;
+    if (match.seriesMode && match.seriesDecided && !_seriesBonusGranted) {
+      _seriesBonusGranted = true;
+      if (iWon) _grantSeriesBonus();
+    }
     // 🆕 מצב מקומי לכפתור "שחק שוב" - משתנה רגיל שנתפס (captured) ע"י
     // ה-StatefulBuilder בתוך הדיאלוג למטה, לא שדה של המסך כולו: זה
     // מספיק כדי שהכפתור עצמו יתעדכן ("ממתין ל-...⏳") בלי לגעת בשאר
@@ -724,12 +1039,15 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
 
     if (iWon) {
       _grantWinXp(_winXpReward); // לא מחכים לזה - לא צריך לחסום את הדיאלוג
-      BattlePassService.addPoints(_winXpReward); // 🆕 נקודות "באטל פאס" על ניצחון בדו-קרב
+      BattlePassService.addPoints(_winBattlePassPoints); // 🆕 נקודות "באטל פאס" על ניצחון בדו-קרב (הופחת מ-50 - ראו ההערה ליד הקבוע)
+      AchievementsService.inc('duelWins'); // 🆕 הישגים
     }
     _settleCoinsAfterMatch(iWon: iWon, isDraw: isDraw);
+    if (seriesJustWon) AchievementsService.inc('duelWins'); // בונוס - גם הישג נוסף על ניצחון הסדרה
     // 🆕 סטטיסטיקות "ניצחונות"/"מאזן ראש-בראש" למסך "נמצא יריב" הבא -
     // בטוח לקרוא משני המכשירים בו-זמנית (ראה recordMatchResultOnce).
-    DuelService.recordMatchResultOnce(
+    if (!_isBotMatch(match)) {
+      DuelService.recordMatchResultOnce(
       matchId: match.matchId,
       player1Id: match.player1Id,
       player2Id: match.player2Id,
@@ -738,6 +1056,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
           ? match.player1Name
           : (match.winnerId == match.player2Id ? match.player2Name : null),
     );
+    }
 
     final oppName = widget.myDeviceId == match.player1Id ? match.player2Name : match.player1Name;
     // 🆕 בתוצאה הסופית מציגים כמה תשובות *נכונות* היו לכל אחד - לא כמה
@@ -745,7 +1064,11 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     // הצדדים כשהמשחק מסתיים, אז זה לא היה אומר כלום).
     final oppProgress = match.opponentCorrectFor(widget.myDeviceId);
     final myFinalProgress = _myCorrectCount.clamp(0, match.totalQuestions);
-    final coinDelta = isDraw ? 0 : (iWon ? _stake : -_stake);
+    // 🩹 תוקן: "הפרס שלך" הציג רק את הזיכוי של הסיבוב האחרון (ההימור/50
+    // XP) בלי בונוס ניצחון הסדרה (40 מטבעות + 30 XP), למרות שהוא כבר
+    // ניתן בפועל - נראה כאילו השחקן קיבל פחות ממה שבאמת קיבל.
+    final coinDelta = isDraw ? 0 : (iWon ? _stake : -_stake) + (seriesJustWon ? _seriesWinBonusCoins : 0);
+    final xpDelta = iWon ? _winXpReward + (seriesJustWon ? _seriesWinBonusXp : 0) : 0;
     final elapsed = _formatElapsed(match);
 
     showDialog(
@@ -792,7 +1115,11 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                     color: const Color(0xFFFB7185).withValues(alpha: 0.16),
                     border: Border.all(color: const Color(0xFFFDA4AF).withValues(alpha: 0.4)),
                   ),
-                  child: Text('⚔️ דו־קרב · על $_stake מטבעות', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 11.5, fontWeight: FontWeight.w800)),
+                  child: Text(
+                    match.seriesMode ? '🏆 סדרת דו־קרב · על $_stake מטבעות' : '⚔️ דו־קרב · על $_stake מטבעות',
+                    textDirection: TextDirection.rtl,
+                    style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 11.5, fontWeight: FontWeight.w800),
+                  ),
                 ),
                 // 🆕 בהתאם לבקשה - בניצחון כבר לא מוצג גביע ולא קונפטי (לא
                 // הילה פועמת ולא נקודות צבעוניות) - רק כותרת "ניצחת!" למטה.
@@ -831,6 +1158,28 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                     textDirection: TextDirection.rtl,
                     style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
                   ),
+                // 🆕 לפי בקשה מפורשת - מסך הסיום של סדרת דו-קרב היה נראה
+                // זהה לדו-קרב רגיל, בלי שום סימן שזו הייתה סדרה שלמה (עד
+                // 3 סיבובים). עכשיו מציג כמה סיבובים כל צד ניצח, לא רק
+                // את התוצאה של הסיבוב האחרון.
+                if (match.seriesMode) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: Colors.white.withValues(alpha: 0.08),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                    ),
+                    child: Text(
+                      isDraw
+                          ? 'תיקו בסדרה · $mySeriesWins-$oppSeriesWins'
+                          : (iWon ? 'ניצחת את הסדרה $mySeriesWins-$oppSeriesWins' : 'הפסדת את הסדרה $mySeriesWins-$oppSeriesWins'),
+                      textDirection: TextDirection.rtl,
+                      style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   '$myFinalProgress מתוך ${match.totalQuestions} לוגואים · $elapsed דקות',
@@ -895,7 +1244,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                           ),
                           Expanded(
                             child: _prizeStat(
-                              value: iWon ? '+$_winXpReward' : '+0',
+                              value: '+$xpDelta',
                               icon: Icons.bolt_rounded,
                               color: const Color(0xFFFFD86B),
                               label: 'XP',
@@ -921,7 +1270,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                 // ובין אם אחרי) - שני הצדדים עוברים אוטומטית לדו-קרב
                 // חדש (ראה _onMatchUpdate/_goToRematch למעלה) בלי שום
                 // צורך בקוד/הזמנה - כי שניהם כבר "יחד" באותו מסך תוצאה.
-                StatefulBuilder(
+                if (!_isBotMatch(match)) StatefulBuilder(
                   builder: (context, setDialogState) {
                     return SizedBox(
                       width: double.infinity,
@@ -939,8 +1288,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                                 // 🆕 אותו מאגר לוגואים בדיוק כמו בלובי (לפי
                                 // רמת ההימור - ראה duel_lobby_screen.dart),
                                 // כדי שהרימאץ' יישאר עקבי מבחינת קושי.
-                                final worldsForStake = DuelService.stakeWorlds[match.stake];
-                                final poolIds = worldsForStake != null ? logoIdsForWorlds(worldsForStake) : gameLevels.keys.toList();
+                                final poolIds = _levelPoolFor(match.stake);
                                 DuelService.requestRematch(
                                   oldMatchId: match.matchId,
                                   myDeviceId: widget.myDeviceId,
@@ -1008,7 +1356,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                           final text = iWon
                               ? 'ניצחתי בדו-קרב במשחק "זהה את הלוגו!" 🏆 $myFinalProgress/${match.totalQuestions} לוגואים ב-$elapsed דקות. בואו תנסו לנצח אותי! 🎮'
                               : 'שיחקתי דו-קרב במשחק "זהה את הלוגו!" - בואו תתמודדו איתי! ⚔️';
-                          Share.share(text);
+                          shareText(context, text);
                         },
                         child: const Text('שיתוף', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                       ),
@@ -1122,6 +1470,8 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     _logoTimer?.cancel();
     _heartbeatTimer?.cancel();
     _disconnectCheckTimer?.cancel();
+    _botTimer?.cancel();
+    _botWatchdog?.cancel();
     _opponentAnsweredBannerTimer?.cancel();
     _waitingSpinController.dispose();
     // אם עוזבים באמצע דו-קרב פעיל בלי לעבור דרך _confirmExit (למשל
@@ -1220,7 +1570,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
               children: [
                 match == null || !_coinsLoaded
                     ? const Center(child: CircularProgressIndicator(color: Colors.amber))
-                    : (match.status == 'countdown' ? _buildCountdown() : _buildGame(match)),
+                    : (match.status == 'countdown' ? _buildCountdown(match) : _buildGame(match)),
                 // 🩹 תוקן: הבאנר "מישהו ענה נכון" היה בעבר חלק מזרימת התוכן
                 // (דוחף את שאר המסך למטה כשהוא מופיע/נעלם) - לפי בקשה
                 // מפורשת נשאר למעלה, אבל עכשיו צף מעל שאר המסך (לא דוחף
@@ -1295,17 +1645,26 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildCountdown() {
+  // 🩹 תוקן: "כתוב היריב נמצא בסיבוב הבא, אבל כבר היה יריב" - "היריב
+  // נמצא!" מתאים רק לתחילת דו-קרב חדש (matchmaking אמיתי). בהמשך סדרת
+  // דו-קרב (סיבוב 2/3) זה כבר אותו יריב בדיוק - מציגים כותרת ניטרלית.
+  Widget _buildCountdown(DuelMatch match) {
+    final isSeriesContinuation = match.seriesMode && match.seriesRound > 1;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text("היריב נמצא!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+          Text(isSeriesContinuation ? "מתכוננים לסיבוב הבא..." : "היריב נמצא!", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 24),
-          Text(
-            _countdownValue > 0 ? '$_countdownValue' : 'קדימה!',
-            style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 72, fontWeight: FontWeight.w900),
-          ),
+          // 🩹 בסיבוב המשך - בלי ספירה 3-2-1 (ראו _runCountdownThenStart),
+          // רק מחוון טעינה קטן במקום מספר גדול שאין לו באמת מה לספור.
+          if (isSeriesContinuation)
+            const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 3.5))
+          else
+            Text(
+              _countdownValue > 0 ? '$_countdownValue' : 'קדימה!',
+              style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 72, fontWeight: FontWeight.w900),
+            ),
         ],
       ),
     );
@@ -1323,6 +1682,10 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     return Column(
       children: [
         _buildHeader(),
+        if (match.seriesMode) ...[
+          const SizedBox(height: 4),
+          _buildSeriesBadge(match),
+        ],
         const SizedBox(height: 6),
         _buildProgressHeader(oppName, oppCorrect, match.totalQuestions),
         const SizedBox(height: 14),
@@ -1449,7 +1812,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _ActionChip(icon: Icons.lightbulb_rounded, label: "רמז", color: const Color(0xFFFFD86B), onTap: _showHintMenu),
+              _ActionChip(icon: Icons.lightbulb_rounded, label: "רמז", color: _hintsAllowed ? const Color(0xFFFFD86B) : Colors.white.withValues(alpha: 0.22), onTap: _showHintMenu),
               const SizedBox(width: 12),
               _ActionChip(icon: Icons.backspace_rounded, label: "הסר אות", color: const Color(0xFFFB7185), onTap: _onBackspace),
             ],
@@ -1587,6 +1950,28 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // 🆕 "סדרה - סיבוב X/3 · Y-Z" - תג קטן שמופיע רק במשחקי סדרת דו-קרב,
+  // כדי שיהיה ברור בכל רגע כמה סיבובים כל צד כבר ניצח.
+  Widget _buildSeriesBadge(DuelMatch match) {
+    final myWins = match.seriesWinsFor(widget.myDeviceId);
+    final oppWins = match.seriesWinsFor(match.opponentIdFor(widget.myDeviceId));
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: const Color(0xFFF87171).withValues(alpha: 0.16),
+          border: Border.all(color: const Color(0xFFF87171).withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          'סדרה · סיבוב ${match.seriesRound}/3 · $myWins-$oppWins',
+          textDirection: TextDirection.rtl,
+          style: const TextStyle(color: Color(0xFFFECACA), fontSize: 11.5, fontWeight: FontWeight.w900),
+        ),
       ),
     );
   }

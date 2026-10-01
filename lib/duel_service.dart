@@ -45,6 +45,8 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'bot_config.dart';
+import 'level_data.dart'; // 🆕 levelsCounts/worldDifficulty - ראו worldsForStake למטה
 import 'package:flutter/foundation.dart' show debugPrint; // 🆕 הדפסת שגיאת אינדקס חסר לטבלת עונת הדו-קרבים
 
 /// תוצאה אפשרית מ-DuelService.findMatch
@@ -98,6 +100,13 @@ class DuelMatch {
   // מתמלא - שניהם עוברים ישירות לדו-קרב החדש בלי שום צורך בקוד/הזמנה.
   final List<String> rematchRequestedBy;
   final String? rematchMatchId;
+  // 🆕 "סדרת דו-קרב (הטוב מ-3)" - ראו DuelService.findMatch(wantsSeries).
+  // seriesWins ממופה לפי deviceId->מספר סיבובים שנוצחו *בסדרה הזו* (לא
+  // כולל את הסיבוב הנוכחי בזמן שהוא עדיין playing). seriesRound הוא
+  // מספר הסיבוב הנוכחי (1,2,3).
+  final bool seriesMode;
+  final Map<String, int> seriesWins;
+  final int seriesRound;
 
   DuelMatch({
     required this.matchId,
@@ -119,6 +128,9 @@ class DuelMatch {
     this.player2LastSeen,
     this.rematchRequestedBy = const [],
     this.rematchMatchId,
+    this.seriesMode = false,
+    this.seriesWins = const {},
+    this.seriesRound = 1,
   });
 
   factory DuelMatch.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -143,6 +155,9 @@ class DuelMatch {
       player2LastSeen: (d['lastSeenP2'] as Timestamp?)?.toDate(),
       rematchRequestedBy: List<String>.from(d['rematchRequestedBy'] ?? const []),
       rematchMatchId: d['rematchMatchId'] as String?,
+      seriesMode: d['seriesMode'] == true,
+      seriesWins: Map<String, int>.from((d['seriesWins'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, (v as num?)?.toInt() ?? 0)) ?? const {}),
+      seriesRound: (d['seriesRound'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -166,6 +181,10 @@ class DuelMatch {
   /// אף heartbeat (למשל השחקן השני עוד לא הגיע למסך בכלל).
   DateTime? opponentLastSeenFor(String myDeviceId) =>
       myDeviceId == player1Id ? player2LastSeen : player1LastSeen;
+
+  int seriesWinsFor(String deviceId) => seriesWins[deviceId] ?? 0;
+  /// האם הסדרה כבר הוכרעה (מישהו הגיע ל-2 ניצחונות מתוך 3).
+  bool get seriesDecided => seriesMode && seriesWins.values.any((w) => w >= 2);
 }
 
 class DuelService {
@@ -195,36 +214,55 @@ class DuelService {
   // 🆕 5 = "דו-קרב בזק" - הרמה הכי זולה והכי מהירה (גם פחות לוגואים
   // וגם פחות זמן ללוגו - ראו stakeLogoTimeoutSeconds למטה), בשביל מי
   // שרוצה סיבוב קצר ומהיר בלי להתחייב להימור/משך של דו-קרב מלא.
-  static const List<int> stakeOptions = [5, 15, 50, 200];
+  // 🆕 נוספו שתי רמות הימור לפי בקשה מפורשת ("עוד אופציות של כסף") -
+  // 100 (בין 50 ל-200) ו-500 (הימור "היי-רולר" מעל 200, למי שרוצה סיכון
+  // וקופה גדולה יותר).
+  static const List<int> stakeOptions = [5, 15, 50, 100, 200, 500];
   static const int entryFeeCoins = 15; // ברירת מחדל/רמה ראשונה - נשאר לתאימות לאחור
   // 🆕 כל רמת הימור משחקת על כמות שונה של לוגואים - ככה ההימור הזול
   // הוא גם "משחק מהיר" (5 לוגואים) וההימור היקר הוא משחק מלא ומשמעותי
   // יותר (10 לוגואים). המנצח תמיד לוקח את כל הקופה (פי 2 מההימור).
-  static const Map<int, int> stakeQuestionCounts = {5: 5, 15: 5, 50: 7, 200: 10};
+  static const Map<int, int> stakeQuestionCounts = {5: 5, 15: 5, 50: 7, 100: 8, 200: 10, 500: 12};
   static int questionsForStake(int stake) => stakeQuestionCounts[stake] ?? questionsPerDuel;
 
-  // 🆕 "בזק" - לכל לוגו יש רק 15 שניות במקום 30 (ראו logoTimeoutSeconds
-  // ב-duel_room_screen.dart), כדי שהסיבוב כולו ירגיש מהיר וקצבי. שאר
-  // הרמות ממשיכות עם 30 השניות הרגילות.
-  static const Map<int, int> stakeLogoTimeoutSeconds = {5: 15, 15: 30, 50: 30, 200: 30};
+  // 🩹 תוקן לפי בקשה מפורשת: 30 שניות לכל לוגו הרגיש מוגזם (עד 6 דקות
+  // המתנה אפשרית בהימור של 12 לוגואים אם היריב מנצל כל שנייה) - גם מול
+  // בוט וגם מול שחקן אמיתי. "בזק" (5) נשאר ללא שינוי - כבר מהיר מספיק.
+  // הימורים קלים-בינוניים (15/50/100, רמת קושי 1-3 לפי stakeDifficulty)
+  // ירדו ל-20 שניות כדי שהסיבוב ירגיש קצבי יותר. הימורים "קשים" (200/500,
+  // רמת קושי 4-5) נשארו על 30 שניות - לוגואים נדירים/קשים יותר דורשים
+  // יותר זמן מחשבה אמיתי, לא רק הרגל.
+  static const Map<int, int> stakeLogoTimeoutSeconds = {5: 15, 15: 20, 50: 20, 100: 20, 200: 30, 500: 30};
   static int logoTimeoutForStake(int stake) => stakeLogoTimeoutSeconds[stake] ?? 30;
 
-  // 🆕 לכל רמת הימור אפשר להגדיר בדיוק אילו "רמות" (עולמות - ראו
-  // levelsCounts ב-level_data.dart, 1..16) ישמשו כמאגר הלוגואים שלה -
-  // כדי שהרמה הזולה תהיה גם קלה יותר (לוגואים מוכרים) והיקרה תכלול הכל
-  // כולל הקשים ביותר. ⚠️ הרשימות למטה הן רק דוגמה/ברירת מחדל - ערוך
-  // אותן לפי מה שאתה בעצמך מחליט שקל/בינוני/קשה. המספרים הם מספרי
-  // "רמה" (עולם) כמו שהם מופיעים ב-levelsCounts - לא מזהה לוגו בודד.
-  static const Map<int, List<int>> stakeWorlds = {
-    5: [1, 2, 3, 4],
-    15: [1, 2, 3, 4],
-    50: [5, 6, 7, 8, 9, 10, 11],
-    200: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-  };
-  // 🩹 מחירי הרמזים בדו-קרב הועלו מ-5/20 ל-20/60 - עכשיו זהים למחיר
-  // הרמזים במשחק הרגיל/רנדומלי (אחידות מחירים בכל המשחק).
+  // 🐛 תוקן: היה מאגר עולמות קבוע (רשימה כתובה ביד) לכל רמת הימור - בדיוק
+  // סוג הבאג שכבר תפס אותנו פעמיים עם רמות חדשות (level_data.dart מול
+  // logo_level_screen.dart): כל עולם חדש שנוסף חייב "לזכור" גם לעדכן את
+  // הרשימה הזו בנפרד, וקל לשכוח. עכשיו זה מחושב אוטומטית מרמת הקושי
+  // המספרית של כל עולם (worldDifficulty ב-level_data.dart, 1-5) - לכל
+  // רמת הימור יש רמת קושי מקסימלית משלה (stakeDifficulty למטה), והמאגר
+  // הוא *כל* העולמות עד רמת הקושי הזו כולל (מצטבר - לפי בקשה מפורשת:
+  // "עולים ברמה, הרמות הקודמות עדיין שם"). עולם חדש שנוסף ל-levelsCounts
+  // עם רמת קושי משויכת נכנס אוטומטית למאגר הנכון, בלי לגעת כאן בכלל.
+  static const Map<int, int> stakeDifficulty = {5: 1, 15: 1, 50: 2, 100: 3, 200: 4, 500: 5};
+  static int difficultyForStake(int stake) => stakeDifficulty[stake] ?? 1;
+
+  static List<int> worldsForStake(int stake) {
+    final maxDifficulty = difficultyForStake(stake);
+    final worlds = levelsCounts.keys.where((w) => worldDifficulty(w) <= maxDifficulty).toList();
+    worlds.sort();
+    return worlds;
+  }
+  // 🐛 "כשמשחקים על 15 מטבעות, כל רמז עולה יותר מכל הניצחון של המשחק" -
+  // בעקבות בקשה מפורשת המחיר עצמו *לא* משתנה לפי הימור (מחיר זול מדי
+  // היה מאפשר לכל אחד "לעשות מה שהוא רוצה") - במקום זה רמזים חסומים
+  // כליל בהימורים הזולים (5/15/50) וזמינים רק מ-100 מטבעות ומעלה, ראו
+  // hintsAllowedForStake למטה.
   static const int letterHintCost = 20;
   static const int wordHintCost = 60;
+  static int letterHintCostForStake(int stake) => letterHintCost;
+  static int wordHintCostForStake(int stake) => wordHintCost;
+  static bool hintsAllowedForStake(int stake) => stake >= 100;
 
   // 🆕 קנס על יציאה באמצע דו-קרב/מרוץ פעיל - המטבעות/האנרגיה כבר "אבודים"
   // ממילא (נגבו כשהמשחק התחיל), והיריב תמיד מוכרז מנצח ומקבל את הקופה
@@ -308,11 +346,17 @@ class DuelService {
 
   /// מחפש/יוצר דו-קרב אקראי. מחזיר Future שמסתיים כשנמצא יריב, כשעבר הזמן
   /// המוקצב, או אם בוטל ידנית (ע"י קריאה ל-cancelSearch על אותו instance).
+  static Map<String, dynamic> _seriesFieldsFor(bool wantsSeries) =>
+      wantsSeries ? {'seriesMode': true, 'seriesWins': <String, dynamic>{}, 'seriesRound': 1} : {};
+
   Future<DuelSearchResult> findMatch({
     required String deviceId,
     required String username,
     required List<int> allLevelIds,
     required int stake,
+    // 🆕 "סדרת דו-קרב" - מחפש רק יריבים שגם הם ביקשו סדרה (לא מתערבב
+    // עם חיפוש דו-קרב בודד רגיל), ראו _seriesFieldsFor למטה.
+    bool wantsSeries = false,
   }) async {
     // 🆕 לא חוסם את החיפוש עצמו - רץ ברקע (ראו _maybeCleanupOldDuels למעלה)
     _maybeCleanupOldDuels();
@@ -341,7 +385,7 @@ class DuelService {
           .limit(5)
           .get();
 
-      final candidate = waitingSnap.docs.where((d) => d.id != deviceId).firstOrNull;
+      final candidate = waitingSnap.docs.where((d) => d.id != deviceId && (d.data()['wantsSeries'] == true) == wantsSeries).firstOrNull;
 
       if (candidate != null) {
         // שלב 2: ניסיון "לתפוס" את היריב הזה ב-Transaction, כדי שאם שני
@@ -371,6 +415,7 @@ class DuelService {
             'winnerId': null,
             'stake': stake,
             'totalQuestions': totalQuestions,
+            ..._seriesFieldsFor(wantsSeries),
           });
           tx.update(oppRef, {'matchId': matchRef.id});
           return matchRef.id;
@@ -391,6 +436,7 @@ class DuelService {
         'createdAt': FieldValue.serverTimestamp(),
         'matchId': null,
         'stake': stake,
+        'wantsSeries': wantsSeries,
       });
 
       _queueSub = myQueueRef.snapshots().listen((snap) {
@@ -429,7 +475,7 @@ class DuelService {
               .limit(5)
               .get();
           if (finished) return;
-          final rescanCandidate = rescanSnap.docs.where((d) => d.id != deviceId).firstOrNull;
+          final rescanCandidate = rescanSnap.docs.where((d) => d.id != deviceId && (d.data()['wantsSeries'] == true) == wantsSeries).firstOrNull;
           if (rescanCandidate == null) return;
 
           final rescanMatchId = await _db.runTransaction<String?>((tx) async {
@@ -460,6 +506,7 @@ class DuelService {
               'winnerId': null,
               'stake': stake,
               'totalQuestions': totalQuestions,
+              ..._seriesFieldsFor(wantsSeries),
             });
             tx.update(oppRef, {'matchId': matchRef.id});
             tx.update(myRef, {'matchId': matchRef.id});
@@ -477,6 +524,29 @@ class DuelService {
       });
 
       _timeoutTimer = Timer(searchTimeout, () async {
+        if (finished) return;
+        // 🆕 אף יריב אמיתי לא נמצא - במקום "אין שחקנים" מכניסים יריב-בוט
+        // (ראו createBotMatchIfStillWaiting), כדי שאף אחד לא יישאר בלי משחק.
+        // 🆕 "סדרת דו-קרב" נבדקת מול מתג בוטים נפרד ('superdual') - לפי
+        // בקשה מפורשת, כדי שאפשר יהיה להדליק/לכבות בוטים לכל מוד בנפרד
+        // דרך Firebase (ראו bot_config.dart).
+        if (botFallbackEnabled && await BotConfig.enabledFor(wantsSeries ? 'superdual' : 'duel') && !finished) {
+          try {
+            final botMatchId = await _createBotMatchIfStillWaiting(
+              deviceId: deviceId,
+              username: username,
+              allLevelIds: allLevelIds,
+              stake: stake,
+              wantsSeries: wantsSeries,
+            );
+            if (botMatchId != null) {
+              finish(DuelSearchResult(DuelSearchStatus.matched, matchId: botMatchId));
+              return;
+            }
+          } catch (_) {
+            // נופלים לתוצאה הרגילה למטה
+          }
+        }
         await myQueueRef.delete().catchError((_) {});
         finish(const DuelSearchResult(DuelSearchStatus.noPlayersFound));
       });
@@ -485,6 +555,67 @@ class DuelService {
     }
 
     return completer.future;
+  }
+
+  // ============================================================
+  // 🆕 יריב-בוט - כשלא נמצא שחקן אמיתי אחרי searchTimeout.
+  // המשחק נוצר כרגיל ב-Firestore (השחקן האמיתי הוא player1, הבוט player2
+  // עם מזהה שמתחיל ב-botIdPrefix), והלקוח של השחקן האמיתי "מנגן" בשם
+  // הבוט (ראו _BotDriver ב-duel_room_screen.dart). אין סטטיסטיקות
+  // ניצחונות/עונה/ראש-בראש/רימאץ' מול בוט.
+  // ============================================================
+  static const bool botFallbackEnabled = true;
+  static const String botIdPrefix = 'bot_';
+  static bool isBotId(String id) => id.startsWith(botIdPrefix);
+
+  static List<String> get botNames => _botNames;
+  static const List<String> _botNames = [
+    'דניאל', 'נועה', 'איתי', 'מיכל', 'עומר', 'שיר', 'יונתן', 'תמר', 'אורי', 'ליאור',
+    'רוני', 'גיל', 'הדר', 'עידו', 'מאיה', 'אלון', 'ענת', 'רן', 'נוי', 'תום',
+    'yuval_k', 'dan123', 'noa_l', 'omer.b', 'Tal', 'Amit', 'Shir', 'Guy', 'Roy', 'Lior',
+  ];
+
+  /// יוצר משחק מול בוט, אבל רק אם רשומת התור שלי עדיין לא נתפסה ע"י שחקן
+  /// אמיתי (Transaction) - אם כן נתפסה, מחזיר את המשחק האמיתי במקום.
+  Future<String?> _createBotMatchIfStillWaiting({
+    required String deviceId,
+    required String username,
+    required List<int> allLevelIds,
+    required int stake,
+    bool wantsSeries = false,
+  }) async {
+    final rnd = Random();
+    final botId = '$botIdPrefix${rnd.nextInt(900000) + 100000}';
+    var botName = _botNames[rnd.nextInt(_botNames.length)];
+    if (botName == username) botName = _botNames[(_botNames.indexOf(botName) + 1) % _botNames.length];
+    final myRef = _db.collection(_queueCollection).doc(deviceId);
+    return _db.runTransaction<String?>((tx) async {
+      final mySnap = await tx.get(myRef);
+      final existing = mySnap.data()?['matchId'] as String?;
+      if (existing != null) return existing; // נתפסתי ע"י שחקן אמיתי ברגע האחרון
+      final totalQuestions = questionsForStake(stake);
+      final matchRef = _db.collection(_duelsCollection).doc();
+      tx.set(matchRef, {
+        'player1Id': deviceId,
+        'player1Name': username,
+        'player2Id': botId,
+        'player2Name': botName,
+        'player1Progress': 0,
+        'player2Progress': 0,
+        'player1Correct': 0,
+        'player2Correct': 0,
+        'status': 'countdown',
+        'logoIds': pickRandomLogoIds(allLevelIds, count: totalQuestions),
+        'createdAt': FieldValue.serverTimestamp(),
+        'winnerId': null,
+        'stake': stake,
+        'totalQuestions': totalQuestions,
+        'vsBot': true,
+        ..._seriesFieldsFor(wantsSeries),
+      });
+      if (mySnap.exists) tx.delete(myRef);
+      return matchRef.id;
+    });
   }
 
   /// ביטול חיפוש יזום ע"י המשתמש (למשל לחיצה על "ביטול" במסך ההמתנה)
@@ -556,6 +687,7 @@ class DuelService {
       if (myNewCorrect >= totalQuestions) {
         update['status'] = 'finished';
         update['winnerId'] = myId;
+        if (d['seriesMode'] == true) update['seriesWins.$myId'] = FieldValue.increment(1);
         tx.update(matchRef, update);
         return;
       }
@@ -577,6 +709,7 @@ class DuelService {
           // סיים את כל הלוגואים שלו קודם) ולכן הוא "היה ראשון" ומנצח.
           update['winnerId'] = otherId;
         }
+        if (d['seriesMode'] == true) update['seriesWins.${update['winnerId']}'] = FieldValue.increment(1);
       }
       tx.update(matchRef, update);
     });
@@ -663,7 +796,16 @@ class DuelService {
       final d = snap.data();
       if (d == null || d['status'] == 'finished') return;
       final opponentId = d['player1Id'] == leavingDeviceId ? d['player2Id'] : d['player1Id'];
-      tx.update(matchRef, {'status': 'finished', 'winnerId': opponentId});
+      final update = <String, dynamic>{'status': 'finished', 'winnerId': opponentId};
+      // 🆕 "סדרת דו-קרב" - עזיבה/ניתוק מסיימים את *כל הסדרה* מיד (לא רק
+      // את הסיבוב), כי מי שעזב לא חוזר לסיבוב הבא ממילא - בלי זה הצד
+      // השני היה נשאר תקוע לנצח ב"הסיבוב הבא מתחיל תוך רגע" (רק צד אחד
+      // עדיין קיים כדי לבקש רימאץ' - bothRequested לעולם לא היה מתקיים).
+      if (d['seriesMode'] == true) {
+        final currentWins = ((d['seriesWins'] as Map<String, dynamic>?)?[opponentId] as num?)?.toInt() ?? 0;
+        update['seriesWins.$opponentId'] = currentWins + 1 < 2 ? 2 : currentWins + 1;
+      }
+      tx.update(matchRef, update);
       applied = true;
     });
     return applied;
@@ -975,6 +1117,9 @@ class DuelService {
         final totalQuestions = questionsForStake(stake);
         final logoIds = pickRandomLogoIds(allLevelIds, count: totalQuestions);
         final newRef = _db.collection(_duelsCollection).doc();
+        // 🆕 "סדרת דו-קרב" - אם המשחק הישן היה חלק מסדרה, ממשיכים אותה (אותו
+        // seriesWins שנצבר, סיבוב הבא) - לא רק רימאץ' חד-פעמי רגיל.
+        final oldSeriesMode = d['seriesMode'] == true;
         tx.set(newRef, {
           'player1Id': player1Id,
           'player1Name': d['player1Name'],
@@ -990,12 +1135,63 @@ class DuelService {
           'winnerId': null,
           'stake': stake,
           'totalQuestions': totalQuestions,
+          if (oldSeriesMode) 'seriesMode': true,
+          if (oldSeriesMode) 'seriesWins': Map<String, dynamic>.from(d['seriesWins'] ?? const {}),
+          if (oldSeriesMode) 'seriesRound': ((d['seriesRound'] as num?)?.toInt() ?? 1) + 1,
         });
         tx.update(oldRef, {'rematchRequestedBy': existing, 'rematchMatchId': newRef.id});
       });
     } catch (_) {
       // לא קריטי - אם זה נכשל, הכפתור פשוט נשאר במצב "ממתין" והשחקן
       // תמיד יכול לחזור ללובי הרגיל ולחפש יריב חדש במקום.
+    }
+  }
+
+  /// 🆕 המשך "סדרת דו-קרב" מול בוט - כמו requestRematch, אבל בלי הריקוד
+  /// של "שני הצדדים צריכים לבקש": מול בוט יש רק לקוח אמיתי אחד (הבוט
+  /// כולו מדומה אצלו), אז הוא יוצר את הסיבוב הבא ישירות בקריאה אחת.
+  /// מחזיר את מזהה הדו-קרב החדש (או הקיים, אם כבר נוצר קודם - אידמפוטנטי).
+  static Future<String?> createNextSeriesRoundVsBot({
+    required String oldMatchId,
+    required List<int> allLevelIds,
+  }) async {
+    final oldRef = _db.collection(_duelsCollection).doc(oldMatchId);
+    try {
+      return await _db.runTransaction<String?>((tx) async {
+        final snap = await tx.get(oldRef);
+        final d = snap.data();
+        if (d == null) return null;
+        if (d['rematchMatchId'] != null) return d['rematchMatchId'] as String?; // כבר נוצר - לא כפול
+
+        final stake = (d['stake'] ?? stakeOptions.first) as int;
+        final totalQuestions = questionsForStake(stake);
+        final logoIds = pickRandomLogoIds(allLevelIds, count: totalQuestions);
+        final newRef = _db.collection(_duelsCollection).doc();
+        tx.set(newRef, {
+          'player1Id': d['player1Id'],
+          'player1Name': d['player1Name'],
+          'player2Id': d['player2Id'],
+          'player2Name': d['player2Name'],
+          'player1Progress': 0,
+          'player2Progress': 0,
+          'player1Correct': 0,
+          'player2Correct': 0,
+          'status': 'countdown',
+          'logoIds': logoIds,
+          'createdAt': FieldValue.serverTimestamp(),
+          'winnerId': null,
+          'stake': stake,
+          'totalQuestions': totalQuestions,
+          'vsBot': true,
+          'seriesMode': true,
+          'seriesWins': Map<String, dynamic>.from(d['seriesWins'] ?? const {}),
+          'seriesRound': ((d['seriesRound'] as num?)?.toInt() ?? 1) + 1,
+        });
+        tx.update(oldRef, {'rematchMatchId': newRef.id});
+        return newRef.id;
+      });
+    } catch (_) {
+      return null;
     }
   }
 

@@ -24,6 +24,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart';
+import 'player_sync.dart'; // 🆕 בונוס "מביאים חבר" - סנכרון מטבעות לענן
 
 // 🆕 requestSent/alreadyRequested נוספו לפי בקשה מפורשת: הוספת חבר לפי
 // קוד כבר לא הופכת אתכם לחברים מיד - היא רק שולחת בקשה, וצריך שהצד השני
@@ -164,6 +165,13 @@ class FriendService {
 
   /// 🆕 מאשר בקשת חברות ממתינה - רק עכשיו נוצרת החברות ההדדית בפועל
   /// (בדיוק כמו ההתנהגות הישנה של addFriendByCode), ומוחקים את הבקשה.
+  // 🆕 "מביאים חבר למשחק" - בונוס מטבעות לשני הצדדים ברגע שהחברות נוצרת
+  // בפועל (לא רק שליחת בקשה - כדי שאי אפשר "יצור בונוס" בלי שהצד השני
+  // באמת אישר). ניתן פעם אחת בלבד לכל זוג חברים (אין דרך לאשר את אותה
+  // בקשה פעמיים - ברגע שהחברות קיימת, sendFriendRequest חוסם בקשה נוספת
+  // דרך already.exists).
+  static const int friendBonusCoins = 30;
+
   static Future<bool> acceptFriendRequest(String requesterId, {required String requesterName, required String myName}) async {
     try {
       final myIdVal = await myId();
@@ -176,6 +184,22 @@ class FriendService {
         'addedAt': FieldValue.serverTimestamp(),
       });
       await _players.doc(myIdVal).collection('friendRequests').doc(requesterId).delete();
+
+      // בונוס לי (מי שאישר) - מתעדכן מקומית מיד.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final coins = (prefs.getInt('coins') ?? 15) + friendBonusCoins;
+        await prefs.setInt('coins', coins);
+        PlayerSyncService.syncCurrentProgress();
+      } catch (_) {}
+      // בונוס למי ששלח את הבקשה - הוא לא באפליקציה כרגע (שלח בקשה וחיכה),
+      // אז מסמנים לו "יש לך מטבעות ממתינים" ב-Firestore. האפליקציה שלו
+      // כבר מאזינה למסמך players/{requesterId} שלו (PlayerSyncService.
+      // startListening) ותיישם את זה בפעם הבאה שהיא פתוחה - ראו
+      // player_sync.dart._applyRemoteCommands (pendingBonusCoins).
+      try {
+        await _players.doc(requesterId).set({'pendingBonusCoins': FieldValue.increment(friendBonusCoins)}, SetOptions(merge: true));
+      } catch (_) {}
       return true;
     } catch (e) {
       debugPrint('ACCEPT FRIEND REQUEST ERROR: $e');
@@ -256,6 +280,12 @@ class FriendService {
   /// main.dart), כדי שחברים יראו שאתה "מחובר". כשל שקט אם אין אינטרנט.
   static Future<void> touchPresence() async {
     try {
+      // 🩹 בלי שם משתמש עדיין (התקנה חדשה שטרם התחילה לשחק / שלא סונכרנה)
+      // לא כותבים כלום: set(merge) היה יוצר מסמך players "ריק" שמכיל רק
+      // lastActiveAt - עשרות מסמכי רפאים בטבלה. ברגע שהשחקן בוחר שם
+      // והתקדמות מסתנכרנת, המסמך נוצר כמו שצריך ואז הנוכחות מתחילה.
+      final prefs = await SharedPreferences.getInstance();
+      if ((prefs.getString('username') ?? '').trim().isEmpty) return;
       final id = await myId();
       await _players.doc(id).set({'lastActiveAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
     } catch (_) {}

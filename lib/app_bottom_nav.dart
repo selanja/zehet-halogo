@@ -76,12 +76,40 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
   }
 
   // ניווט "חכם" בין טאבים - ראו הסבר בראש הקובץ.
+  // 🆕 המיקום של כל טאב בסרגל, משמאל לימין (ראו הסדר ב-build למטה):
+  // חברים, משימות, בית, מובילים, חנות.
+  static int _tabPosition(AppTab t) => switch (t) {
+        AppTab.friends => 0,
+        AppTab.missions => 1,
+        AppTab.home => 2,
+        AppTab.leaderboard => 3,
+        AppTab.shop => 4,
+      };
+
+  // 🆕 "כשעוברים לעמוד בצד ימין למטה הסלייד ימינה, ובצד שמאל - שמאלה":
+  // המסך החדש נכנס מהצד שבו נמצא הטאב בסרגל התחתון (טאב מימין - נכנס
+  // מימין, טאב משמאל - נכנס משמאל), יחסית לטאב שבו נמצאים עכשיו. חזרה
+  // לבית (popUntil) מריצה את אותה אנימציה הפוך, אז זה עקבי אוטומטית.
+  Route<void> _tabRoute(AppTab target, WidgetBuilder builder) {
+    final fromRight = _tabPosition(target) > _tabPosition(widget.current);
+    final begin = Offset(fromRight ? 1.0 : -1.0, 0);
+    return PageRouteBuilder<void>(
+      pageBuilder: (context, animation, secondaryAnimation) => builder(context),
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 260),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+        return SlideTransition(position: Tween<Offset>(begin: begin, end: Offset.zero).animate(curved), child: child);
+      },
+    );
+  }
+
   void _go(BuildContext context, AppTab target, WidgetBuilder builder) {
     if (target == widget.current) return;
     if (widget.current == AppTab.home) {
-      Navigator.push(context, MaterialPageRoute(builder: builder));
+      Navigator.push(context, _tabRoute(target, builder));
     } else {
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: builder));
+      Navigator.pushReplacement(context, _tabRoute(target, builder));
     }
   }
 

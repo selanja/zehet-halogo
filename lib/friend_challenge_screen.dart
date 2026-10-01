@@ -24,6 +24,7 @@ import 'app_icons.dart';
 import 'audio_manager.dart';
 import 'friend_service.dart'; // 🆕 הזמנה ישירה לחבר ספציפי מרשימת החברים + קפיצה אוטומטית לקוד
 import 'app_notification.dart';
+import 'out_of_resource.dart'; // 🆕 "נגמר משהו" - פרסומת/חנות
 
 enum _FCState {
   checking,
@@ -139,12 +140,12 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   }
 
   // 🆕 בריכת הלוגואים האפשריים להימור נבחר - בדו-קרב מוגבלת לפי עולמות
-  // (DuelService.stakeWorlds), במרוץ תמיד כל הלוגואים (ראה logo_race_screen.dart -
+  // (DuelService.worldsForStake), במרוץ תמיד כל הלוגואים (ראה logo_race_screen.dart -
   // _startSearch, אותה בריכה בדיוק במצב החיפוש הרגיל).
   List<int> _poolForStake(int stake) {
     if (!_isDuel) return gameLevels.keys.toList();
-    final worlds = DuelService.stakeWorlds[stake];
-    final ids = worlds != null ? logoIdsForWorlds(worlds) : gameLevels.keys.toList();
+    final worlds = DuelService.worldsForStake(stake);
+    final ids = logoIdsForWorlds(worlds);
     return ids.isEmpty ? gameLevels.keys.toList() : ids;
   }
 
@@ -428,9 +429,16 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     final code = _myCode;
     if (code == null) return;
     HapticFeedback.lightImpact();
+    final text = "בוא נשחק $_modeLabel ב\"זהה את הלוגו!\" 🔗 הקוד שלי: $code";
     try {
-      await Share.share("בוא נשחק $_modeLabel ב\"זהה את הלוגו!\" 🔗 הקוד שלי: $code", subject: "אתגר $_modeLabel");
-    } catch (_) {}
+      // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
+      // (ראו share_helper.dart להסבר המלא). גם הוספה הודעת גיבוי - קודם
+      // כשל נכשל בשקט לגמרי, בלי שום משוב למשתמש.
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(text, subject: "אתגר $_modeLabel", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
+    } catch (_) {
+      if (mounted) AppNotification.show(context, "לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", duration: const Duration(seconds: 5));
+    }
   }
 
   // ================================================================
@@ -708,6 +716,8 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
+        ...OutOfResource.offerButtons(context, coins: false, onGranted: _loadRequirements),
+        const SizedBox(height: 12),
         _textButton("חזרה", onTap: () => Navigator.pop(context)),
       ],
     );
@@ -728,6 +738,8 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
+        ...OutOfResource.offerButtons(context, coins: true, onGranted: _loadRequirements),
+        const SizedBox(height: 12),
         _textButton("חזרה", onTap: () => Navigator.pop(context)),
       ],
     );

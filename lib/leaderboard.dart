@@ -28,7 +28,25 @@ class LeaderboardService {
 
   /// שולף את טבלת השיאים, ממוינת לפי XP יורד. מוגבל ל-200 השורות
   /// המובילות - הרבה יותר מהר מלטעון גיליון Google שלם בכל פעם.
-  static Future<List<Map<String, dynamic>>> fetchLeaderboard() async {
+  // 🩹 חיסכון בקריאות: שליפה של 200 מסמכים בכל פתיחת טבלה (וגם בכל "נמצא
+  // יריב" בדו-קרב) הייתה מהמקורות הגדולים לקריאות Firestore. שומרים תוצאה
+  // בזיכרון ל-90 שניות (רענון ידני בטבלה: force=true).
+  static List<Map<String, dynamic>>? _xpCache;
+  static DateTime? _xpCacheAt;
+  static Future<List<Map<String, dynamic>>> fetchLeaderboard({bool force = false}) async {
+    final cached = _xpCache;
+    if (!force && cached != null && _xpCacheAt != null && DateTime.now().difference(_xpCacheAt!) < const Duration(seconds: 90)) {
+      return List<Map<String, dynamic>>.from(cached);
+    }
+    final fresh = await _fetchLeaderboardFromServer();
+    if (fresh.isNotEmpty) {
+      _xpCache = fresh;
+      _xpCacheAt = DateTime.now();
+    }
+    return fresh;
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchLeaderboardFromServer() async {
     try {
       final snapshot = await _players
           .orderBy('xp', descending: true)
@@ -53,27 +71,34 @@ class LeaderboardService {
     }
   }
 
-  /// 🆕 טבלת "שיאי רצף" - ממוינת לפי שדה ה-streak יורד (במקום xp). זהו
-  /// שדה ה-bestRandomStreak שנשלח מהמכשיר, כלומר השיא הכי גבוה אי-פעם -
-  /// לא הרצף הנוכחי (שיכול להתאפס). מוגבל גם הוא ל-200 שורות.
-  static Future<List<Map<String, dynamic>>> fetchLeaderboardByStreak() async {
+  /// 🆕 טבלת "מדליות" - ממוינת לפי שדה ה-medals יורד (ראו
+  /// achievements_service.dart.syncMedalsToCloud). ברירת המחדל החדשה
+  /// של מסך הטבלה - מספר הוגן וקרוב לכולם (0-15) במקום XP גולמי שגורם
+  /// לשחקנים חדשים "לוותר" כשהם רואים כמה גבוה ה-XP של ותיקים.
+  static List<Map<String, dynamic>>? _medalsCache;
+  static DateTime? _medalsCacheAt;
+  static Future<List<Map<String, dynamic>>> fetchLeaderboardByMedals({bool force = false}) async {
+    final cached = _medalsCache;
+    if (!force && cached != null && _medalsCacheAt != null && DateTime.now().difference(_medalsCacheAt!) < const Duration(seconds: 90)) {
+      return List<Map<String, dynamic>>.from(cached);
+    }
     try {
-      final snapshot = await _players
-          .orderBy('streak', descending: true)
-          .limit(200)
-          .get();
-
-      return snapshot.docs.map((doc) {
+      final snapshot = await _players.orderBy('medals', descending: true).limit(200).get();
+      final result = snapshot.docs.map((doc) {
         final data = doc.data();
         return {
           "name": (data["name"] ?? "").toString(),
           "xp": data["xp"] ?? 0,
           "streak": data["streak"] ?? 0,
+          "medals": data["medals"] ?? 0,
           "deviceId": doc.id,
         };
       }).toList();
+      _medalsCache = result;
+      _medalsCacheAt = DateTime.now();
+      return result;
     } catch (e) {
-      debugPrint("LEADERBOARD STREAK ERROR: $e");
+      debugPrint("LEADERBOARD MEDALS ERROR: $e");
       lastError = e.toString();
       return [];
     }

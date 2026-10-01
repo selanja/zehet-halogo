@@ -151,17 +151,31 @@ class NotificationService {
 
   static const AndroidNotificationDetails _dailyResetAndroidDetails = AndroidNotificationDetails(
     'daily_reset_channel',
-    'משימות ואתגר יומי',
-    channelDescription: 'תזכורת כשיש משימות יומיות חדשות ואתגר יומי חדש',
+    'תזכורת יומית',
+    channelDescription: 'תזכורת יומית אחת (לא יותר) לחזור לשחק - משימות/אתגר יומי/ליגה/רצף',
     importance: Importance.defaultImportance,
     priority: Priority.defaultPriority,
   );
 
-  // 🆕 מתזמן תזכורת "משימות חדשות + אתגר יומי מחכה" לשעה 9 בבוקר של
-  // ה-*איפוס הבא* (חצות הקרובה = תחילת יום חדש של משימות). קוראים לזה
-  // בכל פתיחה של מסך הבית/המשימות - ככה התזכורת תמיד "מצביעה" קדימה
-  // לאיפוס הבא, לא לאיפוס שכבר עבר. 9 בבוקר ולא בדיוק בחצות - כדי לא
-  // להעיר אף אחד באמצע הלילה עם התראה על משחק לוגואים.
+  // 🐛 תוקן: "הודעות יריב נמצא" (התראת אתגר-חבר, ראו functions/index.js)
+  // קיבלו הגבלת קצב בשרת בנפרד - זה כאן פתרון קשור: תזכורת "חזרה למשחק"
+  // אחת ביום, לא יותר, אבל עם כמה נוסחים שונים שמתחלפים כדי שלא תרגיש
+  // כמו רובוט שחוזר על אותו משפט כל יום. בוחרים נוסח לפי היום בשנה (לא
+  // רנדומלי) - כדי שבתוך יום נתון זה עדיין תמיד אותו נוסח (אם התזמון
+  // רץ כמה פעמים באותו יום, לא "יתחלף" סתם), אבל בין יום ליום זה משתנה.
+  static const List<Map<String, String>> _dailyVariants = [
+    {'title': 'משימות חדשות מחכות לך', 'body': 'האתגר היומי ומשימות חדשות כבר פתוחות - בוא תבדוק מה מחכה לך'},
+    {'title': 'הליגה השבועית שלך מתקדמת', 'body': 'שחקנים אחרים כבר משחקים היום - אל תישאר מאחור בדירוג'},
+    {'title': 'האתגר היומי מחכה', 'body': 'כמה לוגואים תזהה היום? יש רק הזדמנות אחת ליום'},
+    {'title': 'אל תפסיד את הרצף שלך', 'body': 'כניסה קצרה היום שומרת על רצף הימי הכניסה שלך חי'},
+    {'title': 'הבאטל פאס שלך מתקדם', 'body': 'עוד כמה נקודות ואתה עולה רמה - משחק אחד קצר מספיק'},
+  ];
+
+  // 🆕 מתזמן תזכורת יומית אחת (לא יותר - ראו ההערה למעלה) לשעה 9 בבוקר
+  // של ה-*איפוס הבא* (חצות הקרובה = תחילת יום חדש). קוראים לזה בכל
+  // פתיחה של מסך הבית/המשימות - ככה התזכורת תמיד "מצביעה" קדימה לאיפוס
+  // הבא, לא לאיפוס שכבר עבר. 9 בבוקר ולא בדיוק בחצות - כדי לא להעיר אף
+  // אחד באמצע הלילה עם התראה על משחק לוגואים.
   static Future<void> scheduleDailyResetReminder() async {
     if (!_initialized) return;
     await _plugin.cancel(_dailyResetNotificationId);
@@ -170,11 +184,13 @@ class NotificationService {
     if (!nextReminder.isAfter(now)) {
       nextReminder = tz.TZDateTime(tz.local, now.year, now.month, now.day + 1, 9);
     }
+    final dayIndex = nextReminder.millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+    final variant = _dailyVariants[dayIndex % _dailyVariants.length];
     try {
       await _plugin.zonedSchedule(
         _dailyResetNotificationId,
-        'משימות חדשות מחכות לך',
-        'האתגר היומי ומשימות חדשות כבר פתוחות - בוא תבדוק מה מחכה לך',
+        variant['title']!,
+        variant['body']!,
         nextReminder,
         const NotificationDetails(android: _dailyResetAndroidDetails, iOS: DarwinNotificationDetails()),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

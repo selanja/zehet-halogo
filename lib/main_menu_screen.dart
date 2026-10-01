@@ -5,6 +5,8 @@
 // רצף), כפתור CTA בגרדיאנט זהב, וכרטיסי ניווט זכוכיתיים.
 // ⚠️ בלי "דילוג שלב" בשום מקום - הפיצ'ר הזה לא קיים באפליקציה שלנו.
 import 'dart:async';
+import 'achievements_service.dart';
+import 'achievements_screen.dart'; // 🆕 לחיצה על "X/Y מדליות" בבועת הפרופיל פותחת את מסך ההישגים
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +15,8 @@ import 'level_loading_screen.dart';
 import 'audio_manager.dart';
 import 'leaderboard.dart';
 import 'device_id.dart';
+import 'package:package_info_plus/package_info_plus.dart'; // 🆕 גרסה נוכחית - למסך "מה חדש" (ראו _checkWhatsNew)
+import 'whats_new_screen.dart';
 import 'package:share_plus/share_plus.dart';
 import 'missions_service.dart';
 import 'level_data.dart'; // 🆕 levelsCounts/gameLevels גלובליים - לחישוב התקדמות שלבים בכרטיס הבית
@@ -22,6 +26,8 @@ import 'notification_manager.dart'; // 🆕 תזכורת "הבונוס זמין 
 import 'notification_service.dart'; // 🆕 תזכורת יומית: משימות חדשות + אתגר יומי מחכה
 import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon - אימוג'י במקום אייקון וקטורי
 import 'meta_events_service.dart'; // 🆕 מעקב "הרשמה הושלמה" ל-Meta Ads
+import 'analytics_service.dart'; // 📊 אותו מעקב ל-Firebase Analytics/Google Ads
+import 'push_notification_service.dart'; // 🐛 שומר את ה-FCM token בפעם הראשונה שיש שם אמיתי
 import 'daily_challenge_screen.dart'; // 🆕 קיצור דרך ישיר לאתגר היומי מהמסך הראשי
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - מופיע עכשיו בכל המסכים הראשיים
 import 'starter_pack_service.dart'; // 🆕 מארז פתיחה - זכאות/וריאנט
@@ -61,6 +67,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // אותו: לוגו הילה, כותרת, שדה שם, כפתור CTA. עולה אחרי הספלאש כשאין
   // עדיין שם שמור, ויורד ברגע שנשמר שם תקין ופנוי.
   bool showWelcomeScreen = false;
+  // 🆕 מסך "מה חדש בגרסה" (whats_new_screen.dart) - מוצג פעם אחת בלבד
+  // למשתמש *קיים* (לא חדש - הוא מקבל showWelcomeScreen במקום) בכניסה
+  // הראשונה אחרי עדכון לגרסה שונה מהגרסה האחרונה שנשמרה. ראו _checkWhatsNew.
+  bool showWhatsNewScreen = false;
+  String _appVersion = '';
   // 🆕 מסך "ברוכים הבאים" עכשיו מציג קודם בחירה בין Google לאורח, ולא
   // ישר שדה שם - ראה _buildWelcomeChoiceScreen. false = מציגים את שתי
   // האפשרויות; true = עברנו לשדה השם (או כי נבחר "שחק כאורח", או כי
@@ -78,6 +89,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // בדיוק שנמצאים בשימוש ב-logo_level_screen.dart / shop_screen.dart).
   int coins = 15;
   int xp = 0;
+  int _medalsEarned = 0; // 🆕 מדליות שהושגו - מוצג במקום XP בכרטיס הפרופיל (ראו AchievementsService)
   int streak = 0;
   int maxLevel = 1;
   int _missionsUnclaimed = 0; // 🆕 כמה פרסים ממתינים לאיסוף במסך המשימות - לתג על הכרטיס
@@ -114,6 +126,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // פעמית בכניסה למסך ואז כל _presenceRefreshInterval כל עוד המסך פתוח.
   int? _duelPlayersNow;
   int? _racePlayersNow;
+  int? _superdualPlayersNow; // 🆕 מוד presence נפרד ל"סדרת דו-קרב" - ראו duel_lobby_screen.dart
   Timer? _presenceTimer;
   static const Duration _presenceRefreshInterval = Duration(seconds: 30);
 
@@ -155,6 +168,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     // "חזרה למשחק" ב-main.dart.
     NotificationService.scheduleDailyResetReminder();
     _refreshPresenceCounts();
+    AchievementsService.recordActiveDay(); // 🆕 הישגים - ימי משחק
+    _refreshMedals();
     _presenceTimer = Timer.periodic(_presenceRefreshInterval, (_) => _refreshPresenceCounts());
   }
 
@@ -165,11 +180,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     final results = await Future.wait([
       PresenceService.countActive('duel'),
       PresenceService.countActive('race'),
+      PresenceService.countActive('superdual'),
     ]);
     if (!mounted) return;
     setState(() {
       _duelPlayersNow = results[0];
       _racePlayersNow = results[1];
+      _superdualPlayersNow = results[2];
     });
   }
 
@@ -382,8 +399,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Future<void> _startSplashScreen() async {
-    await Future.delayed(const Duration(seconds: 3));
-
+    // 🩹 הוסרה השהיה מלאכותית של 3 שניות + מסך "ברוך הבא למשחק!" הכפול
+    // שהיה כאן (לוגו ענק + טקסט "ברוך הבא" שהופיע תמיד, גם לשחקן קיים
+    // עם שם שמור) - לפי בקשה מפורשת: מסך הטעינה האמיתי כבר קורה לפני
+    // MainMenuScreen בכלל (AppLoadingScreen ב-main.dart, עם התקדמות
+    // אמיתית), אז מסך "טעינה" שני כאן היה מיותר ומטעה. עכשיו רק ממתינים
+    // לטעינת הנתונים האמיתית (prefs/סטטיסטיקות) בלי שום מסך ענק מעליה.
     final prefs = await SharedPreferences.getInstance();
     String? savedName = prefs.getString('username');
     _readStats(prefs);
@@ -407,11 +428,52 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       // אחרי שהמשתמש כבר שיחק קצת. הבדיקה עברה ל-_refreshStats(), שרצה
       // רק כשחוזרים למסך הבית *אחרי* משחק בפועל (שלבים/דו-קרב/וכו') -
       // ראו שם.
-      // 🆕 רצף כניסה יומי - בכוונה כן בכניסה הקרה (בניגוד למארז הפתיחה
-      // למעלה) - זה בדיוק הרעיון: "נכנסת היום? הנה בונוס". רק למשתמש
-      // קיים עם שם שמור (לא למי שרק עכשיו יוצר פרופיל).
-      _checkLoginStreak();
+      // 🆕 מסך "מה חדש בגרסה" - רק למשתמש קיים (יש לו שם שמור), פעם אחת
+      // בלבד לכל גרסה. אם מוצג - דוחים את רצף הכניסה היומי עד שהמשתמש
+      // סוגר אותו (ראו _dismissWhatsNew), כדי לא לערום כמה דיאלוגים/מסכים
+      // זה על זה בכניסה אחת.
+      final shouldShowWhatsNew = await _checkWhatsNew();
+      if (shouldShowWhatsNew) {
+        if (!mounted) return;
+        setState(() => showWhatsNewScreen = true);
+      } else {
+        // 🆕 רצף כניסה יומי - בכוונה כן בכניסה הקרה (בניגוד למארז הפתיחה
+        // למעלה) - זה בדיוק הרעיון: "נכנסת היום? הנה בונוס". רק למשתמש
+        // קיים עם שם שמור (לא למי שרק עכשיו יוצר פרופיל).
+        _checkLoginStreak();
+      }
     }
+  }
+
+  // 🆕 בודק אם הגרסה הנוכחית שונה מהגרסה האחרונה שהמשתמש כבר ראה לגביה
+  // את מסך "מה חדש" - אם כן, מעדכן מיד את הגרסה השמורה (כדי שלא יוצג
+  // שוב גם אם המסך נסגר בלי שהמשתמש הגיע לכפתור, או בכניסה הבאה) ומחזיר
+  // true. כשל שקט (אין רשת/שגיאה) = לא מציגים, בטוח יותר מלהציג כל פעם.
+  Future<bool> _checkWhatsNew() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      _appVersion = info.version;
+      final prefs = await SharedPreferences.getInstance();
+      // 🩹 lastSeen == null מטופל כ"שונה" (מציגים) ולא כ"לא מציגים" - כי
+      // הפונקציה הזו נקראת רק למשתמש *קיים* עם שם שמור (ראו _startSplashScreen),
+      // אז אם אין עדיין ערך שמור זה אומר שזו הפעם הראשונה שהתכונה הזו
+      // בכלל קיימת אצלו - בדיוק המקרה שרוצים להראות לו "מה חדש" (לתפוס
+      // אותו על כל מה שהוא פספס). משתמש *חדש* לגמרי מקבל את הערך מיד
+      // ב-_saveWelcomeName, ולכן לעולם לא מגיע לכאן עם lastSeen null.
+      final lastSeen = prefs.getString('lastSeenWhatsNewVersion');
+      final changed = lastSeen != info.version;
+      await prefs.setString('lastSeenWhatsNewVersion', info.version);
+      return changed;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 🆕 נקרא כש"בואו נתחיל" נלחץ במסך "מה חדש" - סוגר אותו וממשיך בדיוק
+  // לאותה זרימה שהייתה קורית אם המסך הזה לא היה קיים בכלל (רצף כניסה).
+  void _dismissWhatsNew() {
+    setState(() => showWhatsNewScreen = false);
+    _checkLoginStreak();
   }
 
   // 🆕 בודק אם היום זו כניסה חדשה (יום קלנדרי שעדיין לא "נספר"), ואם כן
@@ -616,6 +678,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     _refreshAdBonusState();
     _refreshDailyChallenge();
     _refreshBattlePass(); // 🆕 באטל פאס - נקודות/שלב/פרסים ממתינים לכרטיס בתפריט הראשי
+    _refreshMedals();
     // 🆕 מארז פתיחה - נבדק כאן (חזרה למסך הבית אחרי משחק בפועל), לא
     // בכניסה הקרה לאפליקציה - כך ההצעה מופיעה רק אחרי שהמשתמש כבר
     // שיחק קצת, לא ישר כשהוא נכנס לאפליקציה.
@@ -625,6 +688,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // 🆕 טוען את מצב "באטל פאס" הנוכחי (נקודות/שלב פתוח/פרסים ממתינים)
   // כדי להציג אותם בתמצית על הכרטיס בתפריט הראשי - הפרטים המלאים
   // (רשימת השלבים, תביעת פרסים) נמצאים במסך הייעודי BattlePassScreen.
+  // 🆕 "במקום XP שיוצר תחושת נחיתות לשחקן חדש מול ותיקים" - כרטיס הפרופיל
+  // מציג כמה מדליות/הישגים כבר הושגו (ראו AchievementsService) - כל שחקן
+  // מתחיל מ-0/15 ורואה יעדים קרובים, לא מספר ענק של מישהו אחר.
+  Future<void> _refreshMedals() async {
+    final count = await AchievementsService.earnedCount();
+    if (!mounted) return;
+    setState(() => _medalsEarned = count);
+  }
+
   Future<void> _refreshBattlePass() async {
     final points = await BattlePassService.getPoints();
     final pending = await BattlePassService.pendingClaimsCount();
@@ -672,9 +744,21 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   Future<void> _saveWelcomeName(String name) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('username', name);
+    // 🆕 משתמש חדש לגמרי "מתחיל" כבר עם כל התוכן הנוכחי - אין לו שום דבר
+    // "חדש" לפספס, אז מסך "מה חדש" לעולם לא אמור להופיע לו. מסמנים את
+    // הגרסה הנוכחית כ"כבר נראתה" מיד כאן.
+    try {
+      final info = await PackageInfo.fromPlatform();
+      await prefs.setString('lastSeenWhatsNewVersion', info.version);
+    } catch (_) {}
     // 🆕 איתות "הרשמה הושלמה" ל-Meta (ראו meta_events_service.dart) -
     // נקרא פעם אחת בדיוק כשמשתמש חדש שומר שם לראשונה, לא בכל פתיחה.
     MetaEventsService.logCompletedRegistration();
+    AnalyticsService.logCompletedRegistration(); // 📊 אותו איתות גם ל-Firebase Analytics/Google Ads
+    // 🐛 תוקן: PushNotificationService.init() ב-main() רץ לפני שהיה שם -
+    // הטוקן לא נשמר אז בכוונה (ראו ההערה שם) כדי לא ליצור מסמך players
+    // "רפאים". עכשיו שיש שם אמיתי לראשונה, שומרים את הטוקן בפועל.
+    PushNotificationService.retrySaveTokenIfNeeded();
     if (!mounted) return;
     setState(() {
       username = name;
@@ -942,77 +1026,22 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      // 📐 גודל הלוגו כאחוז מרוחב המסך (בין 130 ל-220px) - כך שהוא נראה
-      // מאוזן גם על טלפון קטן וגם על טאבלט, לא רק בגודל אחד קבוע
-      double splashLogoSize = (MediaQuery.of(context).size.width * 0.45).clamp(130.0, 220.0);
-      return Scaffold(
-        backgroundColor: const Color(0xFF120C2E),
-        body: Stack(
-          // 🆕 תוקן: בלי fit: StackFit.expand, ה-Stack היה מתכווץ לגובה
-          // התוכן בפועל (Center לא "דורש" את כל גובה המסך) - וה-
-          // Positioned.fill של הרקע פשוט לא כיסה את מה שנשאר מתחת.
-          fit: StackFit.expand,
-          children: [
-            const Positioned.fill(child: _AuroraBackground()),
-            Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(31),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Colors.white.withValues(alpha: 0.85), const Color(0xFFFFD86B).withValues(alpha: 0.35)],
-                      ),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 44, offset: const Offset(0, 20)),
-                        BoxShadow(color: const Color(0xFFFFBE50).withValues(alpha: 0.18), blurRadius: 40),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.all(Radius.circular(28)),
-                      child: Image(
-                        image: const AssetImage('assets/icon/logo.png'),
-                        width: splashLogoSize,
-                        height: splashLogoSize,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    "ברוך הבא למשחק!",
-                    style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, letterSpacing: 1.2),
-                  ),
-                  const SizedBox(height: 30),
-                  const SizedBox(
-                    width: 34,
-                    height: 34,
-                    child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 3),
-                  ),
-                ],
-              ),
-            ),
-            // 🆕 כיתוב גרסה תחתון - כמו במוקאפ מסך "ספלאש"
-            // 🩹 מסך אבחון זמני (debug log) הוסר לפי בקשה מפורשת - לא היה
-            // אמור להיות נגיש למשתמשי קצה, ולחיצה ארוכה בטעות (למשל כשאין
-            // אינטרנט והמשתמש מנסה שוב ושוב) הייתה חושפת אותו.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 30,
-              child: const Text(
-                "גרסה 1.2.0 · © כל הזכויות שמורות",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
+      // 🩹 תוקן שוב לפי בקשה מפורשת ("עוד הפעם מופיעה עוד טעינה אחרי
+      // המסך טעינה") - גם ספינר באמצע המסך נקרא כ"מסך טעינה נוסף" בעין,
+      // למרות שהרקע (_AuroraBackground) כבר כמעט זהה לרקע app_loading_screen.dart.
+      // בלי שום אלמנט חדש על המסך (לא ספינר, לא לוגו) - אם השלב הזה אכן
+      // קצר (קריאת SharedPreferences בלבד), הוא עובר כפריים חולף של אותו
+      // רקע בדיוק, לא נתפס כמסך נפרד.
+      return const Scaffold(
+        backgroundColor: Color(0xFF120C2E),
+        body: SizedBox.expand(child: _AuroraBackground()),
       );
+    }
+
+    // 🆕 מסך "מה חדש בגרסה" - ראו _checkWhatsNew/_dismissWhatsNew. מוצג
+    // רק פעם אחת למשתמש קיים אחרי עדכון, לפני תוכן הבית הרגיל.
+    if (showWhatsNewScreen) {
+      return WhatsNewScreen(version: _appVersion, onContinue: _dismissWhatsNew);
     }
 
     // 🆕 מסך "ברוכים הבאים!" - מסך מלא אמיתי (לא Dialog צף). עכשיו בשני
@@ -1096,9 +1125,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     // גלילה ארוכה, בדיוק כמו במוקאפ (מסך 01 · בית) - קודם
                     // המרווחים היו נדיבים מדי ודחפו את הכרטיס האחרון הרחק
                     // מתחת לקצה הנראה.
-                    const SizedBox(height: 12), // 🩹 "תזיז קצת" - הבועה למעלה ירדה טיפה מקצה המסך (היה 6)
+                    const SizedBox(height: 14), // 🩹 "תזיז קצת" - הבועה למעלה ירדה טיפה מקצה המסך (היה 6)
                     Padding(padding: const EdgeInsets.symmetric(horizontal: 18.0), child: _buildTopBar()),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
                       child: _FadeSlideIn(index: 0, child: _buildStatsPillsRow()),
@@ -1108,23 +1137,25 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     // מלא-רוחב מיד מתחת לשורת הפילים - מקום שאי אפשר לפספס,
                     // מוצג כל עוד האנרגיה לא מלאה.
                     if (_energy < EnergyService.maxEnergy) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 18.0),
                         child: _FadeSlideIn(index: 0, child: _buildEnergyAdCard()),
                       ),
                     ],
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 1, child: _buildLogoHero()),
-                    ),
-                    const SizedBox(height: 12),
+                    // 🩹 תוקן לפי בקשה מפורשת ("עכשיו הכול מרגיש דחוס") - אחרי
+                    // שהלוגו הגדול המרחף הוסר מכאן (עבר לאווטאר הפרופיל
+                    // למעלה-ימין, ראו _buildTopBar), הפער הזה היה היחיד שקטן
+                    // מדי מכדי לתת למסך "לנשום" בין הפילים לכרטיס הרמות.
+                    // הגדלתי את המרווחים בין כל הכרטיסים למטה (10->16) במקום
+                    // להחזיר אלמנט ויזואלי חדש - גם ככה כל המסך קצר יותר
+                    // בלי הלוגו, אז יש מקום לנשימה בלי לגרום לגלילה ארוכה יותר.
+                    const SizedBox(height: 20),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
                       child: _FadeSlideIn(index: 2, child: _buildLevelsCard()),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
                     // 🩹 תוקן שוב לפי הבהרה מפורשת: "הם לא באותו גודל, לא
                     // בצדדים, ולא מתאימים ברוחב לשאר הדברים שנמצאים שמה" -
                     // כלומר בדיוק ההפך ממה שניסיתי בסבב הקודם (עד-קצה-המסך).
@@ -1137,7 +1168,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
                       child: _FadeSlideIn(index: 3, child: _buildModesGrid()),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
                     // 🩹 כרטיס "מרוץ לוגואים" הנפרד הוסר מהבית לפי בקשה מפורשת -
                     // "מרוץ לוגואים" עבר להיות אחד משני המודים בתוך "שחק מול
                     // אחרים" (ראה _buildModesGrid למעלה + play_vs_person_mode_screen.dart),
@@ -1147,7 +1178,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
                       child: _FadeSlideIn(index: 4, child: _buildBattlePassCard()),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
                       child: _FadeSlideIn(index: 5, child: _buildDailyChallengeCard()),
@@ -1206,6 +1237,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                   textDirection: TextDirection.rtl,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // 🩹 תוקן לפי בקשה מפורשת: במקום עיגול עם האות הראשונה
+                    // של השם, הלוגו האמיתי של המשחק משמש כאן כ"תמונת
+                    // הפרופיל" - גם ממותג וגם פותר את "הלוגו הגדול באמצע
+                    // הבית לא מתחבר" (הלוגו הגדול הוסר לגמרי, ראו למעלה).
                     Container(
                       width: 44,
                       height: 44,
@@ -1214,13 +1249,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         shape: BoxShape.circle,
                         border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.7), width: 1.6),
                       ),
-                      child: Container(
-                        decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFFD86B), Color(0xFFFF8A3C)])),
-                        alignment: Alignment.center,
-                        child: Text(
-                          username.isNotEmpty ? username.substring(0, 1).toUpperCase() : "?",
-                          style: const TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900),
-                        ),
+                      child: ClipOval(
+                        child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1237,12 +1267,22 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                             style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
                           ),
                           const SizedBox(height: 1),
-                          Text(
-                            "$xp XP",
-                            textDirection: TextDirection.rtl,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w600),
+                          // 🆕 לפי בקשה מפורשת - לחיצה על שורת המדליות פותחת
+                          // את מסך ההישגים (achievements_screen.dart), בדיוק
+                          // כמו הקישור "הישגים" שכבר קיים במסך המובילים.
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              AudioManager.playClick();
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()));
+                            },
+                            child: Text(
+                              "🎖️ $_medalsEarned/${AchievementsService.all.length} מדליות",
+                              textDirection: TextDirection.rtl,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ],
                       ),
@@ -1586,7 +1626,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             gradient: const [Color(0xFFEF3B5B), Color(0xFFC2163F)],
             title: "שחק מול אחרים",
             note: "דו־קרב · מירוץ",
-            liveCount: (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) > 0 ? (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) : null,
+            liveCount: () {
+              final total = (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) + (_superdualPlayersNow ?? 0);
+              return total > 0 ? total : null;
+            }(),
             onTap: () async {
               AudioManager.playClick();
               await Navigator.push(context, MaterialPageRoute(builder: (context) => PlayVsPersonModeScreen(username: username)));
@@ -2377,9 +2420,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   // ===================== לוגו מרחף =====================
-  // 🆕 עיצוב מחדש - בדיוק כמו במוקאפ (מסך 01 · בית): הלוגו עצמו (שכבר
-  // כולל מסגרת/הילה זהובה מצוירת בתוך התמונה) מוצג ישירות על הרקע, בלי
-  // שום כרטיס/מסגרת נוספת מסביבו - לא עוד "קופסה" סגולה עוטפת אותו.
+  // 🩹 תוקן שוב לפי בקשה מפורשת ("משהו בלוגו לא מתחבר") - הלוגו החדש
+  // בלי שום מסגרת נראה שטוח/תלוש מהרקע הסגול (הרקע שלו דומה מדי לרקע
+  // המסך, אין ניגודיות). הוספתי זוהר זהוב רך מאחוריו + מסגרת זהובה דקה -
+  // בדיוק אותו טיפול עיצובי כמו כרטיס הלוגו במסך הטעינה (app_loading_screen.dart)
+  // - כך שהלוגו "בולט" וקופץ מהרקע במקום להיטמע בו, ויש עקביות ויזואלית
+  // בין שני המסכים.
   Widget _buildLogoHero() {
     return _FloatHero(
       child: Builder(builder: (context) {
@@ -2387,7 +2433,33 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         // כל רוחב המסך. במוקאפ (מסך 01 · בית) הלוגו הוא בגודל "אייקון"
         // בינוני, בערך שליש מרוחב המסך - לא הירו-אלמנט דומיננטי.
         final double size = (MediaQuery.of(context).size.width * 0.34).clamp(130.0, 170.0);
-        return Image.asset('assets/icon/logo.png', width: size, fit: BoxFit.contain);
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: size * 1.5,
+              height: size * 1.5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(colors: [const Color(0xFFFFB24D).withValues(alpha: 0.35), const Color(0xFFFFB24D).withValues(alpha: 0.0)]),
+              ),
+            ),
+            Container(
+              width: size,
+              height: size,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(size * 0.24),
+                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE79A), Color(0xFFC98A32), Color(0xFFFFD86B)]),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 24, offset: const Offset(0, 12))],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(size * 0.2),
+                child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+              ),
+            ),
+          ],
+        );
       }),
     );
   }
@@ -2409,7 +2481,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         "📱 אייפון: $_iosStoreLink\n"
         "🤖 אנדרואיד/גלקסי: $_androidStoreLink";
     try {
-      await Share.share(text, subject: "זהה את הלוגו!");
+      // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
+      // (נקודת העיגון של ה-popover ב-iOS, ראו share_helper.dart להסבר המלא).
+      final box = context.findRenderObject() as RenderBox?;
+      await Share.share(text, subject: "זהה את הלוגו!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
       if (mounted) _showShareFallback(text);
     }

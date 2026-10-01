@@ -20,6 +20,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart';
 
 class PushNotificationService {
@@ -64,7 +65,19 @@ class PushNotificationService {
     });
   }
 
+  // 🐛 תוקן: זה נקרא כבר ב-main() לפני runApp() - כלומר לפני שהמשתמש
+  // בכלל ראה את מסך "בחר שם", אצל כל התקנה חדשה. set(merge) על מכשיר
+  // כזה יצר מסמך players "רפאים" עם רק fcmToken/fcmTokenUpdatedAt (בלי
+  // username/xp/coins בכלל) - זה בדיוק אותו באג שכבר תוקן ב-touchPresence
+  // (friend_service.dart) עבור lastActiveAt, רק במקור אחר. עכשיו לא
+  // כותבים בלי שם משתמש קיים - וכדי שהטוקן לא "יאבד" לצמיתות למשתמשים
+  // שעדיין לא בחרו שם, main_menu_screen.dart קורא ל-retrySaveTokenIfNeeded
+  // ברגע שהם סוף סוף שומרים שם בפעם הראשונה.
+  static Future<void> retrySaveTokenIfNeeded() => _saveTokenToFirestore();
+
   static Future<void> _saveTokenToFirestore() async {
+    final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getString('username') ?? '').trim().isEmpty) return;
     final token = await _messaging.getToken();
     if (token == null) return;
     // 🐛 תוקן: היה נשמר תמיד תחת DeviceId.get() (מזהה המכשיר הגולמי) -

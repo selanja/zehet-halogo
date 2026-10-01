@@ -20,6 +20,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart'; // 🆕 מזהה "אפקטיבי" (uid מקושר או deviceId) - לסנכרון הבאטל פאס בין מכשירים
 import 'energy_service.dart';
+import 'league_service.dart'; // 🆕 ליגה שבועית - אותן נקודות XP נספרות גם לשבוע הנוכחי
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי תביעת פרס באטל פאס - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר
 
 class BattlePassTier {
@@ -77,6 +78,18 @@ class BattlePassService {
     BattlePassTier(tier: 22, pointsRequired: 3570, freeCoins: 75, premiumCoins: 195),
     BattlePassTier(tier: 23, pointsRequired: 3850, freeCoins: 55, premiumCoins: 135, premiumEnergy: 2),
     BattlePassTier(tier: 24, pointsRequired: 4140, freeCoins: 120, freeEnergy: 3, premiumCoins: 280, premiumEnergy: 8),
+    // 🆕 עוד 6 שלבים (25-30) - העונה עכשיו ארוכה יותר, וגם ניצחון בדו-קרב
+    // שווה הרבה פחות נקודות מכפי שהיה (ראו duel_room_screen.dart -
+    // _winBattlePassPoints, ירד מ-50 ל-10) - כך שלסיים את כל הבאטל פאס
+    // דורש שילוב של הרבה משחק לאורך זמן, לא רק כמה דו-קרבים מהירים ביום.
+    // ממשיכים בדיוק את אותה עקומה (ההפרש בין שלבים ממשיך לגדול ב-10
+    // בכל שלב), ושלב 30 הוא עכשיו "פרס העונה" הגדול (במקום שלב 24).
+    BattlePassTier(tier: 25, pointsRequired: 4440, freeCoins: 80, premiumCoins: 210),
+    BattlePassTier(tier: 26, pointsRequired: 4750, freeEnergy: 3, premiumCoins: 150, premiumEnergy: 3),
+    BattlePassTier(tier: 27, pointsRequired: 5070, freeCoins: 90, premiumCoins: 230),
+    BattlePassTier(tier: 28, pointsRequired: 5400, freeEnergy: 4, premiumCoins: 165, premiumEnergy: 4),
+    BattlePassTier(tier: 29, pointsRequired: 5740, freeCoins: 100, premiumCoins: 250),
+    BattlePassTier(tier: 30, pointsRequired: 6090, freeCoins: 150, freeEnergy: 5, premiumCoins: 350, premiumEnergy: 10),
   ];
 
   // 🆕 אורך העונה עכשיו קבוע ל-45 יום (במקום "מתחילת החודש הקלנדרי ועד
@@ -151,6 +164,7 @@ class BattlePassService {
       final current = prefs.getInt(_pointsKey) ?? 0;
       await prefs.setInt(_pointsKey, current + amount);
       syncToCloud(); // 🆕 fire-and-forget - ראו ההסבר המלא ליד syncToCloud למטה
+      LeagueService.addPoints(amount); // 🆕 ליגה שבועית
     } catch (_) {}
   }
 

@@ -1143,14 +1143,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         child: _FadeSlideIn(index: 0, child: _buildEnergyAdCard()),
                       ),
                     ],
-                    // 🩹 תוקן לפי בקשה מפורשת ("עכשיו הכול מרגיש דחוס") - אחרי
-                    // שהלוגו הגדול המרחף הוסר מכאן (עבר לאווטאר הפרופיל
-                    // למעלה-ימין, ראו _buildTopBar), הפער הזה היה היחיד שקטן
-                    // מדי מכדי לתת למסך "לנשום" בין הפילים לכרטיס הרמות.
-                    // הגדלתי את המרווחים בין כל הכרטיסים למטה (10->16) במקום
-                    // להחזיר אלמנט ויזואלי חדש - גם ככה כל המסך קצר יותר
-                    // בלי הלוגו, אז יש מקום לנשימה בלי לגרום לגלילה ארוכה יותר.
-                    const SizedBox(height: 20),
+                    // 🆕 "הלוגו היה למעלה, תחזיר אותו למעלה" - הוחזר למיקומו
+                    // המקורי (בין הפילים לכרטיס הרמות), אחרי שבניסיון קודם
+                    // הועבר בטעות לתחתית המסך.
+                    const SizedBox(height: 8),
+                    _FadeSlideIn(index: 1, child: Center(child: _buildLogoHero())),
+                    const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
                       child: _FadeSlideIn(index: 2, child: _buildLevelsCard()),
@@ -1241,15 +1239,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     // של השם, הלוגו האמיתי של המשחק משמש כאן כ"תמונת
                     // הפרופיל" - גם ממותג וגם פותר את "הלוגו הגדול באמצע
                     // הבית לא מתחבר" (הלוגו הגדול הוסר לגמרי, ראו למעלה).
+                    // 🩹 תוקן לפי עיצוב חדש (Claude Design) - ריבוע מעוגל
+                    // (כמו אייקון האפליקציה עצמו) במקום עיגול.
                     Container(
                       width: 44,
                       height: 44,
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.7), width: 1.6),
                       ),
-                      child: ClipOval(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(11),
                         child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
                       ),
                     ),
@@ -1325,7 +1326,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     );
   }
 
-  // כפתור אייקון עגול (הגדרות/מתנה) עם נקודת התראה אופציונלית - בדיוק
+// כפתור אייקון עגול (הגדרות/מתנה) עם נקודת התראה אופציונלית - בדיוק
   // כמו במוקאפ (מסך 01 · בית): עיגול גדול יותר (56px). כשמועבר gradient
   // (המתנה) העיגול מלא בצבע במקום שקוף - כדי שיבלוט כ"מתנה" צבעונית.
   Widget _topIconButton({
@@ -1373,12 +1374,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   // ===================== שורת "פילים" - רצף/אנרגיה/מטבעות =====================
+  // 🩹 כמה ניסיונות עיצוב מחדש (קפסולה אחידה) גרמו למסך לא לעלות אצל
+  // המשתמש בפועל, שוב ושוב, בלי שום שגיאה שניתן לאתר ב-logcat ולמרות
+  // בדיקה מעמיקה (כולל עם צילומי מסך אמיתיים). חוזרים לגרסה המוכחת-
+  // עובדת (3 פילים נפרדים) לפי בקשה מפורשת של המשתמש - "פשוט תחזיר
+  // למסך הישן וזהו".
   Widget _buildStatsPillsRow() {
-    // 🩹 "המקום של ה-2 אנרגיה תמורת פרסומת נעלמה" - בעבר הפיל הזה היה
-    // לחיץ (ובלי שום סימן חזותי לכך!) רק כשהאנרגיה בדיוק אפס - כך שרוב
-    // הזמן התכונה פשוט לא הייתה קיימת בעיני המשתמש. עכשיו היא זמינה תמיד
-    // כל עוד האנרגיה לא מלאה, ויש עליה תג "▶ קטן קבוע (_AdBadge למטה)
-    // שמסמן בבירור שאפשר ללחוץ ולקבל עוד - "מקום שאנשים ישימו לב אליו".
     final bool canWatchForEnergy = _energy < EnergyService.maxEnergy;
     return Row(
       textDirection: TextDirection.rtl,
@@ -1393,9 +1394,6 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             text: "$_energy/${EnergyService.maxEnergy}",
             onTap: canWatchForEnergy ? _watchAdForEnergyFromHome : null,
             showAdBadge: canWatchForEnergy,
-            // 🆕 "עוד כמה זמן לאנרגיה הבאה" - _energyCountdown כבר מחושב
-            // ומתעדכן כל שנייה (ראו _refreshEnergy/_energyCountdown), פשוט
-            // לא היה מוצג באף מקום עד עכשיו.
             subtitle: (canWatchForEnergy && _energyCountdown != null) ? "עוד ${_formatMmSs(_energyCountdown!)}" : null,
           ),
         ),
@@ -1516,10 +1514,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   // ===================== כרטיס התקדמות שלבים =====================
-  // 🆕 עיצוב מחדש - בדיוק כמו במוקאפ (מסך 01 · בית): "25% / ממשיכים /
-  // שם עולם · שלב X" + אייקון מפה בריבוע מעוגל, ומתחת פס התקדמות בלבד -
-  // בלי "רצועת שלבים" (✓/מספר/מנעול) ובלי כפתור "כל השלבים" בתוך הכרטיס,
-  // ששניהם לא קיימים במוקאפ. גרדיאנט כחול→סגול, בלי מסגרת.
+  // 🩹 כמה ניסיונות עיצוב מחדש (תג "ממשיכים" + טבעת עגולה) גרמו למסך לא
+  // לעלות אצל המשתמש בפועל, שוב ושוב, בלי שום שגיאה שניתן לאתר ב-logcat
+  // ולמרות בדיקה מעמיקה (כולל עם צילומי מסך אמיתיים מהמכשיר). חוזרים
+  // לגרסה המוכחת-עובדת (פס התקדמות ליניארי) לפי בקשה מפורשת של המשתמש -
+  // "פשוט תחזיר למסך הישן וזהו".
   Widget _buildLevelsCard() {
     final (world, sub, count) = _worldProgress(maxLevel);
     final percent = ((sub / count) * 100).round().clamp(0, 100);
@@ -1546,9 +1545,6 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 🩹 תוקן: הסדר היה הפוך מהמוקאפ - "%" היה בצד ימין והאייקון
-              // בצד שמאל. במוקאפ (מסך 01 · בית) זה בדיוק ההפך: האייקון
-              // וכותרת ה"ממשיכים" בצד ימין, ואחוז ההתקדמות בצד שמאל.
               Row(
                 textDirection: TextDirection.rtl,
                 children: [

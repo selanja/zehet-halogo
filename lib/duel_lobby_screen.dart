@@ -231,11 +231,26 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
 
   // נבחרה רמת הימור - האנרגיה נצרכת כאן (בתחילת החיפוש בפועל), דמי
   // הכניסה עצמם רק כש-*באמת* נמצא יריב (ב-DuelRoomScreen).
+  // 🐛 "לחצתי על הימור, האנרגיה ירדה אבל לא קרה כלום - לא עבר למסך
+  // 'מחפש יריב'" - תוקן שורש הבעיה האמיתי ב-_syncFullEnergyNotification
+  // (ראו energy_service.dart), אבל נוסף גם try/catch כאן כרשת ביטחון
+  // כללית - אם משהו בלתי-צפוי אחר ייכשל כאן בעתיד, לעולם לא נשאיר את
+  // המשתמש תקוע עם אנרגיה שנלקחה ושום דבר לא קורה בתמורה; מחזירים את
+  // האנרגיה ומציגים מסך שגיאה ידידותי במקום.
   Future<void> _onStakeSelected(int stake) async {
     if (_coins < stake) return;
     _selectedStake = stake;
-    await EnergyService.spendForDuel();
-    await _startSearch();
+    try {
+      await EnergyService.spendForDuel();
+      await _startSearch();
+    } catch (e) {
+      await EnergyService.refundSearchEnergy();
+      if (!mounted) return;
+      setState(() {
+        _state = _LobbyState.error;
+        _errorText = 'משהו השתבש, האנרגיה הוחזרה. נסה שוב.';
+      });
+    }
   }
 
   Future<void> _watchAdForEnergy() async {
@@ -776,7 +791,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "כל דו-קרב עולה אנרגיה אחת · יש לך $_energy",
+                        "כל דו-קרב עולה ${EnergyService.duelCost} אנרגיה · יש לך $_energy",
                         textDirection: TextDirection.rtl,
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w500),
                       ),

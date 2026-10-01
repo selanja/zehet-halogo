@@ -177,15 +177,29 @@ class EnergyService {
 
   // 🆕 אחרי כל שינוי באנרגיה - מתזמנים מחדש (או מבטלים, אם כבר מלא)
   // התראה מקומית "האנרגיה שלך התמלאה!" לרגע שבו היא תגיע ל-8/8.
+  // 🐛 תוקן: "לוחצים על הימור בדו-קרב, האנרגיה יורדת אבל שום דבר לא
+  // קורה - לא מגיע למסך 'מחפש יריב' בכלל" - קרה למשתמש אחר (מכשיר שונה).
+  // שורש הבעיה: spendForDuel() קורא לפונקציה הזו כצעד האחרון שלו, ו-
+  // NotificationService.cancelEnergyFullNotification() (ו-_plugin.cancel
+  // בתוך scheduleEnergyFullNotification, לפני ה-try הפנימי שלה) לא היו
+  // עטופים ב-try/catch - אם הקריאה הזו נכשלת (למשל הרשאת התראות לא
+  // ניתנה במכשיר הזה), החריגה עפה למעלה ועוצרת את כל שרשרת ה-await
+  // *אחרי* שהאנרגיה כבר נוכתה בפועל אבל *לפני* ש-_startSearch() בכלל
+  // נקרא - בדיוק התסמינים שתוארו. התראה על אנרגיה מלאה היא תוספת נחמדה,
+  // לא פיצ'ר קריטי - כישלון בה לעולם לא אמור לעצור פעולת משחק אמיתית.
   static Future<void> _syncFullEnergyNotification(int energy) async {
-    if (energy >= maxEnergy) {
-      await NotificationService.cancelEnergyFullNotification();
-      return;
+    try {
+      if (energy >= maxEnergy) {
+        await NotificationService.cancelEnergyFullNotification();
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final lastUpdateMs = prefs.getInt(_keyLastUpdate) ?? DateTime.now().millisecondsSinceEpoch;
+      final energiesNeeded = maxEnergy - energy;
+      final fullAt = DateTime.fromMillisecondsSinceEpoch(lastUpdateMs).add(Duration(minutes: regenMinutes * energiesNeeded));
+      await NotificationService.scheduleEnergyFullNotification(fullAt.difference(DateTime.now()));
+    } catch (_) {
+      // שקט בכוונה - ראו ההסבר למעלה.
     }
-    final prefs = await SharedPreferences.getInstance();
-    final lastUpdateMs = prefs.getInt(_keyLastUpdate) ?? DateTime.now().millisecondsSinceEpoch;
-    final energiesNeeded = maxEnergy - energy;
-    final fullAt = DateTime.fromMillisecondsSinceEpoch(lastUpdateMs).add(Duration(minutes: regenMinutes * energiesNeeded));
-    await NotificationService.scheduleEnergyFullNotification(fullAt.difference(DateTime.now()));
   }
 }

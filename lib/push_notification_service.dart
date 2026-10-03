@@ -31,8 +31,6 @@ class PushNotificationService {
 
   /// קוראים לזה פעם אחת ב-main.dart, אחרי Firebase.initializeApp()
   static Future<void> init() async {
-    // מבקש הרשאה מהמשתמש (חובה באייפון, גם באנדרואיד 13+ יש בקשת הרשאה
-    // מפורשת - במכשירים ישנים יותר זה כבר מאושר אוטומטית)
     final settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
@@ -40,40 +38,22 @@ class PushNotificationService {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      // המשתמש סירב - לא קורסים, פשוט לא נוכל לשלוח לו התראות.
-      // אפשר בעתיד להראות מסך הסבר ולהפנות אותו להגדרות המכשיר.
       return;
     }
 
     await _saveTokenToFirestore();
 
-    // אם ה-token מתחדש (קורה מדי פעם, למשל אחרי החלפת מכשיר/אפליקציה
-    // חדשה) - שומרים את הגרסה המעודכנת אוטומטית
     _messaging.onTokenRefresh.listen((_) => _saveTokenToFirestore());
 
-    // הודעה שמגיעה כשהאפליקציה **פתוחה וברקע הקדמי** (foreground) -
-    // FCM לא מציג באנר אוטומטית במצב הזה, צריך לטפל בזה ידנית אם
-    // רוצים גם כן להראות משהו למשתמש (למשל SnackBar). אפשר להשאיר ריק
-    // בינתיים אם מספיק שההתראה תופיע כשהאפליקציה סגורה/ברקע.
     FirebaseMessaging.onMessage.listen((message) {
       // כאן אפשר להוסיף בעתיד: הצגת SnackBar/דיאלוג בתוך האפליקציה
     });
 
-    // מטפל בלחיצה על ההתראה כשהאפליקציה הייתה סגורה/ברקע
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
       // כאן אפשר להוסיף בעתיד: ניווט למסך ספציפי לפי message.data
-      // (למשל אם ההתראה על דו-קרב ממתין - לפתוח ישר את הלובי)
     });
   }
 
-  // 🐛 תוקן: זה נקרא כבר ב-main() לפני runApp() - כלומר לפני שהמשתמש
-  // בכלל ראה את מסך "בחר שם", אצל כל התקנה חדשה. set(merge) על מכשיר
-  // כזה יצר מסמך players "רפאים" עם רק fcmToken/fcmTokenUpdatedAt (בלי
-  // username/xp/coins בכלל) - זה בדיוק אותו באג שכבר תוקן ב-touchPresence
-  // (friend_service.dart) עבור lastActiveAt, רק במקור אחר. עכשיו לא
-  // כותבים בלי שם משתמש קיים - וכדי שהטוקן לא "יאבד" לצמיתות למשתמשים
-  // שעדיין לא בחרו שם, main_menu_screen.dart קורא ל-retrySaveTokenIfNeeded
-  // ברגע שהם סוף סוף שומרים שם בפעם הראשונה.
   static Future<void> retrySaveTokenIfNeeded() => _saveTokenToFirestore();
 
   static Future<void> _saveTokenToFirestore() async {
@@ -98,16 +78,13 @@ class PushNotificationService {
     await debugWrite('START');
     final token = await _getTokenSafely(debugWrite);
     if (token == null) {
-      await debugWrite('FAILED: token is null');
+      // 🐛 תוקן: _getTokenSafely כבר כותב את הסיבה המדויקת לכישלון
+      // (APNs timeout / getToken() null / EXCEPTION) כרגע לפני שהיא
+      // מחזירה null - כתיבה גנרית נוספת כאן רק דרסה את הסיבה האמיתית
+      // ב-pushDebug (שדה יחיד, נדרס בכל כתיבה) ולא השאירה שום מידע
+      // שימושי לאבחון מרחוק.
       return;
     }
-    // 🐛 תוקן: היה נשמר תמיד תחת DeviceId.get() (מזהה המכשיר הגולמי) -
-    // אבל כל שאר המערכת (friend_service.dart, player_sync.dart) עברה
-    // להשתמש ב-AccountService.effectiveId() כמזהה המסמך "האמיתי" של
-    // השחקן (הופך ל-uid המקושר אחרי קישור חשבון Google/Apple). שחקן
-    // עם חשבון מקושר היה מקבל את ה-fcmToken כתוב על players/{deviceId}
-    // הישן שאף אחד כבר לא קורא ממנו - כל פוש ממוקד (לפי מסמך השחקן
-    // הפעיל) פשוט לא היה מוצא טוקן ולא מגיע אליו.
     await FirebaseFirestore.instance.collection('players').doc(deviceId).set(
       {'fcmToken': token, 'fcmTokenUpdatedAt': FieldValue.serverTimestamp()},
       SetOptions(merge: true),
@@ -115,16 +92,6 @@ class PushNotificationService {
     await debugWrite('SUCCESS: token saved (len=${token.length})');
   }
 
-  // 🐛 תוקן באג אמיתי שהתגלה בבדיקה בפועל: המשתמש אישר "אפשר התראות"
-  // ב-iOS, אבל Firestore נשאר בלי fcmToken בכלל - לנצח, גם דקות רבות
-  // אחר כך. הסיבה: ב-iOS, getToken() של FCM תלוי בכך שה-APNs token
-  // (שמגיע מ-Apple, לא מ-Google) כבר התקבל ברקע ע"י הקוד הנייטיבי.
-  // מיד אחרי requestPermission() הוא כמעט תמיד עוד לא הגיע - והקריאה
-  // ל-getToken() פשוט נכשלת בשקט (מחזירה null או זורקת), בלי שום ניסיון
-  // חוזר אוטומטי (onTokenRefresh לא תמיד "מציל" את זה - הוא מיועד
-  // לרענון טוקן קיים, לא בהכרח רץ שוב אם הקריאה הראשונה נכשלה לגמרי).
-  // התיקון: ב-iOS, קודם ממתינים בפועל שה-APNs token יגיע (עד 10 ניסיונות,
-  // שנייה בין כל ניסיון) ורק אז קוראים ל-getToken().
   static Future<String?> _getTokenSafely([Future<void> Function(String)? debugWrite]) async {
     try {
       if (Platform.isIOS || Platform.isMacOS) {

@@ -18,6 +18,7 @@
 //    "מישהו עקף אותך בטבלת הדירוג" מופעל אוטומטית כשמשהו משתנה
 //    ב-Firestore, לא ידני.
 
+import 'dart:io' show Platform;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -78,7 +79,7 @@ class PushNotificationService {
   static Future<void> _saveTokenToFirestore() async {
     final prefs = await SharedPreferences.getInstance();
     if ((prefs.getString('username') ?? '').trim().isEmpty) return;
-    final token = await _messaging.getToken();
+    final token = await _getTokenSafely();
     if (token == null) return;
     // 🐛 תוקן: היה נשמר תמיד תחת DeviceId.get() (מזהה המכשיר הגולמי) -
     // אבל כל שאר המערכת (friend_service.dart, player_sync.dart) עברה
@@ -92,5 +93,33 @@ class PushNotificationService {
       {'fcmToken': token, 'fcmTokenUpdatedAt': FieldValue.serverTimestamp()},
       SetOptions(merge: true),
     );
+  }
+
+  // 🐛 תוקן באג אמיתי שהתגלה בבדיקה בפועל: המשתמש אישר "אפשר התראות"
+  // ב-iOS, אבל Firestore נשאר בלי fcmToken בכלל - לנצח, גם דקות רבות
+  // אחר כך. הסיבה: ב-iOS, getToken() של FCM תלוי בכך שה-APNs token
+  // (שמגיע מ-Apple, לא מ-Google) כבר התקבל ברקע ע"י הקוד הנייטיבי.
+  // מיד אחרי requestPermission() הוא כמעט תמיד עוד לא הגיע - והקריאה
+  // ל-getToken() פשוט נכשלת בשקט (מחזירה null או זורקת), בלי שום ניסיון
+  // חוזר אוטומטי (onTokenRefresh לא תמיד "מציל" את זה - הוא מיועד
+  // לרענון טוקן קיים, לא בהכרח רץ שוב אם הקריאה הראשונה נכשלה לגמרי).
+  // התיקון: ב-iOS, קודם ממתינים בפועל שה-APNs token יגיע (עד 10 ניסיונות,
+  // שנייה בין כל ניסיון) ורק אז קוראים ל-getToken().
+  static Future<String?> _getTokenSafely() async {
+    try {
+      if (Platform.isIOS || Platform.isMacOS) {
+        String? apnsToken = await _messaging.getAPNSToken();
+        var attempts = 0;
+        while (apnsToken == null && attempts < 10) {
+          await Future.delayed(const Duration(seconds: 1));
+          apnsToken = await _messaging.getAPNSToken();
+          attempts++;
+        }
+        if (apnsToken == null) return null;
+      }
+      return await _messaging.getToken();
+    } catch (_) {
+      return null;
+    }
   }
 }

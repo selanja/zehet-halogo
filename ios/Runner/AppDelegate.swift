@@ -4,25 +4,24 @@ import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
-  // 🆕 ערוץ ה-MethodChannel של screenshot_guard_service.dart (בצד Dart) -
-  // סטטי כדי שהאזנת ה-NotificationCenter למטה (שנרשמת פעם אחת ב-
-  // didFinishLaunchingWithOptions, לפני שהמנוע/הערוץ בהכרח קיימים) תוכל
-  // להשתמש בו ברגע שהוא כן נוצר (ב-didInitializeImplicitFlutterEngine).
   static var screenshotChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // 🆕 חובה כדי שהתראות מקומיות (flutter_local_notifications) יעבדו
-    // כמו שצריך ב-iOS - בלי זה, למשל, לא יתקבלו קריאות callback כשהמשתמש
-    // לוחץ על ההתראה בזמן שהאפליקציה פתוחה ברקע.
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
     }
-    // 🆕 זיהוי צילום מסך (אחרי המעשה - אין דרך לחסום אותו ב-iOS) והקלטת
-    // מסך (בזמן אמת) - ראו screenshot_guard_service.dart בצד Dart להסבר
-    // המלא. שני האירועים מדווחים דרך אותו MethodChannel.
+    // 🐛 תוקן: firebase_messaging אמור לקרוא ל-registerForRemoteNotifications()
+    // באופן אוטומטי אחרי requestPermission() מה-Dart - אבל בפרויקט הזה
+    // ה-plugins (כולל firebase_messaging עצמו) נרשמים מאוחר יותר, בתוך
+    // didInitializeImplicitFlutterEngine, ולא כאן כמו בפרויקט Flutter רגיל.
+    // זה בדיוק התזמון שגרם ל-APNs token "אף פעם לא להגיע" (נבדק בפועל -
+    // pushDebug הראה "APNs token NEVER arrived after 30s"). קוראים לזה
+    // ישירות כאן, בקוד נייטיבי טהור שלא תלוי בתזמון ה-plugins בכלל - אפשר
+    // לקרוא לזה גם לפני שהמשתמש אישר הרשאה (Apple תומכת בזה רשמית).
+    application.registerForRemoteNotifications()
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(handleScreenshotTaken),

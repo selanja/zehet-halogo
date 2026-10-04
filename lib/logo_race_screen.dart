@@ -582,6 +582,20 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     });
   }
 
+  // 🐛 תוקן: אותו באג כמו ב-duel_room_screen.dart - לחיצה על תא אות
+  // ספציפי לא עשתה כלום (לא היה onTap על התאים בכלל), רק כפתור "הסר
+  // אות" גלובלי שתמיד מוחק את האות שהוקלדה אחרונה. עכשיו כל תא מוחק
+  // את עצמו.
+  void _onTapSlot(int i) {
+    if (_roundDecided || _guessSlots[i] == null) return;
+    setState(() {
+      _guessSlots[i] = null;
+      _typedOrder.remove(i);
+      final keyIndex = _slotToKeyIndex.remove(i);
+      if (keyIndex != null) _pressedKeyIndices.remove(keyIndex);
+    });
+  }
+
   Future<void> _submitGuess() async {
     final race = _race;
     if (race == null) return;
@@ -1656,17 +1670,23 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(totalLetters, (i) {
                   final letter = _guessSlots[i];
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                    width: tileWidth,
-                    height: tileHeight,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: letter != null ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-                      border: Border.all(color: Colors.white54),
-                      borderRadius: BorderRadius.circular(7),
+                  return GestureDetector(
+                    onTap: letter != null ? () {
+                      AudioManager.playClick();
+                      _onTapSlot(i);
+                    } : null,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                      width: tileWidth,
+                      height: tileHeight,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: letter != null ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+                        border: Border.all(color: Colors.white54),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(letter ?? '', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
                     ),
-                    child: Text(letter ?? '', style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
                   );
                 }),
               ),

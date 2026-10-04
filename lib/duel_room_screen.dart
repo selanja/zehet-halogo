@@ -750,6 +750,22 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     });
   }
 
+  // 🐛 תוקן: לחיצה על תא אות ספציפי לא מחקה כלום - כי לא היה שום
+  // onTap על התאים בכלל, רק כפתור "הסר אות" גלובלי שתמיד מוחק את
+  // האות שהוקלדה אחרונה (_typedOrder.removeLast()) בלי קשר לאיזה תא
+  // המשתמש לחץ עליו בפועל. עכשיו, בדיוק כמו ב-logo_level_screen.dart,
+  // כל תא מוחק את עצמו באמצעות typedOrder.remove(i) (הסרת הערך הספציפי,
+  // לא הסרת האחרון ברשימה).
+  void _onTapSlot(int i) {
+    if (_guessSlots[i] == null || _hintedPositions.contains(i)) return;
+    setState(() {
+      _guessSlots[i] = null;
+      _typedOrder.remove(i);
+      final keyIndex = _slotToKeyIndex.remove(i);
+      if (keyIndex != null) _pressedKeyIndices.remove(keyIndex);
+    });
+  }
+
   Future<void> _checkAnswer() async {
     final match = _match;
     final level = _currentLevel;
@@ -2086,17 +2102,23 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                 children: List.generate(totalLetters, (i) {
                   final letter = _guessSlots[i];
                   final isHinted = _hintedPositions.contains(i);
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                    width: tileWidth,
-                    height: tileHeight,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: isHinted ? Colors.amber.withValues(alpha: 0.12) : (letter != null ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05)),
-                      border: Border.all(color: isHinted ? Colors.amber.withValues(alpha: 0.6) : Colors.white54),
-                      borderRadius: BorderRadius.circular(8),
+                  return GestureDetector(
+                    onTap: (letter != null && !isHinted) ? () {
+                      AudioManager.playClick();
+                      _onTapSlot(i);
+                    } : null,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: tileWidth,
+                      height: tileHeight,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isHinted ? Colors.amber.withValues(alpha: 0.12) : (letter != null ? Colors.white.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05)),
+                        border: Border.all(color: isHinted ? Colors.amber.withValues(alpha: 0.6) : Colors.white54),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(letter ?? '', style: TextStyle(color: isHinted ? Colors.amber : Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
                     ),
-                    child: Text(letter ?? '', style: TextStyle(color: isHinted ? Colors.amber : Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
                   );
                 }),
               ),

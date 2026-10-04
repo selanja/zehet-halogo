@@ -15,6 +15,7 @@ import 'app_background.dart';
 import 'level_data.dart';
 import 'missions_service.dart';
 import 'audio_manager.dart';
+import 'notification_service.dart';
 import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon - אימוג'י במקום אייקון וקטורי (ראו app_icons.dart)
 
 class DailyChallengeScreen extends StatefulWidget {
@@ -43,6 +44,30 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
   Timer? _ticker;
   DateTime? _deadline;
   double _remainingSeconds = MissionsService.dailyChallengeSeconds.toDouble();
+  // 🆕 "תזכיר לי מחר" - סטייט מקומי למסך הזה בלבד (לא נשמר), רק כדי
+  // שהכפתור יתחלף למצב "מסומן" אחרי לחיצה ולא יאפשר ללחוץ שוב.
+  bool _reminderSet = false;
+
+  void _onRemindMeTomorrow() {
+    if (_reminderSet) return;
+    AudioManager.playClick();
+    NotificationService.scheduleDailyChallengeReminder();
+    setState(() => _reminderSet = true);
+  }
+
+  Widget _buildRemindMeButton() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: TextButton.icon(
+        onPressed: _reminderSet ? null : _onRemindMeTomorrow,
+        icon: Icon(_reminderSet ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, size: 18, color: _reminderSet ? const Color(0xFF4ADE80) : Colors.white.withValues(alpha: 0.65)),
+        label: Text(
+          _reminderSet ? 'נזכיר לך מחר!' : 'תזכיר לי מחר',
+          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _reminderSet ? const Color(0xFF4ADE80) : Colors.white.withValues(alpha: 0.65)),
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -232,6 +257,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                     onPressed: () => Navigator.pop(context),
                     child: const Text('חזרה', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                   ),
+                  _buildRemindMeButton(),
                 ],
               ),
             ),
@@ -265,6 +291,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                     onPressed: () => Navigator.pop(context),
                     child: const Text('חזרה', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                   ),
+                  _buildRemindMeButton(),
                 ],
               ),
             ),

@@ -35,6 +35,9 @@ class NotificationService {
   // 🆕 תזכורת יומית אחת ל"יש לך משימות חדשות + אתגר יומי מחכה" - שתי
   // הבשורות האלה מתאפסות באותו רגע בדיוק (חצות), אז מספיקה התראה אחת.
   static const int _dailyResetNotificationId = 1020;
+  // 🆕 תזכורת "תזכיר לי מחר" - נלחצת ידנית ע"י השחקן במסך האתגר היומי
+  // אחרי שסיים/ניצל את הניסיון של היום (ראו daily_challenge_screen.dart).
+  static const int _dailyChallengeReminderNotificationId = 1030;
 
   /// לקרוא פעם אחת בהפעלת האפליקציה (ב-main.dart, לפני runApp או מיד
   /// אחריו). מבקש הרשאת התראות (חובה מ-Android 13+ ו-iOS).
@@ -193,6 +196,37 @@ class NotificationService {
         variant['body']!,
         nextReminder,
         const NotificationDetails(android: _dailyResetAndroidDetails, iOS: DarwinNotificationDetails()),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (_) {
+      // לא קריטי - לא מפילים את האפליקציה בגלל תזכורת שלא הצליחה להתתזמן.
+    }
+  }
+
+  static const AndroidNotificationDetails _dailyChallengeReminderAndroidDetails = AndroidNotificationDetails(
+    'daily_challenge_reminder_channel',
+    'תזכורת אתגר יומי',
+    channelDescription: 'תזכורת שהשחקן ביקש במפורש - "תזכיר לי מחר" במסך האתגר היומי',
+    importance: Importance.defaultImportance,
+    priority: Priority.defaultPriority,
+  );
+
+  // 🆕 כפתור "תזכיר לי מחר" במסך האתגר היומי (אחרי שהושלם/נוצל הניסיון
+  // של היום) - בניגוד לשאר התזכורות בקובץ הזה, זו לא מתוזמנת אוטומטית
+  // אלא רק כשהשחקן מבקש את זה בפירוש, ולכן אין צורך לבטל/להחליף אותה
+  // בכל פתיחת מסך - פשוט מתזמנים ב-24 שעות מרגע הלחיצה.
+  static Future<void> scheduleDailyChallengeReminder() async {
+    if (!_initialized) return;
+    await _plugin.cancel(_dailyChallengeReminderNotificationId);
+    final scheduledDate = tz.TZDateTime.now(tz.local).add(const Duration(hours: 24));
+    try {
+      await _plugin.zonedSchedule(
+        _dailyChallengeReminderNotificationId,
+        'האתגר היומי מחכה',
+        'אתגר חדש וללוגו חדש לזהות - בוא תנסה היום',
+        scheduledDate,
+        const NotificationDetails(android: _dailyChallengeReminderAndroidDetails, iOS: DarwinNotificationDetails()),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );

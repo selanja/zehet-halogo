@@ -15,6 +15,7 @@ import 'level_data.dart' show worldDifficulty;
 import 'audio_manager.dart';
 import 'iap_manager.dart';
 import 'app_notification.dart';
+import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
 
 class LevelsScreen extends StatefulWidget {
   const LevelsScreen({super.key});
@@ -25,6 +26,17 @@ class LevelsScreen extends StatefulWidget {
 
 class _LevelsScreenState extends State<LevelsScreen> {
   int maxUnlockedLevel = 1;
+
+  // 🆕 הסבר חד-פעמי - ראו first_visit_explainer.dart. לפי דיווח מפורש:
+  // "המסך הזה אין לו שום הסבר בכלל" - הסיור במסך הבית הסתיים בלחיצה
+  // על הכפתור שמביא לכאן, בלי שום הנחיה בהמשך על מה בדיוק רואים כאן.
+  // 🩹 תוקן לפי בקשה מפורשת: לא כרטיסיית "מה זה עולם/שלב" סטטית - אלא
+  // אותו דפוס בדיוק כמו הסיור במסך הבית: שלב 0 מסביר את מנגנון הנעילה
+  // (נפתח ברגע שמסיימים את הקודם) עם כפתור "המשך", ואז שלב 1 מדגיש
+  // בספוטלייט את העולם הראשון (תמיד פתוח) ומבקש ללחוץ עליו בפועל.
+  bool _showExplainer = false;
+  int _explainerStep = 0;
+  final GlobalKey _tourFirstWorldKey = GlobalKey();
 
   // עולמות שנפתחו "מוקדם" בתשלום, לפני שההתקדמות הרגילה הגיעה אליהם -
   // וה"סמן" הפנימי (worldCursor) שלהם, נפרד מההתקדמות הגלובלית כדי
@@ -41,6 +53,9 @@ class _LevelsScreenState extends State<LevelsScreen> {
     IapManager.onLevelUnlocked = () {
       if (mounted) _loadProgress();
     };
+    FirstVisitExplainer.shouldShow('levels').then((show) {
+      if (show && mounted) setState(() => _showExplainer = true);
+    });
   }
 
   @override
@@ -451,6 +466,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
                       return _FadeSlideIn(
                         index: index,
                         child: Padding(
+                          key: index == 0 ? _tourFirstWorldKey : null,
                           padding: const EdgeInsets.only(bottom: 22),
                           child: _LevelRow(
                             mainLevel: mainLevel,
@@ -466,6 +482,13 @@ class _LevelsScreenState extends State<LevelsScreen> {
                             reversed: index.isOdd,
                             onTap: () {
                               AudioManager.playClick();
+                              // 🩹 הפעלה בפועל על העולם הראשון בזמן שלב 1 של הסיור
+                              // (ראו _buildLevelsTourSpotlight) - מסיימת את הסיור הזה
+                              // לפני הניווט, כדי שלא יחזור לשלב הלא-נכון בחזרה לכאן.
+                              if (_showExplainer && index == 0 && _explainerStep == 1) {
+                                FirstVisitExplainer.markSeen('levels');
+                                setState(() => _showExplainer = false);
+                              }
                               if (isLocked) {
                                 _showUnlockDialog(mainLevel);
                               } else {
@@ -486,9 +509,142 @@ class _LevelsScreenState extends State<LevelsScreen> {
               ],
             ),
           ),
+          if (_showExplainer) _buildLevelsTourOverlay(),
         ],
       ),
     );
+  }
+
+  // שלב 0: כרטיסייה ממורכזת מסבירה את מנגנון הנעילה (בלי "מה זה עולם").
+  void _skipLevelsTour() {
+    AudioManager.playClick();
+    FirstVisitExplainer.markSeen('levels');
+    setState(() => _showExplainer = false);
+  }
+
+  Widget _buildLevelsTourInfoCard() {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned.fill(child: GestureDetector(onTap: () {}, child: Container(color: const Color(0xCC0C0820)))),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 18,
+            child: TextButton(
+              onPressed: _skipLevelsTour,
+              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  color: Colors.white,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 30, offset: const Offset(0, 14))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('מסך השלבים', textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 10),
+                    const Text('כל עולם נפתח אוטומטית ברגע שמסיימים את העולם הקודם - בלי שום פעולה נוספת.', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF8A3C),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          AudioManager.playClick();
+                          setState(() => _explainerStep = 1);
+                        },
+                        child: const Text('המשך ›', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // שלב 1: ספוטלייט על העולם הראשון (תמיד פתוח) - אותו דפוס מלבנים-כהים
+  // + חור חשוף בדיוק כמו בסיור של main_menu_screen.dart.
+  Widget _buildLevelsTourSpotlight() {
+    final ctx = _tourFirstWorldKey.currentContext;
+    final box = ctx?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return const SizedBox.shrink();
+    }
+    final screenSize = MediaQuery.of(context).size;
+    final topLeft = box.localToGlobal(Offset.zero);
+    final hole = (topLeft & box.size).inflate(8);
+    const dimColor = Color(0xCC0C0820);
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned(left: 0, top: 0, right: 0, height: hole.top.clamp(0, screenSize.height), child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 18,
+            child: TextButton(
+              onPressed: _skipLevelsTour,
+              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Positioned(left: 0, top: hole.bottom.clamp(0, screenSize.height), right: 0, bottom: 0, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: 0, top: hole.top, width: hole.left.clamp(0, screenSize.width), height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: hole.right, top: hole.top, right: 0, height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(
+            left: hole.left,
+            top: hole.top,
+            width: hole.width,
+            height: hole.height,
+            child: IgnorePointer(
+              child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFFFD86B), width: 2.5))),
+            ),
+          ),
+          Positioned(
+            top: (hole.bottom + 14).clamp(0, screenSize.height - 120),
+            left: 18,
+            right: 18,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: Colors.white,
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 24, offset: const Offset(0, 10))],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('👆 ', style: TextStyle(fontSize: 15)),
+                  Flexible(child: Text('לחצו על העולם המואר כדי להמשיך', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900))),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLevelsTourOverlay() {
+    return _explainerStep == 0 ? _buildLevelsTourInfoCard() : _buildLevelsTourSpotlight();
   }
 }
 

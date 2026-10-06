@@ -24,6 +24,7 @@ import 'presence_service.dart';
 import 'duel_season_leaderboard_screen.dart';
 import 'friend_challenge_screen.dart';
 import 'friend_service.dart'; // 🆕 רשימת חברים כאן במסך עצמו - ראו _buildFriendsSection
+import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי, עצמאי - לא תלוי בסיור במסך הבית
 
 class PlayVsPersonModeScreen extends StatefulWidget {
   final String username;
@@ -34,6 +35,14 @@ class PlayVsPersonModeScreen extends StatefulWidget {
 }
 
 class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
+  // 🐛 תוקן: "מדגיש את שחק מול אחרים אבל ההסבר נמצא בשלבים" - קודם ההסבר
+  // הזה הגיע רק דרך דגל שהועבר מ-main_menu_screen.dart (שלב 3 של הסיור),
+  // ובטעות גם סימן הדרכה *אחרת* לגמרי (ראו logo_level_screen.dart) - אז
+  // אם הגיעו לכאן בדרך אחרת (לא דרך הסיור), ההסבר הזה אף פעם לא הופיע,
+  // וההדרכה הלא-קשורה קפצה מאוחר יותר במקום אחר. עכשיו זה בודק באופן
+  // עצמאי לגמרי (כמו מסכי משימות/חברים/מובילים) - מופיע בכל דרך שמגיעים
+  // לכאן בפעם הראשונה, לא משנה אם זה היה דרך הסיור או לא.
+  bool _showIntro = false;
   int _coins = 0;
   int? _duelPlayersNow;
   int? _racePlayersNow;
@@ -54,6 +63,9 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
     super.initState();
     _load();
     _loadFriends();
+    FirstVisitExplainer.shouldShow('playVsPerson').then((show) {
+      if (show && mounted) setState(() => _showIntro = true);
+    });
   }
 
   Future<void> _load() async {
@@ -211,8 +223,91 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
               ),
             ),
           ),
+          if (_showIntro) _buildOnboardingIntroOverlay(),
         ],
       ),
+    );
+  }
+
+  // 🆕 "בפנים זה יסביר" - הסבר קצר (חד-פעמי) על שלושת המודים, מוצג רק
+  // כשמגיעים לכאן מתוך שלב ה-3 של הסיור במסך הבית (ראו showOnboardingIntro).
+  Widget _buildOnboardingIntroOverlay() {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(color: Colors.black.withValues(alpha: 0.6)),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  color: Colors.white,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 30, offset: const Offset(0, 14))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('3 דרכים לשחק נגד אחרים', textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 16),
+                    _introModeRow('🏆', 'סדרת דו-קרב', 'הטוב מ-3 מול אותו יריב - בונוס מטבעות על ניצחון בסדרה'),
+                    const SizedBox(height: 12),
+                    _introModeRow('⚔️', 'דו-קרב', 'עימות 1 על 1 - מי שפותר יותר לוגואים מנצח'),
+                    const SizedBox(height: 12),
+                    _introModeRow('🏁', 'מירוץ', 'עימות 1 על 1 - מי שמנחש ראשון בכל לוגו מנצח'),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF8A3C),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          AudioManager.playClick();
+                          FirstVisitExplainer.markSeen('playVsPerson');
+                          setState(() => _showIntro = false);
+                        },
+                        child: const Text('הבנתי, בואו נבחר!', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _introModeRow(String emoji, String title, String desc) {
+    return Row(
+      textDirection: TextDirection.rtl,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(emoji, style: const TextStyle(fontSize: 22)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 2),
+              Text(desc, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w600, height: 1.3)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

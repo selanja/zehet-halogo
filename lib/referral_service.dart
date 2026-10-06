@@ -44,7 +44,7 @@ class ReferralService {
 
   // 🆕 הועלה מ-30 ל-50 ואז ל-100 לפי בקשה מפורשת - "לחזק את מערכת
   // ההפניה" (חלק מדחיפה שיווקית לרכישת משתמשים חדשים).
-  static const int bonusCoins = 100;
+  static const int bonusCoins = 75;
   static const String _landingBase = 'https://zehe-et-halogo.web.app/i';
   static const String _clipboardPrefix = 'ZEHE_REF:';
 

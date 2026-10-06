@@ -89,7 +89,7 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
         _FeatureData(
           icon: '🎁',
           title: 'בונוס הזמנת חברים גדול יותר',
-          subtitle: 'עכשיו מקבלים 100 מטבעות (במקום 30) על כל חבר שמצטרף דרך הקוד שלכם',
+          subtitle: 'עכשיו מקבלים 75 מטבעות (במקום 30) על כל חבר שמצטרף דרך הקוד שלכם',
           iconGradient: [Color(0xFF6EE7B7), Color(0xFF16A46F)],
           glow: Color(0xFF16A46F),
         ),

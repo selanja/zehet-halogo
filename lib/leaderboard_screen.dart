@@ -8,6 +8,7 @@ import 'audio_manager.dart';
 import 'league_screen.dart';
 import 'achievements_screen.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - גם כאן, לא רק במסך הבית
+import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -56,11 +57,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   final GlobalKey _myRowKey = GlobalKey();
   bool _myRowVisible = false; // האם השורה האמיתית שלי כרגע נראית על המסך
 
+  // 🆕 הסבר חד-פעמי - ראו first_visit_explainer.dart.
+  bool _showExplainer = false;
+
   @override
   void initState() {
     super.initState();
     _load();
     _scrollController.addListener(_checkMyRowVisibility);
+    FirstVisitExplainer.shouldShow('leaderboard').then((show) {
+      if (show && mounted) setState(() => _showExplainer = true);
+    });
   }
 
   @override
@@ -199,6 +206,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
           // 🆕 סרגל ניווט תחתון משותף
           const AppBottomNav(current: AppTab.leaderboard),
+          if (_showExplainer)
+            buildFirstVisitOverlay(
+              title: 'הטבלה הארצית',
+              points: const [
+                ExplainerPoint('🏅', 'דירוג לפי מדליות', 'ברירת המחדל - דירוג הוגן לפי הישגים, לא רק כמות משחקים.'),
+                ExplainerPoint('⭐', 'אפשר גם לפי נקודות', 'מתג למעלה מחליף לדירוג לפי XP שנצבר.'),
+                ExplainerPoint('📍', 'המיקום שלכם תמיד גלוי', 'גם אם אתם לא בעשירייה הראשונה - תג צף מראה איפה אתם.'),
+              ],
+              onDismiss: () {
+                FirstVisitExplainer.markSeen('leaderboard');
+                setState(() => _showExplainer = false);
+              },
+            ),
         ],
       ),
     );

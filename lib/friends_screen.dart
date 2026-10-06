@@ -23,6 +23,7 @@ import 'friend_challenge_screen.dart';
 import 'friend_service.dart';
 import 'referral_service.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון קבוע - חסר היה במסך הזה בלבד
+import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
 
 class FriendsScreen extends StatefulWidget {
   final String username;
@@ -56,6 +57,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
   bool _addingFriend = false;
   String? _addFriendError;
 
+  // 🆕 הסבר חד-פעמי - ראו first_visit_explainer.dart.
+  bool _showExplainer = false;
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +67,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
     _loadFriends();
     _loadMyXp();
     _loadPendingRequests();
+    FirstVisitExplainer.shouldShow('friends').then((show) {
+      if (show && mounted) setState(() => _showExplainer = true);
+    });
   }
 
   Future<void> _loadMyXp() async {
@@ -269,7 +276,17 @@ class _FriendsScreenState extends State<FriendsScreen> {
                           children: [
                             const SizedBox(height: 10),
                             _buildHero(),
-                            const SizedBox(height: 26),
+                            const SizedBox(height: 22),
+                            // 🩹 תוקן לפי בקשה מפורשת: "תעלה את העניין של
+                            // הפרס למעלה במקום שיהיה למטה" - כרטיס "הזמן
+                            // למשחק" (ReferralService, זה שבאמת נותן מטבעות
+                            // על התקנה חדשה) עבר להיות ראשון בעמוד - הוא
+                            // הפעולה הכי משתלמת/חשובה כאן, לא "הקוד שלך"
+                            // שרק מחבר כחברים בלי פרס (ראו ההערה שם).
+                            _buildInviteCard(),
+                            const SizedBox(height: 22),
+                            _buildDivider(),
+                            const SizedBox(height: 18),
                             _buildMyCodeCard(),
                             const SizedBox(height: 14),
                             _buildAddFriendCard(),
@@ -291,15 +308,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
                               const SizedBox(height: 22),
                               _buildFriendsLeaderboard(),
                             ],
-                            const SizedBox(height: 22),
-                            _buildDivider(),
-                            const SizedBox(height: 18),
-                            // 🆕 "תוריד את הלמטה של אתגר חבר לדו קרב, אין
-                            // צורך בזה הוא יכול ללחוץ עליו ולהזמין" - כרטיס
-                            // "אתגר חבר לדו-קרב" (קוד גנרי, בלי לבחור חבר
-                            // ספציפי) הוסר - ההזמנה עצמה נעשית ישירות מכפתור
-                            // "הזמן למשחק" על כל חבר ברשימה למעלה.
-                            _buildInviteCard(),
                           ],
                         ),
                       ),
@@ -310,6 +318,19 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ),
           ),
           const AppBottomNav(current: AppTab.friends),
+          if (_showExplainer)
+            buildFirstVisitOverlay(
+              title: 'מסך החברים',
+              points: const [
+                ExplainerPoint('🔑', 'קוד אישי לשיתוף', 'שתפו את הקוד שלכם עם חברים כדי שיוכלו להוסיף אתכם.'),
+                ExplainerPoint('🟢', 'מי מחובר עכשיו', 'נקודה ירוקה ליד חבר מראה שהוא כרגע באפליקציה.'),
+                ExplainerPoint('⚔️', 'הזמנה למשחק', 'לחצו על "הזמן למשחק" ליד כל חבר כדי להזמין אותו לדו-קרב ישיר.'),
+              ],
+              onDismiss: () {
+                FirstVisitExplainer.markSeen('friends');
+                setState(() => _showExplainer = false);
+              },
+            ),
         ],
       ),
     );
@@ -413,7 +434,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
               const Text("הקוד שלך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
+          // 🩹 תוקן לפי דיווח מפורש: "שתף קוד משתף אבל בלי לקבל פרס" - זה
+          // בכוונה (הקוד מחבר כחברים מישהו שכבר מותקן אצלו המשחק, לא מביא
+          // משתמש חדש - לכן אין כאן פרס, בשונה מ"הזמן למשחק" למטה שכן נותן
+          // מטבעות כי הוא מביא התקנה חדשה). עכשיו מבהירים את זה בממשק במקום
+          // להשאיר את זה עמום.
+          const Text("לחיבור עם חבר שכבר משחק - בלי פרס. להזמנת חבר חדש ומטבעות, גללו למטה 👇", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white54, fontSize: 11.5, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
           if (_loadingCode)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),

@@ -47,3 +47,17 @@ class EnergyIcon extends StatelessWidget {
     return Image.asset('assets/icon/energy.png', width: size, height: size, fit: BoxFit.contain);
   }
 }
+
+/// 🆕 אייקון מתנה - תמונת PNG קבועה (assets/icon/gift.png), לא אייקון
+/// וקטורי (Icons.card_giftcard_rounded) - לפי אותה היסטוריה בדיוק
+/// שמתועדת למעלה (אימוג'י/Material icons לא תמיד נטענים אצל המשתמש הזה
+/// במכשיר הספציפי שלו) - להצבה בכל מקום שהיה בו Icon(Icons.card_giftcard_rounded).
+class GiftIcon extends StatelessWidget {
+  final double size;
+  const GiftIcon({super.key, this.size = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset('assets/icon/gift.png', width: size, height: size, fit: BoxFit.contain);
+  }
+}

@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'levels_screen.dart';
 import 'level_loading_screen.dart';
+import 'first_visit_explainer.dart'; // 🆕 FirstVisitExplainer.hasRealProgress - שחקן ותיק לא מקבל הדרכה
 import 'audio_manager.dart';
 import 'leaderboard.dart';
 import 'device_id.dart';
@@ -79,6 +80,31 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   bool _welcomeShowingNameEntry = false;
   bool _welcomeGoogleLoading = false;
   bool _welcomeAppleLoading = false;
+
+  // 🆕 הדרכה ראשונית (onboarding) - מוצגת פעם אחת בלבד, רק למשתמש *חדש*
+  // לגמרי (מיד אחרי _saveWelcomeName, לא בכניסה הקרה הרגילה - בדיוק אותה
+  // קונבנציה כמו showWelcomeScreen/showWhatsNewScreen). סיור קצר (3
+  // טיפים) מעל מסך הבית, ואז (בסיום ההדרכה בתוך המשחק עצמו, ראו
+  // logo_level_screen.dart._maybeGrantFirstLevelGift) פופאפ פרס - ראו
+  // onboarding_gift_popup.dart. אין מסך "מתנת פתיחה" נפרד בהתחלה -
+  // showHomeTour מופעל ישר.
+  // יש כפתור "דלג" בכל שלב (ראו _buildHomeTourOverlayV5) - לפי בקשה מפורשת.
+  bool showHomeTour = false;
+  int _tourStep = 0;
+  static const int _tourStepCount = 3;
+  // 🩹 לפי בקשה מפורשת: "ההסבר מכסה את מה שהוא מסביר עליו" - עכשיו כל
+  // שלב בסיור "ממוקד" ממש על הרכיב האמיתי במסך (חור מואר בתוך הדהוי כהה,
+  // לא כרטיסיה שצפה במקום קבוע שעלולה לשבת בדיוק מעל מה שמוסבר). כל
+  // GlobalKey מצביע על הרכיב האמיתי שמודגש בשלב המתאים - ראו _buildHomeTourOverlayV5.
+  final GlobalKey _tourCtaKey = GlobalKey();
+  final GlobalKey _tourRandomCardKey = GlobalKey();
+  final GlobalKey _tourVsOthersCardKey = GlobalKey();
+  // 🆕 לפי דיווח מפורש: "לא היה הסבר ראשוני שקודם אומר ברוכים הבאים
+  // לאפליקציה... היא המדריך" - הסיור קפץ ישר לספוטלייט הראשון בלי שום
+  // "ברוכים הבאים, הנה סיור קצר" כללי קודם. כרטיסיה ממורכזת אחת, לא
+  // קשורה לרכיב ספציפי, מוצגת לפני שהספוטלייט (_buildHomeTourOverlayV5)
+  // מתחיל בכלל.
+  bool _tourWelcomeDismissed = false;
   // 🩹 השם ש"ימולא מראש" בשדה השם במסך הבחירה הראשוני - ריק אם נבחר
   // "שחק כאורח", או השם שכבר שמור בענן אם ההתחברות ל-Google שחזרה שם
   // קיים (כדי שהשחקן עדיין יאשר/יוכל לשנות אותו, ולא ידלג ישר הביתה -
@@ -133,6 +159,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   @override
   void initState() {
     super.initState();
+    // 🩹 לפי בקשה מפורשת: "אם הבנאדם כבר שיחק במשחק ועכשיו עושה עדכון...
+    // שלא יהיה לו מדריך" - הגירה חד-פעמית (רצה פעם אחת בדיוק אי-פעם לכל
+    // התקנה, לא בכל פתיחה) - ראו FirstVisitExplainer.migrateExistingPlayersOnce.
+    // נקרא כבר כאן, מוקדם ככל האפשר, לפני שכל מסך אחר מספיק לבדוק
+    // FirstVisitExplainer.shouldShow בעצמו.
+    FirstVisitExplainer.migrateExistingPlayersOnce();
     // 🩹 "שחקן שכבר בתוך דו-קרב בפועל לא נספר במחוברים" - ראו הערה
     // מפורטת ב-duel_lobby_screen.dart ליד PresenceService.stopHeartbeat.
     // רשת ביטחון: בכל הגעה/חזרה למסך הבית - עוצרים כל heartbeat נוכחי,
@@ -679,9 +711,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     _refreshDailyChallenge();
     _refreshBattlePass(); // 🆕 באטל פאס - נקודות/שלב/פרסים ממתינים לכרטיס בתפריט הראשי
     _refreshMedals();
-    // 🆕 מארז פתיחה - נבדק כאן (חזרה למסך הבית אחרי משחק בפועל), לא
-    // בכניסה הקרה לאפליקציה - כך ההצעה מופיעה רק אחרי שהמשתמש כבר
-    // שיחק קצת, לא ישר כשהוא נכנס לאפליקציה.
+    // 🩹 "פרס סיום הדרכה" עבר להיות מוצג ישירות בתוך logo_level_screen.dart
+    // ברגע שההדרכה-בתוך-המשחק מסתיימת (לא יותר נדחה לחזרה הביתה) - ראו
+    // _maybeGrantFirstLevelGift שם. מארז הפתיחה נבדק כאן כרגיל.
     _maybeShowStarterPack();
   }
 
@@ -742,6 +774,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
 
   // נקרא מ-_NameEntryCard אחרי שאומת ששם פנוי - שומר ומחליף למסך הבית.
   Future<void> _saveWelcomeName(String name) async {
+    // 🐛 תוקן: "ישר אחרי שרושמים שם מתחיל ההסבר, בגלל המקלדת שנמצאת למטה
+    // הסימון מופיע במקום אחר" - המקלדת עדיין הייתה פתוחה (או באמצע אנימציית
+    // סגירה) כשהסיור חושב את מיקום הספוטלייט, אז ה-Rect שחושב לא תאם את
+    // המיקום הסופי האמיתי של הכרטיסים (אחרי שהמקלדת נסגרת ומפנה מקום).
+    // מבטלים פוקוס *כבר כאן*, לפני כל ה-await-ים הבאים, כדי שאנימציית סגירת
+    // המקלדת תתחיל מוקדם כל כך שעד שמסך הבית עולה היא כבר הסתיימה.
+    FocusManager.instance.primaryFocus?.unfocus();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('username', name);
     // 🆕 משתמש חדש לגמרי "מתחיל" כבר עם כל התוכן הנוכחי - אין לו שום דבר
@@ -759,11 +798,103 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     // הטוקן לא נשמר אז בכוונה (ראו ההערה שם) כדי לא ליצור מסמך players
     // "רפאים". עכשיו שיש שם אמיתי לראשונה, שומרים את הטוקן בפועל.
     PushNotificationService.retrySaveTokenIfNeeded();
+    // 🆕 מסמנים שההדרכה "כבר נראתה" מיד כאן (אותו דפוס בדיוק כמו
+    // lastSeenWhatsNewVersion למעלה) - כדי שגם אם המשתמש סוגר את
+    // האפליקציה באמצע ההדרכה, היא לא תחזור שוב בכניסה הבאה.
+    await prefs.setBool('hasSeenOnboarding', true);
+    // 🆕 לפי בקשה מפורשת: "לפני שהם מקבלים את המתנה לא יהיה להם מטבעות
+    // וזה" - מאפסים את המטבעות של משתמש חדש לגמרי ל-0 (היו מתחילים עם
+    // ברירת מחדל - 15 מטבעות). מתנת סיום ההדרכה (50 מטבעות) היא המקור
+    // האמיתי הראשון למטבעות שלהם.
+    await prefs.setInt('coins', 0);
+    // 🩹 תוקן לפי בקשה מפורשת: "תוריד את העניין שהם מקבלים מתנה 5
+    // אנרגיה, אני רוצה שיהיה להם 8 אנרגיה פול כשהם נכנסים למשחק" - בוטל
+    // ה-resetToZero שהיה כאן; EnergyService.getCurrentEnergy() כבר
+    // מתחיל מ-maxEnergy כברירת מחדל כש-duelEnergy עוד לא קיים ב-prefs
+    // בכלל, אז אין צורך לאפס דבר - שחקן חדש מתחיל מלא אוטומטית.
+    // 🩹 תוקן: "אני לא מקבל את הפרס שאני אמור לקבל" - הפרס היה תלוי
+    // בדגל _isOnboardingLevel בתוך logo_level_screen.dart, שהוא *אותו*
+    // דגל שקובע אם ספוטלייט ההדרכה מוצג - אם משום מה הספוטלייט לא
+    // מוצג (seenExplainer_soloLevel כבר true מהתקנה/בדיקה קודמת על
+    // אותו מכשיר), השחקן לא קיבל גם את הפרס, ונשאר תקוע עם 0
+    // מטבעות/אנרגיה לנצח. דגל נפרד ועצמאי לגמרי - נבדק רק מול "האם
+    // שחקן חדש ענה נכון בפעם הראשונה אי-פעם", בלי שום תלות בתצוגת
+    // הספוטלייט.
+    await prefs.setBool('pendingFirstLevelGift', true);
+    // 🩹 תוקן לפי בקשה מפורשת: "תעשה שהיא תופיע בכל משתמש חדש" - עד
+    // עכשיו ההדרכות (seenExplainer_*) היו "פעם אחת לכל התקנה", לא "פעם
+    // אחת לכל שם" - מישהו ש"ממלא שם חדש" על אותה התקנה (בלי למחוק
+    // ולהתקין מחדש בפועל) לא היה רואה אותן שוב, מה שנראה כמו תקלה
+    // אקראית. עכשיו כל מעבר דרך מסך "ברוכים הבאים!" (גם עם שם חדש על
+    // התקנה קיימת) מאפס את כל ההדרכות, כך שהחוויה המלאה חוזרת מההתחלה
+    // בכל פעם שממלאים שם - עקבי וצפוי, לא תלוי בהיסטוריה נסתרת של המכשיר.
+    for (final key in ['missions', 'friends', 'leaderboard', 'soloLevel', 'playVsPerson', 'levels', 'subLevels']) {
+      await prefs.remove('seenExplainer_$key');
+    }
     if (!mounted) return;
     setState(() {
       username = name;
+      coins = 0;
+      _energy = EnergyService.maxEnergy;
       showWelcomeScreen = false;
+      showHomeTour = true;
+      _tourStep = 0;
+      _tourWelcomeDismissed = false;
     });
+  }
+
+  void _skipOnboarding() {
+    AudioManager.playClick();
+    setState(() => showHomeTour = false);
+  }
+
+  void _advanceHomeTour() {
+    AudioManager.playClick();
+    if (_tourStep >= _tourStepCount - 1) {
+      // 🩹 השלב האחרון בפועל הוא "מול אחרים" (tap-through - ראו
+      // _buildHomeGridV5), שכבר סוגר את showHomeTour בעצמו ב-onTap שלו;
+      // שאר ההדרכה (רמה ראשונה) נבדקת עצמאית ב-logo_level_screen.dart
+      // (FirstVisitExplainer('soloLevel')) בלי תלות כאן - ראו onboarding_service.dart.
+      setState(() => showHomeTour = false);
+    } else {
+      setState(() => _tourStep++);
+      _ensureTourStepVisible();
+    }
+  }
+
+  // 🐛 תוקן: "הכפתור המואר היה למטה, בפועל מואר כפתור אחר" - מסך הבית
+  // גולל (SingleChildScrollView), ו"מול אחרים"/"רנדומלי" יכולים להיות
+  // מחוץ לתצוגה (מתחת לקצה הנראה) כשהסיור מגיע אליהם, בעיקר במסכים
+  // נמוכים. בלי לגלול אליהם קודם, חישוב ה-Rect (RenderBox.localToGlobal)
+  // עדיין מחזיר מיקום אמיתי - אבל מחוץ לחלק הנראה של המסך, כך שה"חור"
+  // בספוטלייט לא תאם שום דבר שרואים בפועל, ובטעות "האיר" כרגע מה שבאמת
+  // יושב שם על המסך הגלוי (כרטיס אחר לגמרי). עכשיו גוללים את הרכיב
+  // האמיתי לתצוגה (Scrollable.ensureVisible) *לפני* שמציגים את הספוטלייט
+  // עליו, וממתינים לסיום האנימציה לפני שמחשבים/מציירים את החור.
+  Future<void> _ensureTourStepVisible() async {
+    // 🩹 הסדר כאן חייב להיות זהה בדיוק לסדר ב-steps בתוך
+    // _buildHomeTourOverlayV5 (מול אחרים → רנדומלי → CTA, ראו שם).
+    final keys = [_tourVsOthersCardKey, _tourRandomCardKey, _tourCtaKey];
+    final key = keys[_tourStep];
+    // מחכים לפריים הבא כדי לוודא שה-key כבר מחובר ל-RenderObject (למשל
+    // מיד אחרי שהמסך עצמו עלה לראשונה).
+    await Future.delayed(const Duration(milliseconds: 50));
+    if (!mounted) return;
+    // 🐛 תוקן: בכניסה הראשונה (מיד אחרי מילוי השם) המקלדת עדיין יכולה
+    // להיות באמצע אנימציית סגירה - מחכים שהיא תיסגר *בפועל* (viewInsets.bottom
+    // מגיע ל-0) לפני שמחשבים/מציירים את הספוטלייט, עם תקרה קצרה כדי לא
+    // להיתקע אם משהו אחר משאיר פוקוס. בשלבים הבאים של הסיור המקלדת כבר
+    // סגורה, אז הלולאה מסתיימת כמעט מיד.
+    var waited = 0;
+    while (mounted && MediaQuery.of(context).viewInsets.bottom > 0 && waited < 500) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      waited += 50;
+    }
+    if (!mounted) return;
+    final ctx = key.currentContext;
+    if (ctx == null) return;
+    await Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 320), curve: Curves.easeOut, alignment: 0.5);
+    if (mounted) setState(() {}); // מרענן את הספוטלייט עם המיקום הסופי אחרי הגלילה
   }
 
   // 🆕 "המשך עם Google" ממסך הבחירה הראשוני - משתמש באותה
@@ -1115,9 +1246,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             // טבעי, בלי שום widget חריג שעלול לקרוס.
             child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
-                // 🆕 padding תחתון כדי שהתוכן האחרון תמיד יגלול מעל סרגל
-                // הניווט הקבוע (גובה 108 + מרווח בטיחות), ולא ייחסם מאחוריו.
-                padding: const EdgeInsets.only(bottom: 128),
+                // 🐛 תוקן: "לא מצליח לרדת הכי למטה, האתגר היומי חתוך למטה" -
+                // ה-padding כאן היה קבוע (128), אבל הגובה האמיתי של
+                // AppBottomNav הוא דינמי: 108 + MediaQuery.of(context).padding.bottom
+                // (ה-safe-area התחתון, ה"בליטה" של פס הבית באייפון - בד"כ
+                // 34 פיקסלים). בפועל 128 היה מספיק רק למכשירים עם safe-area
+                // קטן מ-20 - באייפון רגיל (safe-area 34) סרגל הניווט בפועל
+                // גבוה ב-14 פיקסלים נוספים מהמקום שהוקצה לו, וכיסה בדיוק
+                // את תחתית הכרטיס האחרון בגלילה.
+                padding: EdgeInsets.only(bottom: 108 + MediaQuery.of(context).padding.bottom + 20),
                 child: Column(
                   children: [
                     // 🩹 תוקן: כל המרווחים כאן צומצמו (8→6, 14→10, 18→10,
@@ -1125,17 +1262,16 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     // גלילה ארוכה, בדיוק כמו במוקאפ (מסך 01 · בית) - קודם
                     // המרווחים היו נדיבים מדי ודחפו את הכרטיס האחרון הרחק
                     // מתחת לקצה הנראה.
-                    const SizedBox(height: 14), // 🩹 "תזיז קצת" - הבועה למעלה ירדה טיפה מקצה המסך (היה 6)
-                    Padding(padding: const EdgeInsets.symmetric(horizontal: 18.0), child: _buildTopBar()),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 0, child: _buildStatsPillsRow()),
-                    ),
-                    // 🩹 "העניין של הפרסומת תמורת 2 אנרגיה לא מופיעה" - תג
-                    // קטן בפינת הפיל לא היה מספיק בולט. נוסף כרטיס ייעודי
-                    // מלא-רוחב מיד מתחת לשורת הפילים - מקום שאי אפשר לפספס,
-                    // מוצג כל עוד האנרגיה לא מלאה.
+                    // 🆕 עיצוב מחדש מלא לפי מוקאפ "Home v5" (claude.ai/design) -
+                    // ראו תוכנית ההטמעה שאושרה. מחליף לגמרי את הסרגל/הפילים/
+                    // הלוגו/כרטיס הרמות/גריד המודים/באטל פאס/אתגר יומי הישנים
+                    // (_buildTopBar/_buildStatsPillsRow/_buildLogoHero/
+                    // _buildLevelsCard/_buildModesGrid/_buildBattlePassCard/
+                    // _buildDailyChallengeCard נשארו מוגדרים למטה, לא נקראים
+                    // יותר מכאן - אותה קונבנציה כבר קיימת בקובץ הזה ל-
+                    // _buildLogoRaceCard/_buildDailyBonusCard).
+                    const SizedBox(height: 14),
+                    Padding(padding: const EdgeInsets.symmetric(horizontal: 18.0), child: _buildTopBarV5()),
                     if (_energy < EnergyService.maxEnergy) ...[
                       const SizedBox(height: 12),
                       Padding(
@@ -1143,48 +1279,28 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         child: _FadeSlideIn(index: 0, child: _buildEnergyAdCard()),
                       ),
                     ],
-                    // 🆕 "הלוגו היה למעלה, תחזיר אותו למעלה" - הוחזר למיקומו
-                    // המקורי (בין הפילים לכרטיס הרמות), אחרי שבניסיון קודם
-                    // הועבר בטעות לתחתית המסך.
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                      child: _FadeSlideIn(index: 1, child: _buildLevelPillV5()),
+                    ),
                     const SizedBox(height: 8),
-                    _FadeSlideIn(index: 1, child: Center(child: _buildLogoHero())),
+                    _FadeSlideIn(index: 2, child: Center(child: _buildNextLogoTeaserV5())),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                      child: _FadeSlideIn(index: 3, child: _buildPlayCtaButtonV5()),
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                      child: _FadeSlideIn(index: 4, child: _buildProgressDotsV5()),
+                    ),
                     const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 2, child: _buildLevelsCard()),
+                      child: _FadeSlideIn(index: 5, child: _buildHomeGridV5()),
                     ),
-                    const SizedBox(height: 16),
-                    // 🩹 תוקן שוב לפי הבהרה מפורשת: "הם לא באותו גודל, לא
-                    // בצדדים, ולא מתאימים ברוחב לשאר הדברים שנמצאים שמה" -
-                    // כלומר בדיוק ההפך ממה שניסיתי בסבב הקודם (עד-קצה-המסך).
-                    // 🩹 תוקן שוב לפי בקשה מפורשת אחרי בדיקה בפועל: "הקצוות
-                    // שלהם יהיו כמו של הדברים למעלה ולמטה" - כלומר אותו
-                    // ריווח מהקצה כמו כל שאר הכרטיסים במסך (רמות/שלבים
-                    // וכו'), לא ממש עד קצה המסך הפיזי. חוזרים לעטוף
-                    // ב-Padding(18) כמו כל שאר הכרטיסים.
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 3, child: _buildModesGrid()),
-                    ),
-                    const SizedBox(height: 16),
-                    // 🩹 כרטיס "מרוץ לוגואים" הנפרד הוסר מהבית לפי בקשה מפורשת -
-                    // "מרוץ לוגואים" עבר להיות אחד משני המודים בתוך "שחק מול
-                    // אחרים" (ראה _buildModesGrid למעלה + play_vs_person_mode_screen.dart),
-                    // ואין טעם להציג אותו גם ככרטיס נפרד בבית. _buildLogoRaceCard
-                    // עצמה נשארה מוגדרת למטה (לא נמחקה) למקרה שתרצה להחזיר אותה.
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 4, child: _buildBattlePassCard()),
-                    ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 5, child: _buildDailyChallengeCard()),
-                    ),
-                    // 🩹 הכרטיס "בונוס פרסומת" ירד ממסך הבית (לפי העיצוב מחדש +
-                    // בקשה לצמצם עומס) - הוא עדיין קיים וזמין בדיוק כמו קודם
-                    // בחנות (shop_screen.dart, אותו מפתח lastAdBonusMillis
-                    // בדיוק) כך שהתכונה לא אבדה, רק לא תופסת מקום בבית.
                   ],
                 ),
               ),
@@ -1192,6 +1308,630 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           // 🆕 סרגל ניווט תחתון קבוע ומשותף - זהה למה שמופיע גם בחנות/
           // מובילים/משימות/הגדרות (ראו app_bottom_nav.dart).
           const AppBottomNav(current: AppTab.home),
+          // 🆕 שלב 2 של ההדרכה הראשונית - סיור קצר (3 טיפים) מעל מסך
+          // הבית האמיתי (לא מסך נפרד) - ראו showHomeTour למעלה.
+          if (showHomeTour) (_tourWelcomeDismissed ? _buildHomeTourOverlayV5() : _buildHomeTourWelcomeOverlay()),
+        ],
+      ),
+    );
+  }
+
+  // ===================== מסך הבית - עיצוב "Home v5" =====================
+  // כל המתודות מכאן ועד _buildTopBar הישנה (למטה) שייכות לעיצוב החדש
+  // שיובא ישירות מפרויקט העיצוב של המשתמש (claude.ai/design, "Home v5").
+  // כל נתון כאן ממוחזר מהמצב הקיים (coins/_energy/streak/maxLevel/
+  // _bpTier/_bpPendingClaims/_dailyChallenge/presence) - שום state חדש.
+
+  // שורה עליונה מצומצמת: אווטאר עם תג-רמה (ימין, RTL) → פיל מטבעות →
+  // פיל אנרגיה → כפתור מתנה (קיים, _showDailyGiftsDialog) → הגדרות.
+  // 🩹 שם המשתמש הוסר מהשורה הזו (לא מופיע במוקאפ בכלל - שם האווטאר שם
+  // קטן ודחוס) - הלחיצה על "מדליות" שהייתה מתחת לשם הועברה לאווטאר עצמו,
+  // כדי לא לאבד את הגישה למסך ההישגים.
+  Widget _buildTopBarV5() {
+    final (world, _, _) = _worldProgress(maxLevel);
+    return Row(
+      textDirection: TextDirection.rtl,
+      children: [
+        Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () {
+              AudioManager.playClick();
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()));
+            },
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.8), width: 1.6),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+                  ),
+                ),
+                Positioned(
+                  bottom: -4,
+                  left: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: const Color(0xFF1E2A5A),
+                      border: Border.all(color: const Color(0xFF120C2E), width: 1.5),
+                    ),
+                    child: Text('$world', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 10, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        _topPillV5(icon: Icons.monetization_on_rounded, color: const Color(0xFFFFD86B), text: '$coins'),
+        const SizedBox(width: 8),
+        _topPillV5(icon: Icons.bolt_rounded, color: const Color(0xFF7DD3FC), text: '$_energy/${EnergyService.maxEnergy}'),
+        const Spacer(),
+        _topIconButton(
+          iconWidget: const GiftIcon(size: 24),
+          ringColor: const Color(0xFFFFD86B),
+          showDot: _adBonusAvailable,
+          onTap: _showDailyGiftsDialog,
+        ),
+        const SizedBox(width: 10),
+        _topIconButton(
+          icon: Icons.settings_rounded,
+          onTap: () async {
+            final prefs = await SharedPreferences.getInstance();
+            final name = prefs.getString('username') ?? '';
+            if (!mounted) return;
+            await Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(username: name)));
+            _refreshStats();
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _topPillV5({required IconData icon, required Color color, required String text}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: color.withValues(alpha: 0.14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text, style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w900)),
+          const SizedBox(width: 5),
+          if (icon == Icons.monetization_on_rounded) const CoinIcon(size: 14) else const EnergyIcon(size: 14),
+        ],
+      ),
+    );
+  }
+
+  // פיל קטן וכהה: "רמה X • לוגו Y מתוך Z" - אותם נתונים בדיוק שכבר
+  // חושבו ב-_worldProgress, רק ניסוח אחר (היה "ממשיכים... שלב X · Y%").
+  Widget _buildLevelPillV5() {
+    final (world, sub, count) = _worldProgress(maxLevel);
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: Colors.white.withValues(alpha: 0.08),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: Text(
+          'רמה $world • לוגו $sub מתוך $count',
+          textDirection: TextDirection.rtl,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12.5, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
+  // כרטיס "?" מסתורי - בדיוק כמו במוקאפ: ריבוע מעוגל עם גרדיאנט פסטלי
+  // בהיר ו"?" סגול גדול באמצע, על הילת זוהר (אותו מבנה שכבר קיים ב-
+  // _buildLogoHero - עיגול RadialGradient מאחורי ריבוע מעוגל). בכוונה
+  // דקורטיבי בלבד (לא "תצוגה מקדימה" אמיתית של הלוגו הבא) - בדיוק כמו
+  // במוקאפ, ששם כן מוצג "?" גנרי ולא רמז אמיתי ללוגו.
+  // 🩹 תוקן לפי בקשה מפורשת: "גדול מידי ומגושם" - היה 0.38 עם clamp
+  // (140,190) והילת זוהר ב-1.6x הגודל (עגול ענק ומטושטש). עכשיו הרבה
+  // יותר קומפקטי (0.24, clamp 92-112, הילה 1.25x בלבד) כדי שכל מסך הבית
+  // ייכנס למסך אחד בלי יותר מדי גלילה.
+  // 🩹 תוקן לפי בקשה מפורשת: "הלוגו של הסימן שאלה מוזר לי מאוד, אולי
+  // פשוט נשים את הלוגו של האפליקציה שמה" - הוסר ה"?" הגנרי (שלא מייצג
+  // שום דבר אמיתי), ובמקומו מוצג הלוגו האמיתי של האפליקציה
+  // (assets/icon/logo.png - אותה תמונה בדיוק שמופיעה באווטאר בשורה
+  // העליונה), באותה מסגרת/הילה שהייתה קודם.
+  Widget _buildNextLogoTeaserV5() {
+    return Builder(builder: (context) {
+      final double size = (MediaQuery.of(context).size.width * 0.24).clamp(92.0, 112.0);
+      return GestureDetector(
+        onTap: _goToLevelsV5,
+        child: Column(
+          children: [
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: size * 1.25,
+                  height: size * 1.25,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(colors: [const Color(0xFFFFB24D).withValues(alpha: 0.22), const Color(0xFFFFB24D).withValues(alpha: 0.0)]),
+                  ),
+                ),
+                Container(
+                  width: size,
+                  height: size,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(size * 0.26),
+                    gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE79A), Color(0xFFC98A32), Color(0xFFFFD86B)]),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 16, offset: const Offset(0, 8))],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(size * 0.22),
+                    child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text('מוכנים לזהות את הלוגו הבא?', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<void> _goToLevelsV5() async {
+    AudioManager.playClick();
+    // 🩹 תוקן לפי בקשה מפורשת: "אני רוצה שהם ישלחו את הבנאדם לרמות
+    // והשלבים" - השלב האחרון/הפעיל-ללחיצה בסיור עבר לכאן (כפתור
+    // "שחקו את רמה X") - מוביל למסך השלבים האמיתי, לא לרנדומלי ולא
+    // למול-אחרים (ראו _buildHomeTourOverlayV5).
+    if (showHomeTour && _tourStep == _tourStepCount - 1) {
+      setState(() => showHomeTour = false);
+    }
+    await Navigator.push(context, MaterialPageRoute(builder: (context) => const LevelsScreen()));
+    _refreshStats();
+  }
+
+  // כפתור CTA מלא-רוחב בגרדיאנט כתום-זהב - "▶ שחקו את רמה X".
+  Widget _buildPlayCtaButtonV5() {
+    final (world, _, _) = _worldProgress(maxLevel);
+    return Material(
+      key: _tourCtaKey,
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: _goToLevelsV5,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            gradient: const LinearGradient(colors: [Color(0xFFFFB24D), Color(0xFFFF8A3C)]),
+            boxShadow: [BoxShadow(color: const Color(0xFFFF8A3C).withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 8))],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            textDirection: TextDirection.rtl,
+            children: [
+              Text('שחקו את רמה $world', style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
+              const SizedBox(width: 8),
+              const Icon(Icons.play_arrow_rounded, color: Color(0xFF2A1740), size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // שורת נקודות התקדמות - "18 •••••• 1" במוקאפ. אותם נתונים בדיוק כמו
+  // הפיל/פס ההתקדמות הישן (_worldProgress), רק כתצוגת נקודות במקום %.
+  Widget _buildProgressDotsV5() {
+    final (_, sub, count) = _worldProgress(maxLevel);
+    final dots = count.clamp(1, 40); // הגנה - עולם הכי ארוך היום הוא 35
+    return Row(
+      textDirection: TextDirection.rtl,
+      children: [
+        Text('$count', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Row(
+            children: List.generate(dots, (i) {
+              final idx = i + 1;
+              final isCurrent = idx == sub;
+              final isDone = idx < sub;
+              final color = isCurrent
+                  ? const Color(0xFFFFD86B)
+                  : (isDone ? const Color(0xFF4ADE80) : Colors.white.withValues(alpha: 0.18));
+              return Expanded(
+                child: Container(
+                  height: 5,
+                  margin: const EdgeInsets.symmetric(horizontal: 1.2),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), color: color),
+                ),
+              );
+            }),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text('1', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
+      ],
+    );
+  }
+
+  // גריד 2x2 - מחליף את _buildModesGrid + _buildBattlePassCard +
+  // _buildDailyChallengeCard הישנים באחד מאוחד, כל כרטיס עם אותו onTap
+  // ומקור נתונים בדיוק כמו קודם (ראו הערות בכל כרטיס).
+  Widget _buildHomeGridV5() {
+    final liveCount = (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) + (_superdualPlayersNow ?? 0);
+
+    final challenge = _dailyChallenge;
+    final done = challenge?.completed ?? false;
+    final usedUp = challenge != null && !done && challenge.attempted;
+    final dailySubtitle = done
+        ? 'קיבלת את הפרס - חוזר מחר'
+        : (usedUp ? 'נוצל להיום, נסה מחר' : '${MissionsService.dailyChallengeLogoCount} לוגואים');
+
+    final bpSubtitle = _bpPendingClaims > 0 ? 'דרגה $_bpTier • $_bpPendingClaims פרסים מחכים' : 'דרגה $_bpTier';
+
+    return Column(
+      children: [
+        Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            Expanded(
+              child: _HomeStatusCardV5(
+                key: _tourRandomCardKey,
+                gradient: const [Color(0xFF4FACFE), Color(0xFF2E6DC4)],
+                icon: Icons.casino_rounded,
+                title: 'רנדומלי',
+                subtitle: 'לוגו אקראי • רצף $streak 🔥',
+                onTap: () async {
+                  AudioManager.playClick();
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LevelLoadingScreen(puzzleId: 0, isRandomMode: true, categoryLabel: "אתגר רנדומלי")),
+                  );
+                  _refreshStats();
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _HomeStatusCardV5(
+                key: _tourVsOthersCardKey,
+                gradient: const [Color(0xFFEF3B5B), Color(0xFFC2163F)],
+                icon: Icons.groups_rounded,
+                title: 'מול אחרים',
+                subtitle: '3 מודים • $liveCount מחוברים',
+                topLeftBadge: _liveBadgeV5(liveCount),
+                onTap: () async {
+                  AudioManager.playClick();
+                  // 🩹 מסך "מול אחרים" בודק בעצמו (PlayVsPersonModeScreen, ראו
+                  // FirstVisitExplainer) אם זו הכניסה הראשונה שלו אליו - לא
+                  // משנה אם זה קרה דרך הסיור או בכל דרך אחרת מאוחר יותר.
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => PlayVsPersonModeScreen(username: username)),
+                  );
+                  _refreshStats();
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            Expanded(
+              child: _HomeStatusCardV5(
+                gradient: const [Color(0xFFFFB24D), Color(0xFFFF8A3C)],
+                icon: Icons.auto_awesome_rounded,
+                title: 'באטל פאס',
+                subtitle: bpSubtitle,
+                topLeftBadge: _bpPendingClaims > 0 ? _countBadgeV5(_bpPendingClaims, const Color(0xFFE11D74)) : null,
+                onTap: () async {
+                  AudioManager.playClick();
+                  await Navigator.push(context, MaterialPageRoute(builder: (context) => const BattlePassScreen()));
+                  _refreshStats();
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _HomeStatusCardV5(
+                gradient: const [Color(0xFF34D399), Color(0xFF15936A)],
+                icon: Icons.event_note_rounded,
+                title: 'אתגר יומי',
+                subtitle: dailySubtitle,
+                onTap: _playDailyChallenge,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // 🩹 לפי בקשה מפורשת - התג עצמו ("LIVE") מציג גם את כמות השחקנים
+  // המחוברים, לא רק את המילה "LIVE" לבד (הכמות עדיין מופיעה גם בתת-
+  // הכותרת של הכרטיס - "3 מודים • X מחוברים" - זו תוספת, לא תחליף).
+  // 🩹 תוקן לפי בקשה מפורשת: היה כתוב "LIVE $liveCount" - עכשיו "X
+  // מחוברים" (בלי המילה LIVE בכלל).
+  Widget _liveBadgeV5(int liveCount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.black.withValues(alpha: 0.32)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 7, height: 7, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
+          const SizedBox(width: 5),
+          Text('$liveCount מחוברים', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _countBadgeV5(int count, Color color) {
+    return Container(
+      width: 22,
+      height: 22,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color, border: Border.all(color: const Color(0xFF120C2E), width: 1.5)),
+      child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+    );
+  }
+
+  // ===================== הדרכה ראשונית: סיור קצר מעל מסך הבית =====================
+  // 🩹 עוצב מחדש לגמרי לפי שתי בקשות מפורשות:
+  // 1. "ברגע שיש הסבר על משהו זה ממש יתמקד עליו" - במקום כרטיסיה שצפה
+  //    במיקום קבוע (שיכולה לשבת בדיוק מעל מה שהיא מסבירה עליו), עכשיו
+  //    זה "ספוטלייט" אמיתי: מחפשים את המיקום/גודל הממשי של הרכיב האמיתי
+  //    על המסך (GlobalKey + RenderBox.localToGlobal) ומציירים הדהוי כהה
+  //    עם "חור" מדויק בדיוק מעל הרכיב הזה (4 מלבנים כהים מסביב לחור,
+  //    לא ממש ציור Path עם חור - פשוט וחסין יותר) + מסגרת זוהרת סביבו.
+  //    הכרטיסיה עצמה תמיד מוצבת *מחוץ* לאזור המודגש (מעליו/מתחתיו, לפי
+  //    מי מהם יותר קרוב לקצה המסך), כך שהיא לעולם לא מכסה את מה שמוסבר.
+  // 2. "הסבר על שחק מול אחרים שיסביר, ירשום לחץ עליו, ואז בפנים יסביר" -
+  //    שלב 3 (האחרון) לא מציג כפתור "הבא" - החור בהדהוי חושף את הכרטיס
+  //    האמיתי "מול אחרים" ומאפשר ללחוץ עליו ישירות (אין שום Widget חוסם
+  //    מעל החור), והלחיצה עצמה (ראו _buildHomeGridV5) גם מסיימת את הסיור
+  //    וגם פותחת את PlayVsPersonModeScreen עם showOnboardingIntro: true,
+  //    שמציג שם הסבר נוסף על 3 המודים (ראו play_vs_person_mode_screen.dart).
+  // 🆕 כרטיסיית "ברוכים הבאים" כללית - שלב 0 של ההדרכה, לפני שהספוטלייט
+  // מתחיל להדגיש רכיבים ספציפיים. לא קשורה למיקום של שום רכיב במסך,
+  // ולכן ממורכזת במקום "חור" בהדהוי כמו שאר שלבי הסיור.
+  Widget _buildHomeTourWelcomeOverlay() {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(onTap: () {}, child: Container(color: const Color(0xCC0C0820))),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 18,
+            child: TextButton(
+              onPressed: _skipOnboarding,
+              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  color: Colors.white,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 30, offset: const Offset(0, 14))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 🐛 תוקן: "הלוגו נמצא מוזר למעלה" - בתוך Column עם
+                    // crossAxisAlignment.stretch, תמונה עם width מפורש (72)
+                    // עדיין נדחסת/נמתחת לרוחב המלא של הכרטיס ע"י אילוצי הרוחב
+                    // ה"הדוקים" שה-Column כופה (stretch=תמיד למלא את הרוחב),
+                    // כך שהלוגו יצא רצועה רחבה ומעוותת בגובה 72 בלבד, לא ריבוע
+                    // מרוכז. עטפתי ב-Center + מסגרת זהב כמו בשאר האפליקציה.
+                    Center(
+                      child: Container(
+                        width: 76,
+                        height: 76,
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE79A), Color(0xFFC98A32), Color(0xFFFFD86B)]),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 4))],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(17),
+                          child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('ברוכים הבאים ל"זהה את הלוגו!" 🎉', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF2A1740), fontSize: 18, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    const Text('בואו נראה לכם בקצרה איך המשחק עובד - זה ייקח רק חצי דקה, ואפשר לדלג בכל שלב.', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF8A3C),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          AudioManager.playClick();
+                          setState(() => _tourWelcomeDismissed = true);
+                          _ensureTourStepVisible();
+                        },
+                        child: const Text('בואו נתחיל ›', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeTourOverlayV5() {
+    // 🩹 תוקן לפי בקשה מפורשת: הסדר השתנה - קודם מסבירים על "מול אחרים"
+    // (בלי ללחוץ), אחר כך על "רנדומלי", וה-שלב האחרון/הפעיל-ללחיצה הוא
+    // "רנדומלי" (לא "מול אחרים" כמו קודם) - כי הוא מוביל למשחק יחיד עם
+    // הדרכה מלאה ובדוקה, בלי תלות ביריב אמיתי אונליין.
+    // 🩹 תוקן לפי בקשה מפורשת: "אני רוצה שהם ישלחו את הבנאדם לרמות
+    // והשלבים" - קודם מסבירים על "מול אחרים", אחר כך "רנדומלי" (שניהם
+    // בלי ללחוץ), והשלב האחרון/הפעיל-ללחיצה הוא כפתור "שחקו את רמה X"
+    // (ראו _goToLevelsV5) - מוביל למסך השלבים האמיתי.
+    final steps = [
+      (_tourVsOthersCardKey, 'שחק מול אחרים', 'דו-קרב, מירוץ וסדרת דו-קרב נגד שחקנים אמיתיים בזמן אמת.', false),
+      (_tourRandomCardKey, 'אתגר רנדומלי', 'לוגו רנדומלי בכל פעם - פותר נכון שומר על הרצף (🔥) שרואים כאן.', false),
+      (_tourCtaKey, 'כאן מתחילים לשחק', 'כפתור "שחקו את רמה X" לוקח אתכם ישר ללוגו הבא בתור. לחצו על הכפתור המואר כדי להתחיל לשחק!', true),
+    ];
+    final (targetKey, title, body, isTapThrough) = steps[_tourStep];
+
+    final ctx = targetKey.currentContext;
+    final box = ctx?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      // הרכיב עוד לא צויר בפריים הזה (למשל מיד אחרי מעבר שלב) - מתזמנים
+      // רענון לפריים הבא במקום להציג ספוטלייט ללא חור בכלל.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return const SizedBox.shrink();
+    }
+    final screenSize = MediaQuery.of(context).size;
+    final topLeft = box.localToGlobal(Offset.zero);
+    final hole = (topLeft & box.size).inflate(8);
+    final showCardBelow = hole.center.dy < screenSize.height * 0.6;
+    const dimColor = Color(0xCC0C0820);
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // 4 מלבנים כהים מסביב לחור (למעלה/למטה/שמאל/ימין) - משאירים
+          // את שטח ה-hole עצמו לגמרי חשוף (לא מצייר שם כלום), כך שהרכיב
+          // האמיתי מתחתיו גלוי לגמרי *וגם* לחיץ (אין Widget חוסם מעליו).
+          // 🐛 תוקן: IgnorePointer על המלבנים האלה גרם להם *לא* לחסום
+          // לחיצות (IgnorePointer = "שקוף ללחיצות", ההפך ממה שרצינו) -
+          // אפשר היה ללחוץ "דרך" האזור הכהה על תוכן אמיתי מתחתיו. עכשיו
+          // כל מלבן הוא GestureDetector חוסם אמיתי (בולע את הלחיצה).
+          Positioned(left: 0, top: 0, right: 0, height: hole.top.clamp(0, screenSize.height), child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: 0, top: hole.bottom.clamp(0, screenSize.height), right: 0, bottom: 0, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: 0, top: hole.top, width: hole.left.clamp(0, screenSize.width), height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: hole.right, top: hole.top, right: 0, height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          // מסגרת זוהרת סביב החור - מדגישה ויזואלית מה בדיוק "מואר".
+          Positioned(
+            left: hole.left,
+            top: hole.top,
+            width: hole.width,
+            height: hole.height,
+            child: IgnorePointer(
+              child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFFFD86B), width: 2.5))),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 18,
+            child: TextButton(
+              onPressed: _skipOnboarding,
+              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Positioned(
+            top: showCardBelow ? hole.bottom + 14 : null,
+            bottom: showCardBelow ? null : (screenSize.height - hole.top + 14),
+            left: 18,
+            right: 18,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: screenSize.height * 0.4),
+              child: SingleChildScrollView(
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.white,
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 24, offset: const Offset(0, 10))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('${_tourStep + 1} מתוך $_tourStepCount', style: TextStyle(color: Colors.black.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          Row(
+                            children: List.generate(_tourStepCount, (i) => Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: i == _tourStep ? const Color(0xFFFF8A3C) : Colors.black12),
+                                )),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 6),
+                      Text(body, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w600, height: 1.4)),
+                      const SizedBox(height: 14),
+                      if (isTapThrough)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('👆 ', style: const TextStyle(fontSize: 15)),
+                            Text('לחצו על הכרטיס המואר למעלה', textDirection: TextDirection.rtl, style: TextStyle(color: const Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900)),
+                          ],
+                        )
+                      else
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF8A3C),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: _advanceHomeTour,
+                            child: const Text('הבא', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1330,13 +2070,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // כמו במוקאפ (מסך 01 · בית): עיגול גדול יותר (56px). כשמועבר gradient
   // (המתנה) העיגול מלא בצבע במקום שקוף - כדי שיבלוט כ"מתנה" צבעונית.
   Widget _topIconButton({
-    required IconData icon,
+    IconData? icon,
     required VoidCallback onTap,
     bool showDot = false,
     Color? ringColor,
     Gradient? gradient,
     Color? iconColor, // 🆕 צבע אייקון אופציונלי - כדי לבלוט קצת (למשל מתנה בזהב) בלי גרדיאנט מלא שלא מתאים לשפה העיצובית של שאר הסרגל
+    // 🆕 תמונת PNG (כמו GiftIcon) במקום אייקון וקטורי - ראו app_icons.dart
+    // להסבר המלא למה (אייקוני Material לא תמיד נטענים אצל המשתמש הזה).
+    // כשסופק - מחליף לגמרי את ה-Icon(icon) הרגיל.
+    Widget? iconWidget,
   }) {
+    assert(icon != null || iconWidget != null, '_topIconButton needs either icon or iconWidget');
     return Material(
       color: gradient == null ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
       shape: CircleBorder(side: (ringColor != null && gradient == null) ? BorderSide(color: ringColor.withValues(alpha: 0.7), width: 1.6) : BorderSide.none),
@@ -1355,7 +2100,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              Icon(icon, color: iconColor ?? Colors.white, size: gradient != null ? 25 : 22),
+              iconWidget ?? Icon(icon, color: iconColor ?? Colors.white, size: gradient != null ? 25 : 22),
               if (showDot)
                 Positioned(
                   top: 6,
@@ -1786,13 +2531,20 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     final String subtitle = done
         ? "אתגר יומי · קיבלת את הפרס - חוזר מחר"
         : (usedUp ? "אתגר יומי · נוצל להיום, נסה מחר" : "אתגר יומי · ${MissionsService.dailyChallengeLogoCount} לוגואים");
-    final String btnLabel = done ? "בוצע ✓" : (usedUp ? "מחר" : "שחק");
+    // 🐛 תוקן: "לא מופיע העניין של ההתראות" - הכרטיס הזה היה onTap: null
+    // (לגמרי לא לחיץ) ברגע שהאתגר כבר נוצל/הושלם היום - בדיוק המצב שבו
+    // כפתור "תזכיר לי מחר" (daily_challenge_screen.dart, _buildAlreadyDone/
+    // _buildUsedUp) אמור להופיע. כלומר אי אפשר היה בכלל להגיע למסך שבו
+    // הכפתור קיים. עכשיו הכרטיס תמיד לחיץ (הניגוה/הדהוי נשאר ויזואלית
+    // בלבד), ותווית הכפתור במצב "נוצל" משתנה מ"מחר" (משתמע לא-לחיץ)
+    // ל"תזכורת" כדי לרמוז שיש עוד משהו לעשות שם.
+    final String btnLabel = done ? "בוצע ✓" : (usedUp ? "תזכורת" : "שחק");
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: dimmed ? null : _playDailyChallenge,
+        onTap: _playDailyChallenge,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
@@ -2975,6 +3727,83 @@ class _FadeSlideInState extends State<_FadeSlideIn> with SingleTickerProviderSta
 // לפי המוקאפ (מסך 01 · בית): כרטיס מלא-צבע (גרדיאנט אלכסוני), אייקון
 // בריבוע לבן-שקוף בפינה העליונה, כותרת ותת-כותרת קצרה בתחתית. בלי מסגרת,
 // בלי תג "חדש", בלי צ'יפ נוסף - בדיוק כמו שמופיע בעיצוב.
+
+// 🆕 כרטיס גריד 2x2 של מסך הבית ("Home v5") - גרדיאנט מלא, אייקון
+// בעיגול שקוף-לבן בפינה (ימין-עליון מבחינת מסך, קבוע בלי קשר ל-RTL,
+// בדיוק כמו במוקאפ), תג אופציונלי בפינה הנגדית (שמאל-עליון), וכותרת
+// + תת-כותרת צמודים לתחתית הכרטיס. ראו _buildHomeGridV5 לשימוש.
+class _HomeStatusCardV5 extends StatelessWidget {
+  final List<Color> gradient;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Widget? topLeftBadge;
+
+  const _HomeStatusCardV5({
+    super.key,
+    required this.gradient,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.topLeftBadge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          height: 106,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradient),
+            boxShadow: [BoxShadow(color: gradient.last.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 8))],
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.22)),
+                  child: Icon(icon, color: Colors.white, size: 18),
+                ),
+              ),
+              if (topLeftBadge != null) Positioned(top: 0, left: 0, child: topLeftBadge!),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      textDirection: TextDirection.rtl,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11.5, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _ModeCard extends StatelessWidget {
   final Widget icon;

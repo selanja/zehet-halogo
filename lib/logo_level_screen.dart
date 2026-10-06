@@ -31,6 +31,8 @@ import 'app_notification.dart';
 // היחידה, כדי שרמה חדשה שנוספת פעם אחת ב-level_data.dart תופיע
 // אוטומטית בכל מקום - לא רק בחלק מהמסכים.
 import 'level_data.dart';
+import 'onboarding_gift_popup.dart'; // 🆕 פופאפ מתנת סיום ההדרכה - מוצג כאן ישירות, לא נדחה למסך הבית
+import 'first_visit_explainer.dart'; // 🆕 "האם זו הכניסה הראשונה למסך רמה" - עצמאי, לא תלוי בסיור במסך הבית
 class LogoLevelScreen extends StatefulWidget {
   final int puzzleId;
   final bool isRandomMode; // מצב "אתגר רנדומלי"
@@ -84,6 +86,38 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
   // מה הרווחנו בשלב האחרון - לתצוגה בחלון "כל הכבוד"
   int lastEarnedXp = 0;
   int lastEarnedCoins = 0;
+
+  // 🆕 שני טיפי ההדרכה האחרונים (ראו onboarding_service.dart) - מוצגים
+  // רק ברמה הראשונה אחרי שהשחקן סיים את הסיור הקצר במסך הבית, פעם אחת
+  // כל אחד (ה-bool "Shown" מונע הצגה חוזרת אם יש כמה חידות באותה כניסה).
+  bool _isOnboardingLevel = false;
+  bool _onboardingHintTipShown = false;
+  bool _onboardingCorrectTipShown = false;
+
+  // 🆕 "הסבר בתוך המשחק על הרמזים + השלבים, איך רושמים והכל" - לפני
+  // שבכלל מתחילים להקליד, מסביר ברמה הראשונה (ספוטלייט אמיתי על הרכיב,
+  // אותה טכניקה בדיוק כמו הסיור במסך הבית - ראו main_menu_screen.dart)
+  // את כותרת השלב, תמונת הלוגו, תאי האותיות, והמקלדת - בזה אחר זה. רק
+  // *אחרי* שזה נסגר (_onboardingIntroDone) הטיימר של בועת "תקוע?" מתחיל
+  // לרוץ בכלל (ראו _restartStuckHintTimer) - כדי שהבועה המהירה (2 שניות)
+  // לא תקפוץ באמצע ההסבר הזה.
+  int _onboardingIntroStep = 0;
+  static const int _onboardingIntroStepCount = 4;
+  bool _onboardingIntroDone = false;
+  bool get _showOnboardingIntro => _isOnboardingLevel && !_onboardingIntroDone;
+  final GlobalKey _tourHeaderKey = GlobalKey();
+  final GlobalKey _tourLogoKey = GlobalKey();
+  final GlobalKey _tourSlotsKey = GlobalKey();
+  final GlobalKey _tourKeyboardKey = GlobalKey();
+  // 🐛 תוקן: "המלבן הזוהר מופיע במקום לא נכון" - ה-Stack שמכיל גם את
+  // הרכיבים המודגשים וגם את שכבת הספוטלייט עצמה עטוף ב-SafeArea, אז
+  // ה-Positioned(top:..., left:...) של הספוטלייט יחסי למקור ה-Stack
+  // (שכבר "זז" למטה בגובה פס הסטטוס). אבל box.localToGlobal(Offset.zero)
+  // ללא ancestor מחזיר קואורדינטות יחסיות לשורש המסך הגלובלי (מעל
+  // ה-SafeArea) - כך שהחור תמיד יצא מוסט למטה בדיוק בגובה פס הסטטוס.
+  // המפתח הזה נותן RenderBox של ה-Stack עצמו, כדי לחשב מיקום יחסי אליו
+  // (ancestor:) במקום לשורש הגלובלי - ראו _buildOnboardingIntroSpotlight.
+  final GlobalKey _tourStackKey = GlobalKey();
 
   // מצב רנדומלי
   bool isPickingRandom = false;
@@ -231,7 +265,17 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
   void _restartStuckHintTimer() {
     _stuckHintTimer?.cancel();
     _hideStuckTipOverlay();
-    _stuckHintTimer = Timer(const Duration(seconds: 10), () {
+    // 🆕 כל עוד הסבר ה"איך משחקים" הפותח עדיין מוצג (ראו _showOnboardingIntro)
+    // - לא מתזמנים את בועת "תקוע?" בכלל. היא תתחיל לרוץ ברגע שההסבר נסגר
+    // (_dismissOnboardingIntro קורא ל-_restartStuckHintTimer שוב בעצמו).
+    if (_showOnboardingIntro) return;
+    // 🆕 ברמה הראשונה אחרי הסיור במסך הבית (ראו _isOnboardingLevel) -
+    // מציגים את הבועית הרבה יותר מהר (2 שניות, לא 10) ועם טקסט הסברי
+    // ייעודי (ראו _showStuckTipOverlay), כדי שהשחקן באמת ילמד שיש כפתור
+    // רמז, ולא רק ייתקל בו במקרה אם הוא נתקע. אחרי שהיא כבר הוצגה פעם
+    // אחת (_onboardingHintTipShown), חוזרים להתנהגות הרגילה.
+    final delay = (_isOnboardingLevel && !_onboardingHintTipShown) ? const Duration(seconds: 2) : const Duration(seconds: 10);
+    _stuckHintTimer = Timer(delay, () {
       if (!mounted) return;
       _showStuckTipOverlay();
     });
@@ -276,9 +320,16 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
         // רמז-פרסומת פנוי / אין מטבעות וגם כבר נוצל רמז-הפרסומת בחידה הזו.
         final bool hasEnoughCoins = coins >= 20;
         final bool isFreeAd = !hasEnoughCoins && !adHintUsedThisPuzzle;
-        final String bubbleText = hasEnoughCoins
-            ? "יש לך רמז! 💡"
-            : (isFreeAd ? "פרסומת = רמז חינם 🎬" : "לחץ למנורה 💡");
+        // 🆕 ברמה הראשונה (הדרכה) - הצגה הראשונה של הבועית מקבלת טקסט
+        // הסברי ייעודי במקום ההודעות הקצרות הרגילות, בדיוק לפי מוקאפ
+        // ההדרכה ("תקועים? אפשר לקנות רמז עם המטבעות שהרווחתם").
+        final bool isOnboardingTip = _isOnboardingLevel && !_onboardingHintTipShown;
+        if (isOnboardingTip) _onboardingHintTipShown = true;
+        // 🩹 טקסט קצר בכוונה - הבועית הזו לא עוטפת שורות (softWrap: false
+        // למטה), אז טקסט ארוך מדי פשוט היה גולש מחוץ למסך.
+        final String bubbleText = isOnboardingTip
+            ? "אפשר לקנות רמז עם מטבעות 💡"
+            : (hasEnoughCoins ? "יש לך רמז! 💡" : (isFreeAd ? "פרסומת = רמז חינם 🎬" : "לחץ למנורה 💡"));
         final List<Color> bubbleGradient = isFreeAd
             ? const [Color(0xFF9B5CF6), Color(0xFF7C3AED)]
             : const [Color(0xFFFFE08A), Color(0xFFFFB24D)];
@@ -458,8 +509,58 @@ void initState() {
   DebugLog.add("LogoLevelScreen.initState: listeners attached, calling _checkConnectivityAndStart");
   _checkConnectivityAndStart();
   _loadLevelOverride(); // 🆕 תיקוני שלבים מרחוק - ברקע, לא חוסם את תחילת המשחק
+  // 🐛 תוקן: "מדגיש את שחק מול אחרים אבל ההסבר נמצא בשלבים" - קודם זה
+  // היה תלוי בדגל (markGameplayTutorialPending) שסומן בטעות גם כשהשחקן
+  // בחר "מול אחרים" בסיור, כך שההדרכה הזו (שלא קשורה בכלל) קפצה מאוחר
+  // יותר בתוך רמה רגילה. עכשיו זה בודק באופן עצמאי לגמרי (כמו מסכי
+  // משימות/חברים/מובילים - ראו FirstVisitExplainer) אם זו הכניסה הראשונה
+  // אי-פעם למסך רמה - לא משנה איך הגיעו לכאן.
+  // 🩹 תוקן לפי בקשה מפורשת: "תעשה אותם בעניין של השלבים ולא הרנדומלי
+  // כי הרנדומלי קשה" - ההדרכה (וממילא הפרס שתלוי בה, ראו
+  // _maybeGrantFirstLevelGift) מוצגת רק דרך השלבים הרגילים (קטגוריה
+  // מסודרת, מתחילה בקלות), לא דרך "אתגר רנדומלי" (לוגו אקראי מכל
+  // הקטגוריות - קשה מדי לפעם ראשונה). אם שחקן חדש נכנס קודם לרנדומלי
+  // (למשל בלי לעבור דרך הסיור בכלל), ההדרכה פשוט לא מופיעה שם - היא
+  // תחכה לו עד שייכנס לשלבים.
+  if (!widget.isRandomMode) {
+    FirstVisitExplainer.shouldShow('soloLevel').then((show) {
+      if (show && mounted) setState(() => _isOnboardingLevel = true);
+    });
+  }
   DebugLog.add("LogoLevelScreen.initState END");
 }
+
+  // 🩹 תוקן לפי בקשה מפורשת: "עדיין לא רשמתי את המילה... ואז שזה יעבור
+  // ויקפוץ ההודעה של סיום ההדרכה" - השחקן פותר את הלוגו הראשון בעצמו
+  // (הקלדה רגילה, ראו _onLetterPressed/_checkAnswer) - ברגע שהתשובה
+  // הנכונה הזו מתקבלת, זה נקרא במקום דיאלוג "כל הכבוד!" הרגיל ומציג
+  // את פופאפ המתנה (50 מטבעות) - "המשיכו לשחק" מעביר ישר לשלב הבא,
+  // בדיוק כמו שכפתור הדיאלוג הרגיל היה עושה.
+  Future<void> _maybeGrantFirstLevelGift() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = prefs.getBool('pendingFirstLevelGift') ?? false;
+    if (!pending) return;
+    await prefs.setBool('pendingFirstLevelGift', false);
+    final newCoins = (prefs.getInt('coins') ?? 15) + 50;
+    await prefs.setInt('coins', newCoins);
+    if (!mounted) return;
+    setState(() => coins = newCoins);
+    showOnboardingGiftPopup(context, coins: 50, onContinue: _goToNextLevel);
+  }
+
+  void _advanceOnboardingIntro() {
+    AudioManager.playClick();
+    if (_onboardingIntroStep >= _onboardingIntroStepCount - 1) {
+      setState(() {
+        _onboardingIntroDone = true;
+        _onboardingIntroStep = 0;
+      });
+      FirstVisitExplainer.markSeen('soloLevel');
+      _restartStuckHintTimer(); // 🆕 עכשיו, אחרי שההסבר נסגר, מתחילים למנות את בועת "תקוע?"
+    } else {
+      setState(() => _onboardingIntroStep++);
+    }
+  }
 
   // 🆕 טוען (אם עוד לא נטען מוקדם יותר בסשן) את רשימת תיקוני השלבים
   // מ-Firestore, ומרענן את המסך אם התוצאה השתנתה - כדי שאם השלב הנוכחי
@@ -796,6 +897,20 @@ void initState() {
  void _onLetterPressed(int index, String letter) async {
   int emptySlot = guessSlots.indexWhere((slot) => slot == null);
   if (emptySlot == -1) return; // אין יותר עמדות פנויות
+
+  // 🆕 "הם ממש לוחצים על הכפתורים לפי מה שרשום ואז יהיה רשום להם בוא
+  // נתחיל לשחק" - הלחיצה האמיתית הזו (על אות אמיתית, דרך ה"חור" הפתוח
+  // בספוטלייט של שלב המקלדת - ראו _buildOnboardingIntroSpotlight) היא
+  // מה שמסיים את ההדרכה הפותחת - וגם נרשמת כניחוש אמיתי (ממשיכים מטה,
+  // בלי return). 🩹 תוקן לפי בקשה מפורשת: "עדיין לא רשמתי את המילה אני
+  // צריך לרשום ואז שזה יעבור ויקפוץ ההודעה של סיום ההדרכה" - השחקן
+  // כותב את הלוגו הראשון בעצמו, כרגיל; פופאפ המתנה מוצג רק כש*באמת*
+  // פותרים אותו נכון (ראו _checkAnswer).
+  if (_showOnboardingIntro && _onboardingIntroStep == _onboardingIntroStepCount - 1) {
+    setState(() => _onboardingIntroDone = true);
+    FirstVisitExplainer.markSeen('soloLevel');
+    _restartStuckHintTimer();
+  }
 
   AudioManager.playClick(); // צליל קליק על כל לחיצת אות (סאונד מערכת - תמיד עובד)
 
@@ -1338,7 +1453,20 @@ void initState() {
     await Future.delayed(const Duration(milliseconds: 300));
 
     if (!mounted) return;
-    _showResultDialog(true);
+    // 🩹 לפי בקשה מפורשת: "עדיין לא רשמתי את המילה... ואז שזה יעבור
+    // ויקפוץ ההודעה של סיום ההדרכה" - התשובה הנכונה *האמיתית* הראשונה
+    // (השחקן כתב אותה בעצמו) היא מה שמציג את פופאפ מתנת ההדרכה, לא
+    // דיאלוג "כל הכבוד!" הרגיל - רק בפעם הזו, בפתרון הראשון של הרמה
+    // הראשונה אחרי הסיור. _maybeGrantFirstLevelGift בעצמה בודקת את
+    // pendingFirstLevelGift ולא עושה כלום אם כבר נוצל (ואז נופלים
+    // חזרה לדיאלוג הרגיל, למקרה הקצה).
+    final prefs2 = await SharedPreferences.getInstance();
+    final showGift = _isOnboardingLevel && (prefs2.getBool('pendingFirstLevelGift') ?? false);
+    if (showGift) {
+      _maybeGrantFirstLevelGift();
+    } else {
+      _showResultDialog(true);
+    }
   } else if (cleanGuess.length == cleanAnswer.length) {
     if (!mounted) return;
     // טעות במילה - הדבר היחיד שמאפס את הרצף 🔥
@@ -1525,6 +1653,24 @@ void initState() {
     // מציעים רמז/פרסומת על שאלה שכבר נפתרה.
     _stuckHintTimer?.cancel();
     _hideStuckTipOverlay();
+    // 🆕 נקבע *לפני* ה-showDialog (לא בתוך ה-builder, שיכול לרוץ כמה
+    // פעמים) כדי שטיפ ההדרכה יוצג פעם אחת בלבד גם אם יש כמה חידות באותה
+    // כניסה לרמה הראשונה.
+    final bool showOnboardingCorrectTip = isCorrect && _isOnboardingLevel && !_onboardingCorrectTipShown;
+    if (showOnboardingCorrectTip) {
+      _onboardingCorrectTipShown = true;
+    }
+    // 🩹 תוקן: "אני לא מקבל את הפרס" - הענקת הפרס הייתה תלויה ב-
+    // showOnboardingCorrectTip (ובתוכו ב-_isOnboardingLevel), אותו דגל
+    // בדיוק שקובע אם ספוטלייט ה"הדרכה" הוויזואלי מוצג. אם הספוטלייט לא
+    // מוצג מסיבה כלשהי (למשל seenExplainer_soloLevel כבר true מבדיקה
+    // קודמת על אותו מכשיר) - הפרס לא ניתן אף פעם, והשחקן נשאר תקוע עם
+    // 0 מטבעות/אנרגיה. עכשיו זה עצמאי לגמרי מהתצוגה - ראו
+    // pendingFirstLevelGift שנקבע ב-main_menu_screen.dart.
+    // 🩹 גם הפרס קשור לשלבים בלבד (ראו ההערה ב-initState למעלה) - כדי
+    // שהחוויה המודרכת המלאה (הדרכה + פרס בסוף) תהיה תמיד ביחד, לא שהפרס
+    // יינתן בלי שום הסבר אם שחקן חדש נכנס קודם לרנדומלי.
+    if (isCorrect && !widget.isRandomMode) _maybeGrantFirstLevelGift();
     final Color glow = isCorrect ? const Color(0xFF34D399) : const Color(0xFFFB7185);
     showDialog(
       context: context,
@@ -1585,6 +1731,18 @@ void initState() {
                       if (lastEarnedCoins > 0) _resultChip(text: "+$lastEarnedCoins", color: const Color(0xFFFFE7A8), icon: Icons.monetization_on_rounded),
                     ],
                   ),
+                  // 🆕 טיפ הדרכה אחרון (ראו onboarding_service.dart) - רק
+                  // בתשובה הנכונה הראשונה ברמה הראשונה אחרי הסיור במסך
+                  // הבית, מסביר מה בדיוק קרה כרגע (XP/מטבעות).
+                  if (showOnboardingCorrectTip) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      "ככה בדיוק משחקים! כל תשובה נכונה מזכה אתכם בנקודות ניסיון (XP) ומטבעות",
+                      textAlign: TextAlign.center,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 22),
                 Material(
@@ -1786,11 +1944,13 @@ void initState() {
       body: AppBackground(
         child: SafeArea(
           child: Stack(
+            key: _tourStackKey,
             children: [
               Column(
             children: [
               // ===== כותרת: כפתורי זכוכית + כותרת ותת-כותרת + שבבי מטבעות/XP =====
               Padding(
+                key: _tourHeaderKey,
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                 child: Row(
                   children: [
@@ -1833,6 +1993,7 @@ void initState() {
 
               // ===== כרטיס הלוגו =====
               Container(
+                key: _tourLogoKey,
                 padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(32),
@@ -1852,7 +2013,7 @@ void initState() {
               ),
               const SizedBox(height: 30),
 
-              _buildInputArea(isEnglish),
+              KeyedSubtree(key: _tourSlotsKey, child: _buildInputArea(isEnglish)),
 
               const Spacer(),
 
@@ -1883,6 +2044,7 @@ void initState() {
               const SizedBox(height: 14),
 
               Container(
+                key: _tourKeyboardKey,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 // 📐 גודל מקש דינמי לפי רוחב המסך בפועל - מבטיח בדיוק 2
                 // שורות תמיד (כמו שתוכנן), גם על מסכים צרים יותר, במקום
@@ -1955,6 +2117,7 @@ void initState() {
                   },
                 ),
               ),
+              if (_showOnboardingIntro) _buildOnboardingIntroSpotlight(),
             ],
           ),
         ),
@@ -1962,6 +2125,141 @@ void initState() {
     );
     DebugLog.add("LogoLevelScreen.build: widget tree constructed, returning");
     return mainScaffold;
+  }
+
+  // ===================== הדרכה ראשונית בתוך המשחק =====================
+  // 🆕 "הסבר בתוך המשחק על הרמזים + השלבים, איך רושמים והכל" - ספוטלייט
+  // אמיתי (בדיוק אותה טכניקה כמו הסיור במסך הבית ב-main_menu_screen.dart:
+  // GlobalKey + RenderBox.localToGlobal כדי למצוא את המיקום/גודל האמיתי
+  // של הרכיב, 4 מלבנים כהים מסביב ל"חור" + מסגרת זוהרת) שמסביר בזה אחר
+  // זה: כותרת השלב → תמונת הלוגו → תאי האותיות → המקלדת. רק אחרי שזה
+  // נסגר מתחילה בועת "תקוע?" לרוץ (ראו _restartStuckHintTimer), וההסבר
+  // על תשובה נכונה (ראו _showResultDialog) ממשיך כרגיל בהמשך.
+  Widget _buildOnboardingIntroSpotlight() {
+    final steps = [
+      (_tourHeaderKey, 'איפה אתם נמצאים', 'כאן רואים את הקטגוריה והשלב הנוכחי - כל לוגו שפותרים מקדם אתכם לשלב הבא.'),
+      (_tourLogoKey, 'זהו את הלוגו', 'זה הלוגו שצריך לזהות ולכתוב את השם שלו.'),
+      (_tourSlotsKey, 'כאן התשובה שלכם', 'כל אות שתקלידו תופיע כאן. לחצו על אות שכבר הקלדתם כדי למחוק רק אותה.'),
+      (_tourKeyboardKey, 'כאן מקלידים', 'הקישו על האותיות כאן כדי למלא את התשובה - לפי הסדר שבו הן מופיעות במילה.'),
+    ];
+    final (targetKey, title, body) = steps[_onboardingIntroStep];
+
+    final box = targetKey.currentContext?.findRenderObject() as RenderBox?;
+    final stackBox = _tourStackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize || stackBox == null || !stackBox.hasSize) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return const SizedBox.shrink();
+    }
+    final screenSize = MediaQuery.of(context).size;
+    // 🐛 תוקן: "המלבן הזוהר מופיע במקום לא נכון" - ראו הערה ב-_tourStackKey
+    // למעלה. localToGlobal(ancestor: stackBox) מחזיר מיקום יחסי ל-Stack
+    // שמכיל את שכבת ה-Positioned עצמה (בתוך ה-SafeArea), לא לשורש הגלובלי.
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: stackBox);
+    final hole = (topLeft & box.size).inflate(8);
+    final showCardBelow = hole.center.dy < screenSize.height * 0.6;
+    const dimColor = Color(0xCC0C0820);
+
+    // 🐛 תוקן: ה-IgnorePointer על ריבועי ההדהוי גרם להם *לא* לחסום לחיצות
+    // (IgnorePointer אומר "אני שקוף ללחיצות" - בדיוק ההפך ממה שרצינו) -
+    // כלומר אפשר היה ללחוץ "דרך" האזור הכהה על תוכן אמיתי מתחתיו. עכשיו
+    // כל ריבוע הדהוי הוא בעצמו GestureDetector חוסם אמיתי (בולע את
+    // הלחיצה, לא עושה כלום) - רק ה"חור" עצמו (בלי שום Widget מעליו)
+    // נשאר פתוח ללחיצות אמיתיות.
+    final isLastStep = _onboardingIntroStep == _onboardingIntroStepCount - 1;
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned(left: 0, top: 0, right: 0, height: hole.top.clamp(0, screenSize.height), child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: 0, top: hole.bottom.clamp(0, screenSize.height), right: 0, bottom: 0, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: 0, top: hole.top, width: hole.left.clamp(0, screenSize.width), height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(left: hole.right, top: hole.top, right: 0, height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(
+            left: hole.left,
+            top: hole.top,
+            width: hole.width,
+            height: hole.height,
+            child: IgnorePointer(
+              child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFFFD86B), width: 2.5))),
+            ),
+          ),
+          // 🆕 בשלב האחרון (המקלדת) - בכוונה *לא* חוסמים את החור, כדי
+          // שלחיצה אמיתית על אות אמיתית (ראו _onLetterPressed) תסיים את
+          // ההדרכה הזו - "הם ממש לוחצים על הכפתורים לפי מה שרשום".
+          // בשלבים הקודמים (כותרת/לוגו/תאים - אין שם פעולה אמיתית ללחוץ
+          // עליה) עדיין חוסמים את כל המסך, כולל החור, כדי שלא ילחצו
+          // בטעות על משהו לפני שההסבר מגיע לשם.
+          if (!isLastStep) Positioned.fill(child: GestureDetector(onTap: () {}, child: Container(color: Colors.transparent))),
+          Positioned(
+            top: showCardBelow ? hole.bottom + 14 : null,
+            bottom: showCardBelow ? null : (screenSize.height - hole.top + 14),
+            left: 18,
+            right: 18,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: screenSize.height * 0.4),
+              child: SingleChildScrollView(
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.white,
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 24, offset: const Offset(0, 10))],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('${_onboardingIntroStep + 1} מתוך $_onboardingIntroStepCount', style: TextStyle(color: Colors.black.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          Row(
+                            children: List.generate(_onboardingIntroStepCount, (i) => Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: i == _onboardingIntroStep ? const Color(0xFFFFD86B) : Colors.black12),
+                                )),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 6),
+                      Text(body, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w600, height: 1.4)),
+                      const SizedBox(height: 14),
+                      if (isLastStep)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('👆 ', style: TextStyle(fontSize: 15)),
+                            Text('לחצו על אות כדי להתחיל', textDirection: TextDirection.rtl, style: TextStyle(color: const Color(0xFFBE8A00), fontSize: 13.5, fontWeight: FontWeight.w900)),
+                          ],
+                        )
+                      else
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFD86B),
+                              foregroundColor: const Color(0xFF2A1740),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: _advanceOnboardingIntro,
+                            child: const Text('הבא', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _headerPill({required IconData? icon, required Color color, required String text}) {

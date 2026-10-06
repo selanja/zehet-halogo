@@ -15,7 +15,6 @@ import 'app_background.dart';
 import 'audio_manager.dart';
 import 'leaderboard.dart';
 import 'device_id.dart';
-import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - גם כאן, לא רק במסך הבית
 import 'ads_manager.dart'; // 🆕 מונה "גלישה בלי לשחק"
 import 'duel_service.dart'; // 🆕 עיצוב מחדש - מספר ניצחונות לכרטיס הפרופיל
 import 'notification_manager.dart'; // 🆕 מתג "התראות" - שולט על תזכורת בונוס המטבעות
@@ -25,6 +24,8 @@ import 'account_link_prompt.dart'; // 🆕 אותו דיאלוג קישור חש
 import 'app_notification.dart';
 import 'update_notes_screen.dart'; // 🆕 "מה חדש במשחק" - הערות עדכון מ-Firestore
 import 'package:package_info_plus/package_info_plus.dart'; // 🩹 מספר הגרסה בתחתית המסך נשלף אמיתי, לא מוקלד ידנית (היה נתקע ישן בכל עדכון)
+import 'friend_service.dart'; // 🆕 הקוד האישי - לבניית קישור ההזמנה האמיתי
+import 'referral_service.dart'; // 🩹 קישור ההזמנה האמיתי (עם הקוד מוטמע) + סכום הבונוס האמיתי
 
 class SettingsScreen extends StatefulWidget {
   final String username;
@@ -36,7 +37,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const String _supportEmail = "zehet.halogo@gmail.com";
-  static const String _iosStoreLink = "https://apps.apple.com/au/app/%D7%96%D7%94%D7%94-%D7%90%D7%AA-%D7%94%D7%9C%D7%95%D7%92%D7%95/id6797976197";
   static const String _androidStoreLink = "https://play.google.com/store/apps/details?id=com.ofeksela.zehethalogo&hl=he";
 
   // 🆕 שם השחקן מנוהל כאן מקומית (ולא רק דרך widget.username) כדי
@@ -88,195 +88,174 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  // 🎨 עוצב מחדש לפי מוקאפ HTML שנשלח במפורש ("אני רוצה שההגדרות יראו
+  // ככה בדיוק") - כרטיס פרופיל אחד (גרדיאנט סגול + אווטאר/שם/XP/כפתור
+  // שינוי שם + 3 סטטיסטיקות בפנים), כרטיס סאונד (מחוונים + צ'יפים לרטט/
+  // התראות), כרטיס רשימה מאוחד (חברים/איך משחקים/חשבון), וקישורי
+  // פוטר פשוטים (מה חדש/תקלה/פרטיות/דירוג + מחיקת משתמש/גרסה). כל
+  // הלוגיקה מתחת (דיאלוגים/handlers) נשארה זהה - רק העיצוב/הפריסה השתנו.
   @override
   Widget build(BuildContext context) {
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: Stack(
-          children: [
-        SafeArea(
-          bottom: false,
+        body: SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 10, 18, 128),
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 🆕 עיצוב מחדש - "הפרופיל שלי" הפך לכרטיס-על יחיד (כותרת +
-                // צ'ברון חזרה + תת-כרטיס פרופיל בפנים), בדיוק כמו במוקאפ
-                // (מסך 11 · פרופיל והגדרות) - במקום סרגל עליון נפרד וכרטיס
-                // פרופיל נפרד מתחתיו.
-                _buildProfileHero(),
-                const SizedBox(height: 14),
-                _buildStatsRow(),
-                const SizedBox(height: 22),
-                _sectionLabel("סאונד"),
-                const SizedBox(height: 10),
-                // 🆕 עיצוב מחדש - שני המחוונים (מוזיקה/צלילים) עברו לכרטיס
-                // בודד משותף (בדיוק כמו במוקאפ), במקום שני כרטיסים נפרדים.
-                _buildSoundCard(),
-                const SizedBox(height: 10),
-                _toggleRow(
-                  label: "רטט",
-                  value: AudioManager.hapticsEnabled,
-                  onChanged: (v) {
-                    setState(() {});
-                    AudioManager.setHapticsEnabled(v);
-                  },
-                ),
-                const SizedBox(height: 10),
-                _toggleRow(
-                  label: "התראות",
-                  value: NotificationManager.notificationsEnabled,
-                  onChanged: (v) {
-                    setState(() {});
-                    NotificationManager.setNotificationsEnabled(v);
-                  },
-                ),
-                const SizedBox(height: 22),
-                _sectionLabel("עזרה ושיתוף"),
-                const SizedBox(height: 10),
-                _settingsRow(icon: "🤝", text: "הזמינו חברים", color: const Color(0xFFA7F3D0), onTap: _inviteFriends),
-                const SizedBox(height: 10),
-                _settingsRow(
-                  icon: "❓",
-                  text: "איך משחקים?",
-                  color: const Color(0xFF93C5FD),
-                  onTap: () => _showInfoDialog(
-                    "איך משחקים?",
-                    "בכל שלב יופיע לוגו מטושטש או חתוך. עליכם להקליד את השם המדויק באמצעות המקלדת למטה.\n\n"
-                    "🗺️ רמות ושלבים: מתקדמים לפי קטגוריות - כל פתרון פותח את השלב הבא. פתרון מוצלח מזכה ב-10 XP ו-2 מטבעות (כל רמז אות מוריד 1 XP, ופתרון המילה ברמז נותן 5 XP בלבד).\n\n"
-                    "🎲 אתגר רנדומלי: לוגו אקראי מכל הקטגוריות, בלי חזרות! כל פתרון נכון מגדיל את הרצף 🔥 ומוסיף בונוס XP (עד +5). הרצף נשמר גם כשיוצאים - ומתאפס רק אם טועים במילה.\n\n"
-                    "⚔️ דו-קרב 1 על 1: שני שחקנים מקבלים את אותם הלוגואים, הראשון שמסיים - מנצח. עולה אנרגיה (מתחדשת עם הזמן).\n\n"
-                    "💡 רמזים: חשיפת אות - 15 מטבעות, פתרון המילה - 60 מטבעות. נגמרו המטבעות? אפשר לצפות בפרסומת ולקבל רמז חינם!",
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _iconSettingsRow(
-                  icon: Icons.campaign_rounded,
-                  text: "מה חדש במשחק",
-                  color: const Color(0xFFFFD86B),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdateNotesScreen())),
-                ),
-                const SizedBox(height: 22),
-                // 🆕 "חשבון" - קישור ל-Google/Apple כדי שההתקדמות תישמר
-                // גם אם מחליפים מכשיר, ומחיקת משתמש - לפי בקשה מפורשת.
-                _sectionLabel("חשבון"),
-                const SizedBox(height: 10),
-                _buildAccountRow(),
-                const SizedBox(height: 10),
-                _iconSettingsRow(
-                  icon: Icons.delete_forever_rounded,
-                  text: "מחק משתמש",
-                  color: const Color(0xFFFF6B6B),
-                  onTap: _confirmDeleteAccount,
-                ),
-                const SizedBox(height: 22),
-                // ===== 🆕 "דיווח על תקלה" - שורה בולטת בתחתית, בדיוק כמו
-                // במוקאפ (עיצוב זהה לשורות למעלה, אבל בפני עצמה תחת רווח
-                // גדול יותר - כדי שתבלוט כפעולה "אחרונה"/נפרדת). =====
-                _settingsRow(icon: "🐞", text: "דיווח על תקלה", color: const Color(0xFFFDA4AF), onTap: _contactSupport),
+                _buildHeader(),
                 const SizedBox(height: 18),
+                _buildProfileCard(),
+                const SizedBox(height: 24),
+                _buildSoundCard(),
+                const SizedBox(height: 14),
+                _buildListCard(),
+                const SizedBox(height: 20),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 20,
+                  runSpacing: 8,
+                  children: [
+                    _footerLink("מה חדש", () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdateNotesScreen()))),
+                    _footerLink("דיווח על תקלה", _contactSupport),
+                    _footerLink("פרטיות", () => _openLink("https://sites.google.com/view/zehet-halogo-privacy")),
+                    _footerLink("דרגו אותנו", () => ReviewManager.requestNativeReview()),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   textDirection: TextDirection.rtl,
                   children: [
-                    TextButton(
-                      onPressed: () => _openLink("https://sites.google.com/view/zehet-halogo-privacy"),
-                      child: Text("פרטיות", style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5)),
+                    GestureDetector(
+                      onTap: _confirmDeleteAccount,
+                      child: const Text("מחיקת משתמש", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xBFFB7185), fontSize: 11.5, fontWeight: FontWeight.w700)),
                     ),
-                    Text("·", style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12.5)),
-                    TextButton(
-                      onPressed: () => ReviewManager.requestNativeReview(),
-                      child: Text("דרג אותנו", style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5)),
-                    ),
+                    const SizedBox(width: 20),
+                    Text(_version.isEmpty ? "" : "גרסה $_version", style: TextStyle(color: Colors.white.withValues(alpha: 0.28), fontSize: 11.5, fontWeight: FontWeight.w700)),
                   ],
-                ),
-                Center(
-                  child: Text(_version.isEmpty ? "© כל הזכויות שמורות" : "גרסה $_version · © כל הזכויות שמורות", style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11, fontWeight: FontWeight.w500)),
                 ),
               ],
             ),
           ),
         ),
-        // 🆕 "הגדרות" הפך למסך משני שנפתח מאייקון גלגל-שיניים בבית (לא
-        // עוד טאב עצמאי בסרגל) - current: home כאן רק כדי שהתנהגות
-        // הניווט (push/pushReplacement) תישאר תקינה, לא בגלל שזה באמת
-        // מסך הבית.
-        AppBottomNav(current: AppTab.home),
-          ],
-        ),
       ),
     );
   }
 
-  // 🆕 עיצוב מחדש - "כרטיס-על" יחיד שמאחד את מה שהיה קודם סרגל עליון +
-  // כרטיס פרופיל נפרד: כותרת "הפרופיל שלי" + כפתור חזרה עגול בפנים,
-  // ומתחתיה תת-כרטיס עם אווטאר/שם/XP וכפתור "שנה שם" - בדיוק לפי
-  // המוקאפ (מסך 11 · פרופיל והגדרות).
-  Widget _buildProfileHero() {
+  Widget _buildHeader() {
+    return Row(
+      textDirection: TextDirection.rtl,
+      children: [
+        const SizedBox(width: 40),
+        const Expanded(
+          child: Center(
+            child: Text("הגדרות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+          ),
+        ),
+        _RoundIconButton(icon: Icons.close_rounded, onTap: () => Navigator.pop(context)),
+      ],
+    );
+  }
+
+  Widget _footerLink(String text, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(text, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  // 🎨 כרטיס פרופיל יחיד לפי המוקאפ: גרדיאנט סגול, אווטאר עגול (טבעת
+  // לבנה + תג עריכה ✏️) + שם/XP + כפתור "שנה שם", קו מפריד, ומתחתיו
+  // 3 סטטיסטיקות (רצף/לוגואים/ניצחונות) - הכול בתוך כרטיס אחד.
+  Widget _buildProfileCard() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(colors: [Color(0xFF4A3583), Color(0xFF241154)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-        border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(colors: [Color(0xFF6B3FD6), Color(0xFF4E25A8)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        boxShadow: [BoxShadow(color: const Color(0xFF14083C).withValues(alpha: 0.45), blurRadius: 30, offset: const Offset(0, 14))],
       ),
       child: Column(
         children: [
           Row(
             textDirection: TextDirection.rtl,
             children: [
-              _RoundIconButton(icon: Icons.arrow_forward_rounded, onTap: () => Navigator.pop(context)),
-              const Expanded(
-                child: Center(
-                  child: Text("הפרופיל שלי", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+              SizedBox(
+                width: 64,
+                height: 64,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                      child: Container(
+                        decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFF9F45)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _username.trim().isNotEmpty ? _username.trim().substring(0, 1) : '?',
+                          style: const TextStyle(color: Color(0xFF2A1740), fontSize: 28, fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: -2,
+                      left: -2,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF2A1740), border: Border.all(color: Colors.white, width: 2)),
+                        alignment: Alignment.center,
+                        child: const Text('✏️', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 38),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  // 🐛 תוקן לפי בקשה מפורשת: "שהשם יהיה צמוד ללוגו שלו" -
+                  // CrossAxisAlignment.start התיישר לפי ה-Directionality
+                  // האמיתית של המסך (LTR בפועל, ראו התיקון המקביל בשורת
+                  // הסטטיסטיקות למעלה) - כלומר לשמאל, רחוק מהאווטאר
+                  // שיושב מימין (ה-Row כולו RTL). .end מיישר לימין, צמוד
+                  // לאווטאר, כמו שצריך.
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(_username, textDirection: TextDirection.ltr, textAlign: TextAlign.right, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 2),
+                    Text("$_xp XP", textDirection: TextDirection.ltr, textAlign: TextAlign.right, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+              Material(
+                color: Colors.white.withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _showChangeNameDialog,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                    child: Text("שנה שם", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 14),
           Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: Colors.white.withValues(alpha: 0.07)),
+            margin: const EdgeInsets.only(top: 18),
+            padding: const EdgeInsets.only(top: 14),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.2)))),
             child: Row(
               textDirection: TextDirection.rtl,
               children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFFB24D)])),
-                  alignment: Alignment.center,
-                  child: Text(
-                    _username.trim().isNotEmpty ? _username.trim().substring(0, 1) : '?',
-                    style: const TextStyle(color: Color(0xFF2A1740), fontSize: 21, fontWeight: FontWeight.w900),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    textDirection: TextDirection.rtl,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_username, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 3),
-                      Text("$_xp XP", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ),
-                Material(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(999),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: _showChangeNameDialog,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                      child: Text("שנה שם", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800)),
-                    ),
-                  ),
-                ),
+                Expanded(child: _profileStat(emoji: '🔥', value: '$_streak', label: 'רצף', color: const Color(0xFFFDBA74))),
+                Expanded(child: _profileStat(emoji: '🧩', value: '$_logosSolved', label: 'לוגואים', color: const Color(0xFFA5F3FC))),
+                Expanded(child: _profileStat(emoji: '🏆', value: _wins == null ? '—' : '$_wins', label: 'ניצחונות', color: const Color(0xFFFFD86B))),
               ],
             ),
           ),
@@ -285,107 +264,129 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // 🆕 עיצוב מחדש - שלוש "גלולות" סטטיסטיקה בשורה נפרדת מתחת לכרטיס-העל
-  // (רצף/לוגואים שנפתרו/ניצחונות), בדיוק כמו במוקאפ - במקום שתי
-  // סטטיסטיקות בתוך כרטיס הפרופיל עצמו.
-  Widget _buildStatsRow() {
+  Widget _profileStat({required String emoji, required String value, required String label, required Color color}) {
+    return Column(
+      children: [
+        Text(emoji, style: const TextStyle(fontSize: 18)),
+        const SizedBox(height: 2),
+        Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w900)),
+        Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11, fontWeight: FontWeight.w800)),
+      ],
+    );
+  }
+
+  // 🎨 כרטיס סאונד לפי המוקאפ: שורת 2 מחוונים (אייקון בלבד, בלי טקסט/
+  // אחוז נפרד - בדיוק כמו ב-HTML), ומתחתיה שורת 2 צ'יפים לרטט/התראות
+  // (לא Switch) - "דלוק" = רקע/מסגרת כתומים וטקסט זהב, "כבוי" = אפור עמום.
+  Widget _buildSoundCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: Colors.white.withValues(alpha: 0.06)),
+      child: Column(
+        children: [
+          Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Expanded(
+                child: _soundSlider(
+                  icon: "🎵",
+                  value: AudioManager.musicVolume,
+                  onChanged: (v) {
+                    setState(() {});
+                    AudioManager.setMusicVolume(v);
+                  },
+                ),
+              ),
+              const SizedBox(width: 22),
+              Expanded(
+                child: _soundSlider(
+                  icon: "🔊",
+                  value: AudioManager.sfxVolume,
+                  onChanged: (v) {
+                    setState(() {});
+                    AudioManager.setSfxVolume(v);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              Expanded(
+                child: _toggleChip(
+                  icon: "📳",
+                  label: "רטט",
+                  value: AudioManager.hapticsEnabled,
+                  onTap: () {
+                    setState(() {});
+                    AudioManager.setHapticsEnabled(!AudioManager.hapticsEnabled);
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _toggleChip(
+                  icon: "🔔",
+                  label: "התראות",
+                  value: NotificationManager.notificationsEnabled,
+                  onTap: () {
+                    setState(() {});
+                    NotificationManager.setNotificationsEnabled(!NotificationManager.notificationsEnabled);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _soundSlider({required String icon, required double value, required ValueChanged<double> onChanged}) {
     return Row(
       textDirection: TextDirection.rtl,
       children: [
-        Expanded(child: _profileStat(emoji: '🔥', value: '$_streak', label: 'רצף', color: const Color(0xFF5B3350))),
-        const SizedBox(width: 8),
-        Expanded(child: _profileStat(emoji: '🧩', value: '$_logosSolved', label: 'לוגואים', color: const Color(0xFF223B66))),
-        const SizedBox(width: 8),
-        Expanded(child: _profileStat(emoji: '🏆', value: _wins == null ? '—' : '$_wins', label: 'ניצחונות', color: const Color(0xFF4A2E5C))),
+        Text(icon, style: const TextStyle(fontSize: 17)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 6,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+            ),
+            child: Slider(value: value, activeColor: const Color(0xFFFFB24D), inactiveColor: Colors.white.withValues(alpha: 0.1), thumbColor: Colors.white, onChanged: onChanged),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _profileStat({required String emoji, required String value, required String label, required Color color}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
+  Widget _toggleChip({required String icon, required String label, required bool value, required VoidCallback onTap}) {
+    return Material(
+      color: value ? const Color(0xFFFFB24D).withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        color: color,
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        children: [
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 3),
-          Text('$label $emoji', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String text) {
-    return Text(text, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12, fontWeight: FontWeight.w800));
-  }
-
-  // 🆕 עיצוב מחדש - שני המחוונים (מוזיקה/צלילים) בכרטיס בודד משותף,
-  // בדיוק כמו במוקאפ (מסך 11), במקום שני כרטיסים נפרדים.
-  Widget _buildSoundCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withValues(alpha: 0.09)), color: Colors.white.withValues(alpha: 0.05)),
-      child: Column(
-        children: [
-          _soundSliderRow(
-            label: "מוזיקה 🎵",
-            value: AudioManager.musicVolume,
-            activeColor: const Color(0xFFFFD86B),
-            onChanged: (v) {
-              setState(() {});
-              AudioManager.setMusicVolume(v);
-            },
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: value ? const Color(0xFFFFB24D).withValues(alpha: 0.35) : Colors.white.withValues(alpha: 0.1), width: 1.5),
           ),
-          const SizedBox(height: 6),
-          _soundSliderRow(
-            label: "צלילים 🔊",
-            value: AudioManager.sfxVolume,
-            activeColor: const Color(0xFF7DD3FC),
-            onChanged: (v) {
-              setState(() {});
-              AudioManager.setSfxVolume(v);
-            },
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            textDirection: TextDirection.rtl,
+            children: [
+              Text(icon, style: const TextStyle(fontSize: 15)),
+              const SizedBox(width: 7),
+              Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: value ? const Color(0xFFFFD86B) : Colors.white.withValues(alpha: 0.55), fontSize: 14, fontWeight: FontWeight.w800)),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _soundSliderRow({required String label, required double value, required Color activeColor, required ValueChanged<double> onChanged}) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          textDirection: TextDirection.rtl,
-          children: [
-            Text(label, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.bold)),
-            Text("${(value * 100).round()}%", style: TextStyle(color: activeColor, fontSize: 12.5, fontWeight: FontWeight.w900)),
-          ],
         ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(trackHeight: 5),
-          child: Slider(value: value, activeColor: activeColor, inactiveColor: Colors.white.withValues(alpha: 0.14), onChanged: onChanged),
-        ),
-      ],
-    );
-  }
-
-  // 🆕 מתגי "רטט"/"התראות" - שורה בודדת עם Switch, בדיוק כמו במוקאפ.
-  Widget _toggleRow({required String label, required bool value, required ValueChanged<bool> onChanged}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white.withValues(alpha: 0.09)), color: Colors.white.withValues(alpha: 0.05)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        textDirection: TextDirection.rtl,
-        children: [
-          Text(label, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.bold)),
-          Switch(value: value, activeThumbColor: const Color(0xFF34D399), onChanged: onChanged),
-        ],
       ),
     );
   }
@@ -396,48 +397,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {}
   }
 
-  Widget _settingsRow({required String icon, required String text, required Color color, required VoidCallback onTap}) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 15),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: 0.5)), color: color.withValues(alpha: 0.1)),
-          child: Row(
-            textDirection: TextDirection.rtl,
-            children: [
-              Text(icon, style: const TextStyle(fontSize: 16)),
-              const SizedBox(width: 10),
-              Expanded(child: Text(text, textDirection: TextDirection.rtl, style: TextStyle(color: color, fontSize: 14.5, fontWeight: FontWeight.w800))),
-              Icon(Icons.chevron_left_rounded, color: color.withValues(alpha: 0.6), size: 18),
-            ],
+  // 🎨 כרטיס רשימה מאוחד לפי המוקאפ: שורות מחוברות (ללא רווח ביניהן),
+  // קו מפריד דק, אייקון אימוג'י + טקסט + (אופציונלי) תגית פרס זהובה +
+  // שברון. מחליף את _settingsRow/_iconSettingsRow הישנים (כרטיסיות
+  // נפרדות עם מסגרת צבעונית) שלא תואמים יותר לעיצוב.
+  Widget _buildListCard() {
+    return Container(
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: Colors.white.withValues(alpha: 0.06)),
+      child: Column(
+        children: [
+          _listRow(icon: "🤝", label: "הזמינו חברים", reward: "+${ReferralService.bonusCoins}", onTap: _inviteFriends),
+          _divider(),
+          _listRow(
+            icon: "❓",
+            label: "איך משחקים?",
+            onTap: () => _showInfoDialog(
+              "איך משחקים?",
+              "בכל שלב יופיע לוגו מטושטש או חתוך. עליכם להקליד את השם המדויק באמצעות המקלדת למטה.\n\n"
+              "🗺️ רמות ושלבים: מתקדמים לפי קטגוריות - כל פתרון פותח את השלב הבא. פתרון מוצלח מזכה ב-10 XP ו-2 מטבעות (כל רמז אות מוריד 1 XP, ופתרון המילה ברמז נותן 5 XP בלבד).\n\n"
+              "🎲 אתגר רנדומלי: לוגו אקראי מכל הקטגוריות, בלי חזרות! כל פתרון נכון מגדיל את הרצף 🔥 ומוסיף בונוס XP (עד +5). הרצף נשמר גם כשיוצאים - ומתאפס רק אם טועים במילה.\n\n"
+              "⚔️ דו-קרב 1 על 1: שני שחקנים מקבלים את אותם הלוגואים, הראשון שמסיים - מנצח. עולה אנרגיה (מתחדשת עם הזמן).\n\n"
+              "💡 רמזים: חשיפת אות - 15 מטבעות, פתרון המילה - 60 מטבעות. נגמרו המטבעות? אפשר לצפות בפרסומת ולקבל רמז חינם!",
+            ),
           ),
-        ),
+          _divider(),
+          _buildAccountListRow(),
+        ],
       ),
     );
   }
 
-  // 🆕 גרסה של _settingsRow עם אייקון וקטורי צבעוני (Icon) במקום אימוג'י -
-  // לשורות חדשות שנוספו עכשיו (לא לשורות הישנות למעלה, שנשארות כמו שהן) -
-  // כדי להימנע מבעיית אמינות אימוג'י מתועדת (ראו app_icons.dart).
-  Widget _iconSettingsRow({required IconData icon, required String text, required Color color, required VoidCallback onTap}) {
+  Widget _divider() => Container(height: 1, color: Colors.white.withValues(alpha: 0.06));
+
+  Widget _listRow({required String icon, required String label, String? reward, required VoidCallback onTap}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 15),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: color.withValues(alpha: 0.5)), color: color.withValues(alpha: 0.1)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 16),
           child: Row(
             textDirection: TextDirection.rtl,
             children: [
-              Icon(icon, color: color, size: 17),
-              const SizedBox(width: 10),
-              Expanded(child: Text(text, textDirection: TextDirection.rtl, style: TextStyle(color: color, fontSize: 14.5, fontWeight: FontWeight.w800))),
-              Icon(Icons.chevron_left_rounded, color: color.withValues(alpha: 0.6), size: 18),
+              SizedBox(width: 24, child: Center(child: Text(icon, style: const TextStyle(fontSize: 18)))),
+              const SizedBox(width: 13),
+              Expanded(child: Text(label, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w700))),
+              if (reward != null) ...[
+                Text(reward, textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 12, fontWeight: FontWeight.w800)),
+                const SizedBox(width: 6),
+              ],
+              Icon(Icons.chevron_left_rounded, color: Colors.white.withValues(alpha: 0.28), size: 20),
             ],
           ),
         ),
@@ -447,69 +456,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // 🆕 שורת "חשבון" - אם לא מקושר: כפתור "חבר חשבון" שפותח את אותו
   // דיאלוג המוצג גם מהבית (account_link_prompt.dart). אם כבר מקושר:
-  // שורת מידע (לא לחיצה) שמציגה את המייל/Apple ID המקושר.
-  Widget _buildAccountRow() {
+  // מציג איזה ספק מחובר (Google/Apple) עם וי ירוק - לוחצים כדי להתנתק.
+  Widget _buildAccountListRow() {
     final label = _linkedLabel;
     if (label != null) {
-      // 🩹 תוקן: "לא רוצה שיהיה רשום את האימייל (במיוחד אימייל-ריליי
-      // מוזר וארוך של 'Hide My Email' באפל) - פשוט Apple עם וי ירוק
-      // ומתחת Google, כל אחד עם וי ירוק רק אם הוא מחובר בפועל". הבדיקה
-      // היא לפי providerData האמיתי של Firebase Auth (AccountService.
-      // linkedProviderIds), לא לפי ניחוש מהאימייל.
+      // 🩹 תוקן: "לא רוצה שיהיה רשום את האימייל... פשוט Apple עם וי
+      // ירוק ומתחת Google, כל אחד עם וי ירוק רק אם הוא מחובר בפועל".
+      // הבדיקה היא לפי providerData האמיתי של Firebase Auth
+      // (AccountService.linkedProviderIds), לא לפי ניחוש מהאימייל.
       final providers = AccountService.linkedProviderIds;
-      final appleLinked = providers.contains('apple.com');
-      final googleLinked = providers.contains('google.com');
+      final names = [
+        if (providers.contains('apple.com')) 'Apple',
+        if (providers.contains('google.com')) 'Google',
+      ];
       return Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
           onTap: _confirmSignOutLinked,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 15),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.4)),
-              color: const Color(0xFF7DD3FC).withValues(alpha: 0.08),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 16),
+            child: Row(
+              textDirection: TextDirection.rtl,
               children: [
-                _providerStatusRow(icon: Icons.apple_rounded, label: "Apple", connected: appleLinked),
-                const SizedBox(height: 8),
-                _providerStatusRow(icon: Icons.g_mobiledata_rounded, label: "Google", connected: googleLinked),
+                const SizedBox(width: 24, child: Center(child: Text("🔗", style: TextStyle(fontSize: 18)))),
+                const SizedBox(width: 13),
+                Expanded(child: Text("מחובר - ${names.join(' · ')}", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w700))),
+                const Icon(Icons.check_circle_rounded, color: Color(0xFF3DDC84), size: 18),
               ],
             ),
           ),
         ),
       );
     }
-    return _iconSettingsRow(
-      icon: Icons.link_rounded,
-      text: "חבר חשבון (שומר את ההתקדמות)",
-      color: const Color(0xFF7DD3FC),
+    return _listRow(
+      icon: "🔗",
+      label: "חיבור חשבון",
       onTap: () async {
         await AccountLinkPrompt.show(context);
         if (mounted) await _loadProfileStats(); // מרענן את השורה אחרי קישור מוצלח
       },
-    );
-  }
-
-  Widget _providerStatusRow({required IconData icon, required String label, required bool connected}) {
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        Icon(icon, color: Colors.white.withValues(alpha: 0.85), size: 18),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(label, textDirection: TextDirection.ltr, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
-        ),
-        Icon(
-          connected ? Icons.check_circle_rounded : Icons.remove_circle_outline_rounded,
-          color: connected ? const Color(0xFF3DDC84) : Colors.white.withValues(alpha: 0.25),
-          size: 17,
-        ),
-      ],
     );
   }
 
@@ -599,11 +584,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // 🐛 תוקן לפי בקשה מפורשת: "זה רושם +50 זה אמור להיות... עם הקישור
+  // המיוחד שכולל את הקוד ככה שברגע שחבר נכנס הוא מקבל את המטבעות" -
+  // קודם זה שלח קישור רגיל לחנות (בלי קוד מוטמע), כך ששום צד לא קיבל
+  // מטבעות בפועל בהתקנה - בדיוק כמו "שתף קוד" ב-friends_screen.dart
+  // לפני התיקון שם. עכשיו זה שולח את אותו קישור הזמנה אמיתי
+  // (ReferralService.shareLink עם הקוד האישי מוטמע) שמזכה את שני
+  // הצדדים אוטומטית כשהחבר מתקין ופותח את האפליקציה בפעם הראשונה.
   Future<void> _inviteFriends() async {
+    String? code;
+    try {
+      code = await FriendService.myCode();
+    } catch (_) {}
+    final String link = code != null ? ReferralService.shareLink(code) : _androidStoreLink;
     final String text =
         "בואו לשחק איתי במשחק 🎮 \"זהה את הלוגו!\" - מי מכיר הכי הרבה לוגואים? 🔥\n\n"
-        "📱 אייפון: $_iosStoreLink\n"
-        "🤖 אנדרואיד/גלקסי: $_androidStoreLink";
+        "$link\n\n"
+        "שנינו נקבל ${ReferralService.bonusCoins} מטבעות במתנה ברגע שתתקינו ✨";
     try {
       // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
       // (נקודת העיגון של ה-popover ב-iOS, ראו share_helper.dart להסבר המלא).

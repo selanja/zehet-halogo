@@ -17,6 +17,7 @@ import 'battle_pass_service.dart'; // 🆕 סטטוס פרימיום - למשי�
 import 'battle_pass_screen.dart'; // 🆕 ניווט "שדרג לפרימיום" ממשימה נעולה
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות במסך הבית (ראו _claim)
 import 'app_notification.dart';
+import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
 
 class MissionsScreen extends StatefulWidget {
   const MissionsScreen({super.key});
@@ -40,11 +41,17 @@ class _MissionsScreenState extends State<MissionsScreen> {
   // מוערמות זו מתחת לזו), בדיוק כמו המוקאפ (מסך 08 · משימות).
   bool _showWeekly = false;
 
+  // 🆕 הסבר חד-פעמי - ראו first_visit_explainer.dart.
+  bool _showExplainer = false;
+
   @override
   void initState() {
     super.initState();
     AdsManager.recordBrowseNavigation(); // 🆕 "גלישה בלי לשחק"
     _load();
+    FirstVisitExplainer.shouldShow('missions').then((show) {
+      if (show && mounted) setState(() => _showExplainer = true);
+    });
   }
 
   Future<void> _load() async {
@@ -160,6 +167,19 @@ class _MissionsScreenState extends State<MissionsScreen> {
                         ),
             ),
             const AppBottomNav(current: AppTab.missions),
+            if (_showExplainer)
+              buildFirstVisitOverlay(
+                title: 'מסך המשימות',
+                points: const [
+                  ExplainerPoint('📅', 'משימות יומיות ושבועיות', 'כל משימה שמשלימים מזכה בפרס - מטבעות או נקודות XP.'),
+                  ExplainerPoint('🎯', 'אתגר יומי', 'מופיע למעלה כל יום - הזדמנות חד-פעמית לפרס גדול יותר.'),
+                  ExplainerPoint('🔄', 'מתאפסות אוטומטית', 'משימות חדשות מחכות בכל יום/שבוע - אין צורך לעשות כלום.'),
+                ],
+                onDismiss: () {
+                  FirstVisitExplainer.markSeen('missions');
+                  setState(() => _showExplainer = false);
+                },
+              ),
           ],
         ),
       ),

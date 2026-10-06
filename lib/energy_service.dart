@@ -74,6 +74,18 @@ class EnergyService {
     return energy;
   }
 
+  // 🆕 מאפס לגמרי ל-0 - נקרא פעם אחת בדיוק כשמשתמש חדש לגמרי נרשם (ראו
+  // main_menu_screen.dart, _saveWelcomeName) לפי בקשה מפורשת: "לפני
+  // שהם מקבלים את המתנה לא יהיה להם מטבעות וזה" - כדי שמתנת סיום
+  // ההדרכה (onboarding_gift_popup.dart) באמת תהיה המקור הראשון לאנרגיה
+  // שלהם, במקום שהם כבר יתחילו עם אנרגיה מלאה (ברירת המחדל הרגילה)
+  // ומתנת הסיום תרגיש מיותרת/כפולה.
+  static Future<void> resetToZero() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyEnergy, 0);
+    await prefs.setInt(_keyLastUpdate, DateTime.now().millisecondsSinceEpoch);
+  }
+
   /// כמה זמן נשאר עד לאנרגיה הבאה (null אם כבר מלא) - לתצוגה כמו
   /// "עוד 03:24 לאנרגיה הבאה" במסך הלובי.
   static Future<Duration?> timeUntilNextEnergy() async {

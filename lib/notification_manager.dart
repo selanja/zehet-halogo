@@ -34,16 +34,19 @@ class NotificationManager {
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
 
-  // 🆕 מתג "התראות" במסך ההגדרות (לפי המוקאפ, מסך 11) - שולט אך ורק
-  // על התזכורת המקומית של בונוס המטבעות (scheduleFreeCoinsReminder
-  // למטה) - לא על הרשאת המערכת עצמה (זו נשארת כמו שהיא, נשאלת פעם
-  // אחת ב-init).
-  static bool notificationsEnabled = true;
+  // 🩹 תוקן לפי דחיית Apple (Guideline 4.5.4): "The button in the app
+  // settings was pre-set to enable notifications... does not request
+  // and obtain the user's consent before sending push notifications" -
+  // המתג "התראות" במסך ההגדרות הופיע כבר דלוק (true) עבור כל משתמש
+  // חדש, בלי שהוא אי-פעם ביקש את זה בפועל - בדיוק מה שאפל פסלה. עכשיו
+  // ברירת המחדל היא false: המתג מתחיל כבוי, ומופעל רק אם המשתמש עצמו
+  // לוחץ עליו במפורש בהגדרות.
+  static bool notificationsEnabled = false;
 
   static Future<void> loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
+      notificationsEnabled = prefs.getBool('notificationsEnabled') ?? false;
     } catch (_) {}
   }
 

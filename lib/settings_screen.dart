@@ -18,6 +18,7 @@ import 'device_id.dart';
 import 'ads_manager.dart'; // 🆕 מונה "גלישה בלי לשחק"
 import 'duel_service.dart'; // 🆕 עיצוב מחדש - מספר ניצחונות לכרטיס הפרופיל
 import 'notification_manager.dart'; // 🆕 מתג "התראות" - שולט על תזכורת בונוס המטבעות
+import 'push_notification_service.dart'; // 🩹 אותה הרשאת מערכת כמו Local Notifications - ראו ההסבר ליד onTap של המתג
 import 'review_manager.dart'; // 🆕 "דרג אותנו" - פותח את דף האפליקציה בחנות
 import 'account_service.dart'; // 🆕 קישור חשבון Google/Apple + מחיקת משתמש
 import 'account_link_prompt.dart'; // 🆕 אותו דיאלוג קישור חשבון שמוצג גם מהבית
@@ -332,8 +333,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: "התראות",
                   value: NotificationManager.notificationsEnabled,
                   onTap: () {
+                    final turningOn = !NotificationManager.notificationsEnabled;
                     setState(() {});
-                    NotificationManager.setNotificationsEnabled(!NotificationManager.notificationsEnabled);
+                    NotificationManager.setNotificationsEnabled(turningOn);
+                    // 🩹 שתי מערכות נפרדות (Local Notifications + FCM/Push)
+                    // חולקות את אותה הרשאת מערכת - ראו ההסבר ב-
+                    // push_notification_service.dart. חייבים לבקש משתיהן
+                    // כאן, לא רק מ-NotificationManager, אחרת ה-FCM token
+                    // אף פעם לא יישמר למשתמש שהפעיל את המתג.
+                    if (turningOn) PushNotificationService.requestPermissionAndRegister();
                   },
                 ),
               ),

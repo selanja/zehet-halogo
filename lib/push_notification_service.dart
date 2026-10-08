@@ -30,22 +30,24 @@ class PushNotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   /// קוראים לזה פעם אחת ב-main.dart, אחרי Firebase.initializeApp()
+  //
+  // 🩹 תוקן יחד עם notification_manager.dart, לפי אותה דחייה חוזרת של
+  // אפל (Guideline 4.5.4): זה היה מבקש הרשאה מהמערכת (requestPermission)
+  // אוטומטית כאן, לכל משתמש חדש, מיד בעליית האפליקציה - בדיוק אותה
+  // בעיה שתוקנה ב-notification_manager.dart, רק דרך ה-API הנפרד של
+  // FCM/Push (ולא Local Notifications). שתי המערכות משתמשות באותה
+  // הרשאת מערכת בפועל (iOS: UNUserNotificationCenter אחד משותף), אז
+  // אם רק אחת מהן מתוקנת - השנייה עדיין "תבקש" אוטומטית ותפיל שוב את
+  // אותה בדיקה של אפל. עכשיו init() רק בודק הרשאה קיימת (ממשתמש שכבר
+  // הסכים בעבר) בלי לבקש שום דבר חדש - הבקשה בפועל עברה ל-
+  // requestPermissionAndRegister() למטה, שנקראת רק כשהמשתמש בעצמו
+  // מפעיל את המתג "התראות" בהגדרות (ראו settings_screen.dart).
   static Future<void> init() async {
-    // מבקש הרשאה מהמשתמש (חובה באייפון, גם באנדרואיד 13+ יש בקשת הרשאה
-    // מפורשת - במכשירים ישנים יותר זה כבר מאושר אוטומטית)
-    final settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      // המשתמש סירב - לא קורסים, פשוט לא נוכל לשלוח לו התראות.
-      // אפשר בעתיד להראות מסך הסבר ולהפנות אותו להגדרות המכשיר.
-      return;
+    final settings = await _messaging.getNotificationSettings();
+    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional) {
+      await _saveTokenToFirestore();
     }
-
-    await _saveTokenToFirestore();
 
     // אם ה-token מתחדש (קורה מדי פעם, למשל אחרי החלפת מכשיר/אפליקציה
     // חדשה) - שומרים את הגרסה המעודכנת אוטומטית
@@ -64,6 +66,19 @@ class PushNotificationService {
       // כאן אפשר להוסיף בעתיד: ניווט למסך ספציפי לפי message.data
       // (למשל אם ההתראה על דו-קרב ממתין - לפתוח ישר את הלובי)
     });
+  }
+
+  /// נקרא כשהמשתמש בעצמו מפעיל את המתג "התראות" בהגדרות (יחד עם
+  /// NotificationManager.setNotificationsEnabled) - כאן, ורק כאן, מבקשים
+  /// בפועל הרשאה חדשה מהמערכת עבור Push/FCM.
+  static Future<void> requestPermissionAndRegister() async {
+    final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+    await _saveTokenToFirestore();
   }
 
   // 🐛 תוקן: זה נקרא כבר ב-main() לפני runApp() - כלומר לפני שהמשתמש

@@ -52,13 +52,33 @@ class NotificationManager {
 
   /// הפעלה/כיבוי של התראות (מהתפריט הגדרות) + שמירה. כיבוי מבטל מיד
   /// גם תזכורת שכבר מתוזמנת, כדי שלא תישלח אחרי שהמשתמש כיבה.
+  ///
+  /// 🩹 תוקן לפי דחייה חוזרת של Apple (Guideline 4.5.4) על אותה בעיה,
+  /// למרות שברירת המחדל של המתג כבר הייתה false: הבעיה האמיתית הייתה
+  /// שחלון ההרשאה המערכתי (iOS/Android) נפתח אוטומטית לכל משתמש חדש
+  /// כבר ב-init() באתחול האפליקציה - לפני שהוא בכלל נגע במתג. זו לא
+  /// "הסכמה לפני שליחה" בעיני אפל. עכשיו הבקשה למערכת מתבצעת רק כאן,
+  /// בתגובה ישירה ללחיצת המשתמש על המתג בהגדרות.
   static Future<void> setNotificationsEnabled(bool value) async {
     notificationsEnabled = value;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('notificationsEnabled', value);
     } catch (_) {}
-    if (!value) await cancelFreeCoinsReminder();
+    if (value) {
+      try {
+        await _plugin
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestNotificationsPermission();
+        await _plugin
+            .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+            ?.requestPermissions(alert: true, badge: true, sound: true);
+      } catch (e) {
+        debugPrint('NOTIFICATIONS PERMISSION REQUEST ERROR: $e');
+      }
+    } else {
+      await cancelFreeCoinsReminder();
+    }
   }
 
   /// מזהה קבוע להתראת בונוס המטבעות - כל תזמון חדש מבטל את הקודם,
@@ -87,13 +107,9 @@ class NotificationManager {
       const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
       await _plugin.initialize(settings);
 
-      // אנדרואיד 13+ ו-iOS דורשים בקשת הרשאה מפורשת מהמשתמש
-      await _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
-      await _plugin
-          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(alert: true, badge: true, sound: true);
+      // 🩹 בכוונה בלי בקשת הרשאה כאן - ראו הסבר מעל setNotificationsEnabled().
+      // הבקשה למערכת (אנדרואיד 13+ / iOS) מתבצעת אך ורק כשהמשתמש בעצמו
+      // מפעיל את המתג "התראות" בהגדרות, לא אוטומטית לכל משתמש חדש כאן.
     } catch (e) {
       debugPrint('NOTIFICATIONS INIT ERROR: $e');
     }

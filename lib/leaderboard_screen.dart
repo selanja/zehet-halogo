@@ -9,6 +9,7 @@ import 'league_screen.dart';
 import 'achievements_screen.dart';
 import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - גם כאן, לא רק במסך הבית
 import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
+import 'l10n/app_localizations.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -89,6 +90,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     final data = _byMedals ? await LeaderboardService.fetchLeaderboardByMedals() : await LeaderboardService.fetchLeaderboard();
 
     if (!mounted) return; // המסך נסגר בזמן שהבקשה עוד הייתה באוויר
+    final loc = AppLocalizations.of(context)!;
     setState(() {
       myName = prefs.getString('username') ?? "";
       myDeviceId = deviceId;
@@ -99,8 +101,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         // בסוגריים, במקום רק את ההודעה הגנרית. להסיר אחרי שהתקלה נמצאת.
         final real = LeaderboardService.lastError;
         error = real == null
-            ? "לא הצלחנו לטעון את הטבלה. בדקו חיבור לאינטרנט ונסו שוב."
-            : "לא הצלחנו לטעון את הטבלה.\n\nשגיאה טכנית (אבחון זמני):\n$real";
+            ? loc.leaderboardLoadErrorGeneric
+            : loc.leaderboardLoadErrorWithDetail(real);
       }
     });
 
@@ -181,6 +183,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureHeaderHeight());
+    final loc = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFF120C2E),
       body: Stack(
@@ -208,11 +211,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           const AppBottomNav(current: AppTab.leaderboard),
           if (_showExplainer)
             buildFirstVisitOverlay(
-              title: 'הטבלה הארצית',
-              points: const [
-                ExplainerPoint('🏅', 'דירוג לפי מדליות', 'ברירת המחדל - דירוג הוגן לפי הישגים, לא רק כמות משחקים.'),
-                ExplainerPoint('⭐', 'אפשר גם לפי נקודות', 'מתג למעלה מחליף לדירוג לפי XP שנצבר.'),
-                ExplainerPoint('📍', 'המיקום שלכם תמיד גלוי', 'גם אם אתם לא בעשירייה הראשונה - תג צף מראה איפה אתם.'),
+              context: context,
+              title: loc.leaderboardExplainerTitle,
+              points: [
+                ExplainerPoint('🏅', loc.leaderboardExplainerMedalsTitle, loc.leaderboardExplainerMedalsBody),
+                ExplainerPoint('⭐', loc.leaderboardExplainerPointsTitle, loc.leaderboardExplainerPointsBody),
+                ExplainerPoint('📍', loc.leaderboardExplainerPositionTitle, loc.leaderboardExplainerPositionBody),
               ],
               onDismiss: () {
                 FirstVisitExplainer.markSeen('leaderboard');
@@ -225,6 +229,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildHeader() {
+    final loc = AppLocalizations.of(context)!;
     return Positioned(
       top: 0,
       left: 0,
@@ -270,11 +275,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   children: [
                     Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text("טבלה ארצית",
-                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 0.2)),
-                        SizedBox(width: 8),
-                        Text("🏆", style: TextStyle(fontSize: 18)),
+                      children: [
+                        Text(loc.leaderboardHeaderTitle,
+                            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 0.2)),
+                        const SizedBox(width: 8),
+                        const Text("🏆", style: TextStyle(fontSize: 18)),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -294,13 +299,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   // 🆕 "ליגה" ו"הישגים" - שורה נפרדת מתחת למתג נקודות/רצף, כדי שלא יידחסו
   // יחד עם שני הצ'יפים הקיימים לרוחב אחד צר מדי במסכים קטנים.
   Widget _buildShortcutsRow() {
+    final loc = AppLocalizations.of(context)!;
     return Row(
       mainAxisSize: MainAxisSize.min,
-      textDirection: TextDirection.rtl,
       children: [
-        _linkChip(label: "ליגה שבועית", emoji: "🏅", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LeagueScreen()))),
+        _linkChip(label: loc.leaderboardWeeklyLeagueChip, emoji: "🏅", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LeagueScreen()))),
         const SizedBox(width: 8),
-        _linkChip(label: "הישגים", emoji: "🎖️", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()))),
+        _linkChip(label: loc.leaderboardAchievementsChip, emoji: "🎖️", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()))),
       ],
     );
   }
@@ -308,6 +313,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   // 🆕 מתג "נקודות / רצף" - שתי אפשרויות שאפשר לבחור ביניהן, כדי לצפות
   // בטבלה הארצית ממוינת לפי XP או לפי שיא הרצף הגבוה ביותר אי-פעם.
   Widget _buildModeSwitch() {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -317,11 +323,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        textDirection: TextDirection.rtl,
         children: [
-          _modeChip(label: "מדליות", emoji: "🎖️", mode: _BoardMode.medals),
+          _modeChip(label: loc.leaderboardMedalsModeLabel, emoji: "🎖️", mode: _BoardMode.medals),
           const SizedBox(width: 4),
-          _modeChip(label: "נקודות", emoji: "🏆", mode: _BoardMode.points),
+          _modeChip(label: loc.leaderboardPointsModeLabel, emoji: "🏆", mode: _BoardMode.points),
         ],
       ),
     );
@@ -338,12 +343,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: Colors.white.withValues(alpha: 0.08)),
         child: Row(
-          textDirection: TextDirection.rtl,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(emoji, style: const TextStyle(fontSize: 12.5)),
             const SizedBox(width: 4),
-            Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w900)),
+            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w900)),
           ],
         ),
       ),
@@ -362,14 +366,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           gradient: selected ? const LinearGradient(colors: [Color(0xFFFFD86B), Color(0xFFFF9A3C)]) : null,
         ),
         child: Row(
-          textDirection: TextDirection.rtl,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(emoji, style: const TextStyle(fontSize: 12.5)),
             const SizedBox(width: 5),
             Text(
               label,
-              textDirection: TextDirection.rtl,
               style: TextStyle(
                 color: selected ? const Color(0xFF2A1740) : Colors.white.withValues(alpha: 0.65),
                 fontSize: 12.5,
@@ -394,14 +396,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             Text(
               error!,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: const TextStyle(color: Colors.white70, fontSize: 16),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _load,
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC64B)),
-              child: const Text("נסה שוב", style: TextStyle(color: Colors.black)),
+              child: Text(AppLocalizations.of(context)!.logoLevelTryAgainButton, style: const TextStyle(color: Colors.black)),
             ),
           ],
         ),
@@ -410,17 +411,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildEmpty() {
-    return const Center(
+    return Center(
       child: Text(
-        "עדיין אין ניקוד בטבלה.\nהיה הראשון לפתור לוגו!",
+        AppLocalizations.of(context)!.leaderboardEmptyMessage,
         textAlign: TextAlign.center,
-        textDirection: TextDirection.rtl,
-        style: TextStyle(color: Colors.white70, fontSize: 16),
+        style: const TextStyle(color: Colors.white70, fontSize: 16),
       ),
     );
   }
 
   Widget _buildBoard() {
+    final loc = AppLocalizations.of(context)!;
     // מוצאים את המיקום האמיתי שלי ברשימה המלאה (יכול להיות גם מעבר ל-50)
     int myIndex = -1;
     if (myDeviceId.isNotEmpty) {
@@ -474,7 +475,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 _FadeSlideIn(index: 1, child: _buildMyStatsRow(entries[myIndex], myRank)),
               ],
               const SizedBox(height: 20),
-              _buildSectionDivider(_byMedals ? "$_maxDisplayed לפי מדליות" : "$_maxDisplayed המובילים"),
+              _buildSectionDivider(_byMedals ? loc.leaderboardTopByMedals(_maxDisplayed) : loc.leaderboardTopOverall(_maxDisplayed)),
               const SizedBox(height: 12),
               for (int i = 0; i < rest.length; i++)
                 Padding(
@@ -493,7 +494,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               // כדי שאפשר יהיה לגלול אליה ולראות אותה
               if (showMyRowAppended) ...[
                 const SizedBox(height: 6),
-                _buildSectionDivider("המקום שלך"),
+                _buildSectionDivider(loc.leaderboardYourRankDivider),
                 const SizedBox(height: 12),
                 _PulseHighlight(key: _myRowKey, child: _buildRow(entries[myIndex], myRank, topXp)),
               ],
@@ -552,7 +553,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(label,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         ),
         Expanded(
@@ -569,6 +569,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   // שלוש כרטיסיות מיני עם הסטטיסטיקה שלי: מקום / XP / רצף
   Widget _buildMyStatsRow(Map<String, dynamic> me, int rank) {
+    final loc = AppLocalizations.of(context)!;
     int streak = _asInt(me["streak"]);
     // ⚠️ שורת הסיכום הזו תמיד גלויה מתחת לפודיום (זה הדבר הכי בולט
     // שקשור אליי במסך) - לכן היא גם לחיצה ומובילה ל-_scrollToMyRow,
@@ -580,16 +581,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
         borderRadius: BorderRadius.circular(16),
         child: Row(
           children: [
-            Expanded(child: _miniStat("#$rank", "המקום שלך", const Color(0xFFFFC64B))),
+            Expanded(child: _miniStat("#$rank", loc.leaderboardYourRankDivider, const Color(0xFFFFC64B))),
             const SizedBox(width: 8),
             if (_byMedals) ...[
-              Expanded(child: _miniStat("🎖️ ${_asInt(me["medals"])}", "מדליות", const Color(0xFFFFD86B))),
+              Expanded(child: _miniStat("🎖️ ${_asInt(me["medals"])}", loc.leaderboardMedalsModeLabel, const Color(0xFFFFD86B))),
               const SizedBox(width: 8),
-              Expanded(child: _miniStat("${_asInt(me["xp"])}", "XP שלך", const Color(0xFF93C5FD))),
+              Expanded(child: _miniStat("${_asInt(me["xp"])}", loc.leaderboardYourXpLabel, const Color(0xFF93C5FD))),
             ] else ...[
-              Expanded(child: _miniStat("${_asInt(me["xp"])}", "XP שלך", const Color(0xFF93C5FD))),
+              Expanded(child: _miniStat("${_asInt(me["xp"])}", loc.leaderboardYourXpLabel, const Color(0xFF93C5FD))),
               const SizedBox(width: 8),
-              Expanded(child: _miniStat("🔥 $streak", "רצף", const Color(0xFFFF8A5B))),
+              Expanded(child: _miniStat("🔥 $streak", loc.leaderboardStreakLabel, const Color(0xFFFF8A5B))),
             ],
           ],
         ),
@@ -610,7 +611,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           Text(value, style: TextStyle(color: color, fontSize: 17, fontWeight: FontWeight.w900)),
           const SizedBox(height: 3),
           Text(label,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w500)),
         ],
       ),
@@ -620,6 +620,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   // התג הצף - מוצג במקום קבוע על המסך: מסגרת-זוהר, מילוי חם, ברק עדין
   // למעלה, ומספר/שם/XP/רצף + חץ שמנתר בעדינות כלפי מטה.
   Widget _buildFloatingRankBadge(Map<String, dynamic> entry, int rank) {
+    final loc = AppLocalizations.of(context)!;
     int streak = _asInt(entry["streak"]);
     return Material(
       color: Colors.transparent,
@@ -655,7 +656,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 // 🆕 הוסרה שכבת "הברק" הלבנה שהייתה כאן - יצרה כתם לבן
                 // בתוך הכפתור הזהוב, לפי בקשה מפורשת להסיר אותה לגמרי.
                 Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     Container(
                       width: 36,
@@ -672,25 +672,21 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     const SizedBox(width: 11),
                     Expanded(
                       child: Column(
-                        textDirection: TextDirection.rtl,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            "${entry["name"] ?? ""}  (אתה)",
-                            textDirection: TextDirection.rtl,
+                            loc.leaderboardFloatingYouRow(entry["name"] ?? ""),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900),
                           ),
                           const SizedBox(height: 1),
-                          Text("הקש כדי לגלול למקום שלך",
-                              textDirection: TextDirection.rtl,
+                          Text(loc.leaderboardTapToScrollHint,
                               style: TextStyle(color: const Color(0xFF2A1740).withValues(alpha: 0.62), fontSize: 10.5, fontWeight: FontWeight.w700)),
                         ],
                       ),
                     ),
                     Column(
-                      textDirection: TextDirection.rtl,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text("${_asInt(entry["xp"])} XP",
@@ -779,6 +775,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Widget _buildPodiumSpot(Map<String, dynamic> entry, int place, double height, Color color) {
+    final loc = AppLocalizations.of(context)!;
     bool isMe = (entry["deviceId"] ?? "") == myDeviceId && myDeviceId.isNotEmpty && (entry["deviceId"] ?? "").isNotEmpty;
     String name = _asString(entry["name"]);
     String initial = name.isNotEmpty ? name.characters.first : "?";
@@ -815,7 +812,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textDirection: TextDirection.rtl,
                   style: TextStyle(color: Colors.white, fontSize: isFirst ? 16 : 13.5, fontWeight: FontWeight.w900),
                 ),
               )
@@ -823,7 +819,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.92), fontSize: isFirst ? 16 : 13.5, fontWeight: FontWeight.bold),
               ),
         const SizedBox(height: 3),
@@ -865,7 +860,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               SizedBox(height: isFirst ? 8 : 5),
               Text(_byMedals ? "${_asInt(entry["medals"])}" : "${_asInt(entry["xp"])}",
                   style: TextStyle(color: Colors.white, fontSize: isFirst ? 19 : 15, fontWeight: FontWeight.w900)),
-              Text(_byMedals ? "מדליות" : "XP", style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 0.7 : 0.55), fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 1)),
+              Text(_byMedals ? loc.leaderboardMedalsModeLabel : "XP", style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 0.7 : 0.55), fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 1)),
             ],
           ),
         ),
@@ -908,6 +903,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   // ===================== שורות 4 ומטה =====================
   Widget _buildRow(Map<String, dynamic> entry, int place, int topXp) {
+    final loc = AppLocalizations.of(context)!;
     bool isMe = (entry["deviceId"] ?? "") == myDeviceId && myDeviceId.isNotEmpty && (entry["deviceId"] ?? "").isNotEmpty;
     int streak = _asInt(entry["streak"]);
     int xp = _asInt(entry["xp"]);
@@ -956,7 +952,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 Container(
                   width: 34,
@@ -978,16 +973,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        textDirection: TextDirection.rtl,
                         children: [
                           Flexible(
                             child: Text(
                               name,
-                              textDirection: TextDirection.rtl,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -1005,8 +997,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                 color: const Color(0xFFFFD86B).withValues(alpha: 0.9),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Text("אתה",
-                                  style: TextStyle(color: Color(0xFF2A1740), fontSize: 10, fontWeight: FontWeight.w900)),
+                              child: Text(loc.duelLobbyYouLabel,
+                                  style: const TextStyle(color: Color(0xFF2A1740), fontSize: 10, fontWeight: FontWeight.w900)),
                             ),
                           ],
                         ],
@@ -1039,7 +1031,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 ),
                 const SizedBox(width: 8),
                 Column(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: _byMedals
                       ? [

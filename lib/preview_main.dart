@@ -3,6 +3,9 @@
 // visually checked in a browser (flutter build web -t lib/preview_main.dart)
 // without touching Firebase/real app state. Delete before shipping.
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
+import 'locale_controller.dart';
 
 void main() => runApp(const PreviewApp());
 
@@ -12,13 +15,20 @@ class PreviewApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      supportedLocales: LocaleController.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       home: Scaffold(
         backgroundColor: const Color(0xFF120D2B),
         body: Center(
           child: SizedBox(
             width: 390,
             height: 880,
-            child: Directionality(textDirection: TextDirection.rtl, child: HomePreview()),
+            child: HomePreview(),
           ),
         ),
       ),
@@ -41,17 +51,17 @@ class HomePreview extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildTopBar(),
+                _buildTopBar(context),
                 const SizedBox(height: 14),
-                _buildStatsCapsule(),
+                _buildStatsCapsule(context),
                 const SizedBox(height: 14),
-                _buildContinueCard(),
+                _buildContinueCard(context),
                 const SizedBox(height: 14),
-                _buildDailyChallenge(),
+                _buildDailyChallenge(context),
                 const SizedBox(height: 12),
-                _buildModesGrid(),
+                _buildModesGrid(context),
                 const SizedBox(height: 12),
-                _buildBattlePass(),
+                _buildBattlePass(context),
               ],
             ),
           ),
@@ -60,13 +70,12 @@ class HomePreview extends StatelessWidget {
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildTopBar(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Row(
-      textDirection: TextDirection.rtl,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Row(
-          textDirection: TextDirection.rtl,
           children: [
             Container(
               width: 52,
@@ -94,14 +103,13 @@ class HomePreview extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('אופק123', textDirection: TextDirection.rtl, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: Color(0xFFF4F1FF))),
+                Text(loc.previewUsername, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: Color(0xFFF4F1FF))),
                 const SizedBox(height: 3),
                 Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     const Icon(Icons.military_tech_rounded, color: Color(0xFFFFC94D), size: 14),
                     const SizedBox(width: 5),
-                    Text('0 / 15 מדליות', style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.65))),
+                    Text(loc.previewMedalsCount, style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.65))),
                   ],
                 ),
               ],
@@ -147,16 +155,16 @@ class HomePreview extends StatelessWidget {
     );
   }
 
-  Widget _buildStatsCapsule() {
+  Widget _buildStatsCapsule(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(color: const Color(0xFF1D1645), borderRadius: BorderRadius.circular(18)),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
-          Expanded(child: _statSegment(Icons.local_fire_department_rounded, const Color(0xFFFF8A3D), '1', 'רצף')),
+          Expanded(child: _statSegment(Icons.local_fire_department_rounded, const Color(0xFFFF8A3D), '1', loc.leaderboardStreakLabel)),
           Container(width: 1, height: 36, color: const Color(0xFF332A66)),
-          Expanded(child: _statSegment(Icons.bolt_rounded, const Color(0xFF5CC8FF), '8/8', 'אנרגיה')),
+          Expanded(child: _statSegment(Icons.bolt_rounded, const Color(0xFF5CC8FF), '8/8', loc.shopEnergyLabel)),
           Expanded(
             child: Container(
               margin: const EdgeInsets.only(right: 6),
@@ -195,7 +203,8 @@ class HomePreview extends StatelessWidget {
     );
   }
 
-  Widget _buildContinueCard() {
+  Widget _buildContinueCard(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     const percent = 58;
     return Container(
       padding: const EdgeInsets.all(20),
@@ -207,7 +216,6 @@ class HomePreview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
@@ -217,12 +225,12 @@ class HomePreview extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.black.withValues(alpha: 0.22)),
-                      child: const Text('ממשיכים מאיפה שעצרת', style: TextStyle(fontSize: 12, color: Colors.white)),
+                      child: Text(loc.previewContinueBannerLabel, style: const TextStyle(fontSize: 12, color: Colors.white)),
                     ),
                     const SizedBox(height: 10),
-                    const Text('סופרים', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white)),
+                    Text(loc.worldName5, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white)),
                     const SizedBox(height: 2),
-                    Text('שלב 11', style: TextStyle(fontSize: 15, color: Colors.white.withValues(alpha: 0.85))),
+                    Text(loc.previewStageLabel(11), style: TextStyle(fontSize: 15, color: Colors.white.withValues(alpha: 0.85))),
                   ],
                 ),
               ),
@@ -241,7 +249,7 @@ class HomePreview extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text('$percent%', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: Colors.white)),
-                        Text('הושלם', style: TextStyle(fontSize: 10.5, color: Colors.white.withValues(alpha: 0.75))),
+                        Text(loc.previewCompletedLabel, style: TextStyle(fontSize: 10.5, color: Colors.white.withValues(alpha: 0.75))),
                       ],
                     ),
                   ],
@@ -254,12 +262,12 @@ class HomePreview extends StatelessWidget {
             height: 52,
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: const Color(0xFFFFC94D)),
             alignment: Alignment.center,
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('המשך לשחק', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xFF2A1B00))),
-                SizedBox(width: 8),
-                Icon(Icons.play_arrow_rounded, color: Color(0xFF2A1B00), size: 18),
+                Text(loc.previewContinuePlayingButton, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xFF2A1B00))),
+                const SizedBox(width: 8),
+                const Icon(Icons.play_arrow_rounded, color: Color(0xFF2A1B00), size: 18),
               ],
             ),
           ),
@@ -268,12 +276,12 @@ class HomePreview extends StatelessWidget {
     );
   }
 
-  Widget _buildDailyChallenge() {
+  Widget _buildDailyChallenge(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: const Color(0xFF1D1645)),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Container(
             width: 48,
@@ -282,13 +290,13 @@ class HomePreview extends StatelessWidget {
             child: const Icon(Icons.calendar_today_rounded, color: Color(0xFF5CC8FF), size: 22),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('אתגר יומי', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-                SizedBox(height: 2),
-                Text('6 לוגואים · פרס מיוחד', style: TextStyle(fontSize: 12.5, color: Color(0xFFB3ABDB))),
+                Text(loc.previewDailyChallengeTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                const SizedBox(height: 2),
+                Text(loc.previewDailyChallengeSubtitle, style: const TextStyle(fontSize: 12.5, color: Color(0xFFB3ABDB))),
               ],
             ),
           ),
@@ -297,20 +305,20 @@ class HomePreview extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 18),
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), color: const Color(0xFF5CC8FF)),
             alignment: Alignment.center,
-            child: const Text('שחק', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: Color(0xFF08243A))),
+            child: Text(loc.subLevelsPlayLabel, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600, color: Color(0xFF08243A))),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildModesGrid() {
+  Widget _buildModesGrid(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Row(
-      textDirection: TextDirection.rtl,
       children: [
-        Expanded(child: _modeCard('שחק מול אחרים', 'דו־קרב · מירוץ', Icons.groups_rounded, const Color(0xFFC8344A), '8 מחוברים')),
+        Expanded(child: _modeCard(loc.mainMenuPlayVsOthersTitle, loc.mainMenuDuelRaceNote, Icons.groups_rounded, const Color(0xFFC8344A), loc.previewConnectedCount)),
         const SizedBox(width: 12),
-        Expanded(child: _modeCard('אתגר רנדומלי', 'לוגו אקראי · שומר על הרצף', Icons.apps_rounded, const Color(0xFF6A3FD3), null)),
+        Expanded(child: _modeCard(loc.logoLevelRandomChallengeHeader, loc.previewRandomChallengeSubtitle, Icons.apps_rounded, const Color(0xFF6A3FD3), null)),
       ],
     );
   }
@@ -324,7 +332,6 @@ class HomePreview extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
@@ -357,12 +364,12 @@ class HomePreview extends StatelessWidget {
     );
   }
 
-  Widget _buildBattlePass() {
+  Widget _buildBattlePass(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: const Color(0xFF1D1645)),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Container(
             width: 48,
@@ -376,11 +383,10 @@ class HomePreview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
-                  textDirection: TextDirection.rtl,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    Text('באטל פאס', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: Color(0xFFFFC94D))),
-                    Text('0/0', style: TextStyle(fontSize: 13, color: Color(0xFFB3ABDB))),
+                  children: [
+                    Text(loc.battlePassScreenTitle, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: Color(0xFFFFC94D))),
+                    const Text('0/0', style: TextStyle(fontSize: 13, color: Color(0xFFB3ABDB))),
                   ],
                 ),
                 const SizedBox(height: 8),

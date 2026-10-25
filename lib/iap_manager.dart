@@ -17,6 +17,7 @@ import 'device_id.dart'; // 🆕 לתיעוד רכישות ב-Firestore לפי �
 import 'meta_events_service.dart'; // 🆕 מעקב רכישות ל-Meta Ads (אופטימיזציית קמפיין)
 import 'analytics_service.dart'; // 📊 מעקב רכישות ל-Firebase Analytics/Google Ads
 import 'battle_pass_service.dart'; // 🆕 שדרוג "באטל פאס" לפרימיום
+import 'tafzoret_service.dart'; // 🆕 דילוג בתשלום על עולם במצב "תפזורת"
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי רכישה אמיתית - קריטי במיוחד כאן (כסף אמיתי), בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה את הרכישה במכשיר אחר
 
 class IapManager {
@@ -28,6 +29,7 @@ class IapManager {
   //   no_ads_lifetime                  -> In-app product (חד-פעמי, 40 ש"ח)
   //   no_ads_monthly                   -> Subscription (15 ש"ח לחודש)
 //   unlock_level                     -> In-app product (מתכלה, 2.90 ש"ח) - פתיחת רמה נעולה
+//   unlock_tafzoret_world            -> In-app product (מתכלה, 2.90 ש"ח) - פתיחת עולם נעול במצב "תפזורת"
   //   energy_2, energy_8, energy_15, energy_30 -> In-app products (מתכלים)
   //   מחירים נקבעים בקונסולה: 2.90 / 10.90 / 19.90 / 29.90 ש"ח
   //   battle_pass_premium              -> In-app product **מתכלה** (₪24.90) -
@@ -126,6 +128,12 @@ class IapManager {
   /// פתיחת רמה נעולה - מוצר מתכלה (₪2.90). כל רכישה פותחת רמה אחת.
   static const String unlockLevelId = 'unlock_level';
 
+  /// 🆕 פתיחת עולם נעול במצב "תפזורת" - מוצר מתכלה (₪2.90), אותו מחיר
+  /// ואותו רעיון בדיוק כמו unlockLevelId, רק עם מפתחות/לוגיקה נפרדים
+  /// לגמרי (ראו tafzoret_service.dart) כי תפזורת היא מערכת התקדמות
+  /// עצמאית מהמשחק הראשי.
+  static const String unlockTafzoretWorldId = 'unlock_tafzoret_world';
+
   /// 🆕 שדרוג "באטל פאס" לפרימיום לעונה הנוכחית - מוצר מתכלה (Consumable,
   /// ראו ההסבר המפורט בבלוק ההערות בראש המחלקה) - נצרך מיד עם כל רכישה,
   /// ונרכש מחדש בכל עונה שהשחקן רוצה פרימיום (ראה battle_pass_service.dart).
@@ -146,7 +154,7 @@ class IapManager {
 
   static const Set<String> _productIds = {
     coins100Id, coins200Id, coins1000Id, coins2500Id, coins6000Id,
-    noAdsMonthlyId, noAdsLifetimeId, unlockLevelId,
+    noAdsMonthlyId, noAdsLifetimeId, unlockLevelId, unlockTafzoretWorldId,
     energy2Id, energy8Id, energy15Id, energy30Id,
     starterPackAId, starterPackBId, starterPackCId,
     starterPackDId, starterPackEId, starterPackFId, starterPackGId,
@@ -201,6 +209,62 @@ class IapManager {
   // 🆕 רק החבילות הקטנות זכאיות לבונוס רכישה ראשונה - 100/200 מטבעות.
   // חבילות גדולות (1000/2500/6000) לא מוכפלות אף פעם, גם ברכישה ראשונה.
   static const Set<String> _firstPurchaseBonusEligibleIds = {coins100Id, coins200Id};
+
+  // 🆕 "ניצחון בטורניר נותן 20% הנחה על כמה חבילות ספציפיות" - לפי בקשה
+  // מפורשת. אי אפשר לשנות בפועל את המחיר של מוצר IAP אמיתי מקוד הלקוח
+  // (המחיר נקבע בקונסולת החנות לכל מזהה מוצר, בדיוק כמו שאר המוצרים כאן -
+  // ראו ההערה הגדולה למעלה) - אז "20% הנחה" ממומש באותה שיטה בדיוק שכבר
+  // קיימת פה לבונוס רכישה ראשונה: אותו מחיר מדויק, יותר מטבעות. המכפיל
+  // (1.25×) נבחר כך שה"מחיר האפקטיבי" למטבע באמת יורד ב-20% בדיוק
+  // (100%/1.25 = 80% מהמחיר למטבע) - לא סתם "+25% בונוס" סתמי.
+  // בכוונה *לא* חופף לחבילות הקטנות (100/200) שכבר מכוסות ע"י בונוס
+  // הרכישה הראשונה למעלה - ממוקד בחבילות הבינוניות-גדולות (1000/2500/6000),
+  // בדיוק "כמה חבילות ספציפיות" כמו שהתבקש, במקום בכולן.
+  static const Set<String> tournamentBonusEligibleIds = {coins1000Id, coins2500Id, coins6000Id};
+  static const double tournamentBonusMultiplier = 1.25; // = הנחה אפקטיבית של 20% למטבע
+  static const int tournamentBonusHours = 24;
+  static const String _tournamentBonusExpiryKey = 'tournamentBonusExpiresAt';
+
+  /// נקרא מ-tournament_service.dart כש-rank==0 (ניצחון בפועל, מקום ראשון) -
+  /// מפעיל חלון של 24 שעות שבו רכישת אחת מ-tournamentBonusEligibleIds
+  /// מזכה 25% יותר מטבעות באותו מחיר בדיוק (ראו _grant למטה).
+  static Future<void> activateTournamentBonus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final expiresAt = DateTime.now().add(const Duration(hours: tournamentBonusHours));
+    await prefs.setInt(_tournamentBonusExpiryKey, expiresAt.millisecondsSinceEpoch);
+  }
+
+  /// true אם חלון מבצע-האלוף עדיין פעיל כרגע (לשימוש מסך החנות - תג/באנר
+  /// "מבצע אלוף!" - ו-_grant בזמן הרכישה עצמה).
+  static Future<bool> tournamentBonusActive() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt(_tournamentBonusExpiryKey);
+    if (ms == null) return false;
+    return DateTime.fromMillisecondsSinceEpoch(ms).isAfter(DateTime.now());
+  }
+
+  /// כמה זמן נשאר למבצע האלוף (Duration.zero אם לא פעיל/פג) - לספירה
+  /// לאחור חיה במסך החנות, בדיוק כמו shopStarterPackTimeLeft הקיים.
+  static Future<Duration> tournamentBonusRemaining() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt(_tournamentBonusExpiryKey);
+    if (ms == null) return Duration.zero;
+    final diff = DateTime.fromMillisecondsSinceEpoch(ms).difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  // 🆕 כמו lastGrantWasFirstPurchaseBonus - כדי שהמסך הקורא ידע להציג
+  // בפופאפ "הרכישה הושלמה" שהכמות כוללת את בונוס ניצחון הטורניר.
+  static bool lastGrantWasTournamentBonus = false;
+
+  /// true אם המשתמש עדיין לא ניצל את בונוס הרכישה הראשונה (חבילות מטבעות
+  /// קטנות בלבד) - לשימוש מסך החנות כדי להציג את זה *מראש*, לפני הרכישה
+  /// (תג "פעם ראשונה = כפול!" על החבילות הקטנות), לא רק לגלות את זה
+  /// בפופאפ אחרי שכבר שילמו.
+  static Future<bool> firstCoinsPurchaseBonusAvailable() async {
+    final prefs = await SharedPreferences.getInstance();
+    return !(prefs.getBool('firstCoinsPurchaseUsed') ?? false);
+  }
 
   static Future<void> init() async {
     try {
@@ -286,6 +350,7 @@ class IapManager {
     try {
       if (id == coins100Id || id == coins200Id || id == coins1000Id ||
           id == coins2500Id || id == coins6000Id || id == unlockLevelId ||
+          id == unlockTafzoretWorldId ||
           _energyProductAmounts.containsKey(id) ||
           starterPackIds.contains(id) ||
           id == battlePassPremiumId) {
@@ -477,8 +542,20 @@ class IapManager {
     if (coinPackBaseAmount != null) {
       final isFirstCoinsPurchase = !(prefs.getBool('firstCoinsPurchaseUsed') ?? false);
       final appliesFirstPurchaseBonus = isFirstCoinsPurchase && _firstPurchaseBonusEligibleIds.contains(id);
+      // 🆕 בונוס ניצחון הטורניר לא חל אם כבר חל בונוס הרכישה הראשונה על
+      // אותה רכישה בדיוק (אין סיבה/חפיפה מעשית בפועל - הקבוצות זרות לגמרי
+      // בכוונה, ראו ההערה ליד tournamentBonusEligibleIds - אבל ה-guard
+      // כאן שומר על ההתנהגות חד-משמעית גם אם זה ישתנה בעתיד).
+      final appliesTournamentBonus = !appliesFirstPurchaseBonus &&
+          tournamentBonusEligibleIds.contains(id) &&
+          await tournamentBonusActive();
       lastGrantWasFirstPurchaseBonus = appliesFirstPurchaseBonus;
-      final grantedAmount = appliesFirstPurchaseBonus ? coinPackBaseAmount * 2 : coinPackBaseAmount;
+      lastGrantWasTournamentBonus = appliesTournamentBonus;
+      final grantedAmount = appliesFirstPurchaseBonus
+          ? coinPackBaseAmount * 2
+          : appliesTournamentBonus
+              ? (coinPackBaseAmount * tournamentBonusMultiplier).round()
+              : coinPackBaseAmount;
       // 🆕 "הרכישה הראשונה" נצרכת כאן על כל רכישת מטבעות ראשונה - גם אם
       // זו חבילה גדולה שלא זכאית לבונוס (אין "לשמור" את הזכאות לפעם הבאה).
       if (isFirstCoinsPurchase) await prefs.setBool('firstCoinsPurchaseUsed', true);
@@ -534,6 +611,10 @@ class IapManager {
         } else {
           await prefs.setInt('unlockCredits', (prefs.getInt('unlockCredits') ?? 0) + 1);
         }
+        onLevelUnlocked?.call();
+        break;
+      case unlockTafzoretWorldId:
+        await TafzoretService.grantPendingUnlock();
         onLevelUnlocked?.call();
         break;
     }

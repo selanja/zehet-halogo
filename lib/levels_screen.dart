@@ -13,9 +13,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'sub_levels_screen.dart';
 import 'level_data.dart' show worldDifficulty;
 import 'audio_manager.dart';
+import 'ads_manager.dart';
 import 'iap_manager.dart';
 import 'app_notification.dart';
 import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
+import 'l10n/app_localizations.dart';
 
 class LevelsScreen extends StatefulWidget {
   const LevelsScreen({super.key});
@@ -49,6 +51,8 @@ class _LevelsScreenState extends State<LevelsScreen> {
   void initState() {
     super.initState();
     _loadProgress();
+    // 🐛 תוקן: מסך בחירת העולם (מצב קלאסי) מעולם לא נספר כ"גלישה".
+    AdsManager.recordBrowseNavigation();
     // אם רכישת פתיחה אושרה בזמן שהמסך פתוח - מרעננים מיד
     IapManager.onLevelUnlocked = () {
       if (mounted) _loadProgress();
@@ -129,52 +133,71 @@ class _LevelsScreenState extends State<LevelsScreen> {
     18: 18, // תקשורת וחדשות ישראליות
     19: 40, // דגלים חלק ג'
     20: 20, // אלקטרוניקה חלק ב
+    21: 18, // כדורסל אירופי - יורוליג
+    22: 32, // NFL - פוטבול אמריקאי
+    23: 30, // קבוצות כדורגל ישראליות - ליגת העל וליגה לאומית
+    24: 30, // אולפני סרטים ובידור עולמי
+    25: 30, // חברות תעופה
+    26: 34, // קבוצות כדורגל אירופאיות חלק ב'
   };
 
   String getWorldName(int worldNum) {
+    final loc = AppLocalizations.of(context)!;
     switch (worldNum) {
       case 1:
-        return "חברות חלק א";
+        return loc.worldName1;
       case 2:
-        return "דגלים חלק א";
+        return loc.worldName2;
       case 3:
-        return "אפליקציות";
+        return loc.worldName3;
       case 4:
-        return "רכבים";
+        return loc.worldName4;
       case 5:
-        return "סופרים";
+        return loc.worldName5;
       case 6:
-        return "רשתות מוכרות";
+        return loc.worldName6;
       case 7:
-        return "חטיפים וממתקים";
+        return loc.worldName7;
       case 8:
-        return "קבוצות כדורגל";
+        return loc.worldName8;
       case 9:
-        return "ערים בישראל";
+        return loc.worldName9;
       case 10:
-        return "דגלים חלק ב";
+        return loc.worldName10;
       case 11:
-        return "בנקים וביטוח";
-        case 12:
-        return "חברות חלק ב";
-        case 13:
-        return "משחקים מוכרים";
+        return loc.worldName11;
+      case 12:
+        return loc.worldName12;
+      case 13:
+        return loc.worldName13;
       case 14:
-        return "קבוצות NBA";
+        return loc.worldName14;
       case 15:
-        return "יחידות בצה\"ל וכוחות הביטחון";
+        return loc.worldName15;
       case 16:
-        return "רכבים חלק ב";
+        return loc.worldName16;
       case 17:
-        return "אלקטרוניקה ומכשירי חשמל";
+        return loc.worldName17;
       case 18:
-        return "תקשורת וחדשות ישראליות";
+        return loc.worldName18;
       case 19:
-        return "דגלים חלק ג'";
+        return loc.worldName19;
       case 20:
-        return "אלקטרוניקה ומכשירי חשמל חלק ב";
+        return loc.worldName20;
+      case 21:
+        return loc.worldName21;
+      case 22:
+        return loc.worldName22;
+      case 23:
+        return loc.worldName23;
+      case 24:
+        return loc.worldName24;
+      case 25:
+        return loc.worldName25;
+      case 26:
+        return loc.worldName26;
       default:
-        return "כללי";
+        return loc.worldNameDefault;
     }
   }
 
@@ -217,6 +240,14 @@ class _LevelsScreenState extends State<LevelsScreen> {
         return Icons.flag_circle_rounded;
       case 20:
         return Icons.devices_other_rounded;
+      case 21:
+        return Icons.sports_basketball_rounded;
+      case 22:
+        return Icons.sports_football_rounded;
+      case 23:
+        return Icons.sports_soccer_rounded;
+      case 26:
+        return Icons.sports_soccer_rounded;
       default:
         return Icons.help_outline_rounded;
     }
@@ -297,7 +328,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
   }
 
   String get _unlockPrice =>
-      IapManager.product(IapManager.unlockLevelId)?.price ?? "₪2.90";
+      IapManager.product(IapManager.unlockLevelId)?.price ?? AppLocalizations.of(context)!.levelsUnlockPriceFallback;
 
   // ============================================================
   // פתיחת רמה בתשלום
@@ -305,6 +336,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
 
   void _showUnlockDialog(int world) {
     AudioManager.playClick();
+    final loc = AppLocalizations.of(context)!;
     int next = nextLockedWorld;
     // כמה רמות צריך לפתוח כדי להגיע לרמה שנלחצה
     int needed = world - next + 1;
@@ -331,18 +363,16 @@ class _LevelsScreenState extends State<LevelsScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              "רמה $world נעולה",
-              textDirection: TextDirection.rtl,
+              loc.levelsUnlockDialogTitle(world),
               style: const TextStyle(
                   color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
             Text(
               isNext
-                  ? "אפשר לפתוח אותה עכשיו תמורת $_unlockPrice,\nאו פשוט לסיים את הרמה הקודמת."
-                  : "פתיחת רמה עולה $_unlockPrice.\nכדי להגיע לרמה $world צריך לפתוח $needed רמות,\nאחת אחרי השנייה - מתחילים ברמה $next.",
+                  ? loc.levelsUnlockDialogBodyNext(_unlockPrice)
+                  : loc.levelsUnlockDialogBodyFar(_unlockPrice, world, needed, next),
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: const TextStyle(color: Colors.white70, fontSize: 14.5, height: 1.6),
             ),
             const SizedBox(height: 6),
@@ -356,8 +386,8 @@ class _LevelsScreenState extends State<LevelsScreen> {
                 Expanded(
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("לא עכשיו",
-                        style: TextStyle(color: Colors.white54, fontSize: 15)),
+                    child: Text(loc.levelsNotNowButton,
+                        style: const TextStyle(color: Colors.white54, fontSize: 15)),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -377,8 +407,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        "פתח רמה $next  •  $_unlockPrice",
-                        textDirection: TextDirection.rtl,
+                        loc.levelsUnlockButton(next, _unlockPrice),
                         style: const TextStyle(
                             color: Color(0xFF3A2405),
                             fontSize: 15.5,
@@ -401,12 +430,13 @@ class _LevelsScreenState extends State<LevelsScreen> {
     await IapManager.setPendingUnlock(world, getFirstPuzzleIdOfMainLevel(world));
     bool started = await IapManager.buy(IapManager.unlockLevelId);
     if (!started && mounted) {
-      AppNotification.show(context, "פתיחת רמות אינה זמינה כרגע, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+      AppNotification.show(context, AppLocalizations.of(context)!.levelsUnlockUnavailable, type: AppNotificationType.error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFF120C2E),
       body: Stack(
@@ -428,13 +458,13 @@ class _LevelsScreenState extends State<LevelsScreen> {
                       const Spacer(),
                       Column(
                         children: [
-                          const Text(
-                            "בחר רמה",
-                            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                          Text(
+                            loc.levelsChooseLevelTitle,
+                            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            "${levelsCounts.length} רמות · $_unlockedWorldsCount פתוחות",
+                            loc.levelsCountSubtitle(levelsCounts.length, _unlockedWorldsCount),
                             style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11.5, fontWeight: FontWeight.w500),
                           ),
                         ],
@@ -472,7 +502,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
                             mainLevel: mainLevel,
                             icon: getWorldIcon(mainLevel),
                             categoryName: getWorldName(mainLevel),
-                            difficulty: "קושי ${worldDifficulty(mainLevel)}",
+                            difficulty: loc.levelsDifficultyLabel(worldDifficulty(mainLevel)),
                             difficultyColor: getDifficultyColor(worldDifficulty(mainLevel)),
                             solved: done,
                             total: total,
@@ -523,6 +553,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
   }
 
   Widget _buildLevelsTourInfoCard() {
+    final loc = AppLocalizations.of(context)!;
     return Positioned.fill(
       child: Stack(
         children: [
@@ -532,7 +563,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
             left: 18,
             child: TextButton(
               onPressed: _skipLevelsTour,
-              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+              child: Text(loc.mainMenuSkipButton, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
             ),
           ),
           Center(
@@ -549,9 +580,9 @@ class _LevelsScreenState extends State<LevelsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('מסך השלבים', textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                    Text(loc.levelsTourTitle, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 10),
-                    const Text('כל עולם נפתח אוטומטית ברגע שמסיימים את העולם הקודם - בלי שום פעולה נוספת.', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
+                    Text(loc.levelsTourBody, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -566,7 +597,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
                           AudioManager.playClick();
                           setState(() => _explainerStep = 1);
                         },
-                        child: const Text('המשך ›', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                        child: Text(loc.levelsTourContinueButton, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                       ),
                     ),
                   ],
@@ -582,6 +613,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
   // שלב 1: ספוטלייט על העולם הראשון (תמיד פתוח) - אותו דפוס מלבנים-כהים
   // + חור חשוף בדיוק כמו בסיור של main_menu_screen.dart.
   Widget _buildLevelsTourSpotlight() {
+    final loc = AppLocalizations.of(context)!;
     final ctx = _tourFirstWorldKey.currentContext;
     final box = ctx?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) {
@@ -603,7 +635,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
             left: 18,
             child: TextButton(
               onPressed: _skipLevelsTour,
-              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+              child: Text(loc.mainMenuSkipButton, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
             ),
           ),
           Positioned(left: 0, top: hole.bottom.clamp(0, screenSize.height), right: 0, bottom: 0, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
@@ -633,7 +665,7 @@ class _LevelsScreenState extends State<LevelsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('👆 ', style: TextStyle(fontSize: 15)),
-                  Flexible(child: Text('לחצו על העולם המואר כדי להמשיך', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900))),
+                  Flexible(child: Text(loc.levelsTourTapHighlighted, style: const TextStyle(color: Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900))),
                 ],
               ),
             ),
@@ -708,6 +740,7 @@ class _LevelRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     double pct = total > 0 ? (solved / total).clamp(0.0, 1.0) : 0.0;
     final Color accent = isCompleted
         ? const Color(0xFF6EE7B7)
@@ -738,10 +771,9 @@ class _LevelRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  textDirection: TextDirection.rtl,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(child: Text(categoryName, textDirection: TextDirection.rtl, style: TextStyle(color: isLocked ? Colors.white.withValues(alpha: 0.8) : accent, fontSize: 15.5, fontWeight: FontWeight.w900))),
+                    Flexible(child: Text(categoryName, style: TextStyle(color: isLocked ? Colors.white.withValues(alpha: 0.8) : accent, fontSize: 15.5, fontWeight: FontWeight.w900))),
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
@@ -750,14 +782,13 @@ class _LevelRow extends StatelessWidget {
                         color: difficultyColor.withValues(alpha: isLocked ? 0.1 : 0.18),
                         border: Border.all(color: difficultyColor.withValues(alpha: isLocked ? 0.25 : 0.5)),
                       ),
-                      child: Text(difficulty, textDirection: TextDirection.rtl, style: TextStyle(color: isLocked ? difficultyColor.withValues(alpha: 0.6) : difficultyColor, fontSize: 10, fontWeight: FontWeight.w800)),
+                      child: Text(difficulty, style: TextStyle(color: isLocked ? difficultyColor.withValues(alpha: 0.6) : difficultyColor, fontSize: 10, fontWeight: FontWeight.w800)),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isLocked ? "נעול · ניתן לפתוח בתשלום" : "$solved מתוך $total שלבים",
-                  textDirection: TextDirection.rtl,
+                  isLocked ? loc.levelsLockedSubtitle : loc.levelsSolvedOfTotal(solved, total),
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w500),
                 ),
                 if (!isLocked) ...[
@@ -917,7 +948,7 @@ class _SpinningHaloMedallionState extends State<_SpinningHaloMedallion> with Sin
                 children: [
                   Icon(widget.icon, color: const Color(0xFF3A2405), size: 20),
                   const SizedBox(height: 1),
-                  Text("רמה ${widget.mainLevel}", style: const TextStyle(color: Color(0xFF3A2405), fontSize: 9.5, fontWeight: FontWeight.w900)),
+                  Text(AppLocalizations.of(context)!.accountConflictLevelLabel(widget.mainLevel), style: const TextStyle(color: Color(0xFF3A2405), fontSize: 9.5, fontWeight: FontWeight.w900)),
                 ],
               ),
             ),

@@ -8,6 +8,7 @@ import 'app_background.dart';
 import 'iap_manager.dart';
 import 'ads_manager.dart';
 import 'energy_service.dart'; // 🆕 פיל אנרגיה בכותרת החנות, לפי העיצוב מחדש
+import 'boost_service.dart'; // 🆕 בוסטים זמניים (רמזים חינם/נקודות כפולות) הנרכשים במטבעות
 import 'audio_manager.dart';
 import 'notification_manager.dart';
 import 'coupon_service.dart';
@@ -22,6 +23,8 @@ import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי כל שינו�
 import 'reward_popups.dart'; // 🆕 פופאפי "קיבלת אנרגיה"/"קיבלת מטבעות"/"הרכישה הושלמה" החדשים
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית
 import 'app_notification.dart';
+import 'l10n/app_localizations.dart';
+import 'analytics_service.dart'; // 🆕 מעקב Firebase Analytics אחרי מימוש קודי קופון
 
 class ShopScreen extends StatefulWidget {
   // 🆕 כשנפתחים לכאן מכרטיס "ללא פרסומות" בתפריט הראשי - גוללים אוטומטית
@@ -49,6 +52,8 @@ class _ShopScreenState extends State<ShopScreen> {
   int currentEnergy = 0; // 🆕 מוצג עכשיו גם בחנות (פיל בכותרת), לפי העיצוב מחדש
   bool dailyAdAvailable = true; // בונוס תמורת פרסומת - זמין כל 3 שעות
   Duration remaining = Duration.zero; // כמה זמן נשאר עד שהבונוס הבא זמין
+  BoostType? _activeBoost; // 🆕 בוסט פעיל כרגע (אם יש)
+  Duration _activeBoostRemaining = Duration.zero;
   Timer? _cooldownTicker;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _noAdsSectionKey = GlobalKey();
@@ -86,6 +91,19 @@ class _ShopScreenState extends State<ShopScreen> {
   Duration? _starterPackRemaining;
   Timer? _starterPackTicker;
 
+  // 🆕 "מבצע אלוף!" - בונוס 20% הנחה אפקטיבית (מכפיל 1.25×) על חבילות
+  // המטבעות הבינוניות-גדולות, פעיל 24 שעות אחרי ניצחון בטורניר (ראו
+  // IapManager.activateTournamentBonus/tournamentBonusActive/
+  // tournamentBonusRemaining). אותו דפוס בדיוק כמו מארז הפתיחה למעלה -
+  // טעינה ב-initState + טיימר ייעודי שמרענן כל שנייה לספירה לאחור חיה.
+  bool _tournamentBonusActive = false;
+  Duration _tournamentBonusRemaining = Duration.zero;
+  Timer? _tournamentBonusTicker;
+
+  // 🆕 "פעם ראשונה = כפול!" מראש על החבילות הקטנות (לפני הרכישה, לא רק
+  // בפופאפ אחרי) - ראו IapManager.firstCoinsPurchaseBonusAvailable.
+  bool _firstPurchaseBonusAvailable = false;
+
   // 🆕 לשמירת ה-callback הקודם (אם היה) לפני שרושמים את שלנו - כמו
   // הדפוס הקיים ב-battle_pass_screen.dart ל-onPurchasesUpdated - כדי
   // שלא "נגנוב" רישום ממסך אחר שנרשם לפני שהמסך הזה נפתח.
@@ -99,14 +117,24 @@ class _ShopScreenState extends State<ShopScreen> {
     _loadCoins();
     _checkAdCooldown();
     _loadStarterPackOffer();
+    _loadFirstPurchaseBonusAvailability();
+    _loadTournamentBonus(); // 🆕 מבצע אלוף! - ראו ההערה למעלה ליד השדות
+    _initBoosts(); // 🆕 בוסט ניסיון חינמי חד-פעמי + טעינת מצב הבוסט - ראו boost_service.dart
     DebugLog.add("ShopScreen.initState END");
     // מרעננים כל שנייה כדי שהטיימר על הכפתור יתעדכן בזמן אמת
-    _cooldownTicker = Timer.periodic(const Duration(seconds: 1), (_) => _checkAdCooldown());
+    _cooldownTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      _checkAdCooldown();
+      _loadActiveBoost(); // 🆕 אותו טיימר קיים - גם מרענן את ספירת הזמן של הבוסט
+    });
     // 🆕 מרעננים כל שנייה גם את ספירת הזמן שנשארה למארז הפתיחה (אם קיים)
     _starterPackTicker = Timer.periodic(const Duration(seconds: 1), (_) => _loadStarterPackOffer());
+    // 🆕 וכנ"ל לספירה לאחור של מבצע האלוף (אם פעיל) - טיימר ייעודי נפרד,
+    // בדיוק כמו הטיימר של מארז הפתיחה שורה אחת למעלה.
+    _tournamentBonusTicker = Timer.periodic(const Duration(seconds: 1), (_) => _loadTournamentBonus());
     IapManager.onPurchasesUpdated = () {
       if (mounted) setState(() {});
       _loadCoins();
+      _loadFirstPurchaseBonusAvailability();
     };
     // 🆕 רושמים גם ל-onPurchaseGranted (חדש - ראו iap_manager.dart) כדי
     // להציג את פופאפ "הרכישה הושלמה" (reward_popups.dart) עם פרטי המוצר
@@ -135,6 +163,7 @@ class _ShopScreenState extends State<ShopScreen> {
     IapManager.onPurchaseGranted = _prevOnPurchaseGranted; // 🆕 משחזרים callback קודם, לא סתם מאפסים
     _cooldownTicker?.cancel();
     _starterPackTicker?.cancel();
+    _tournamentBonusTicker?.cancel();
     _couponController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -149,6 +178,36 @@ class _ShopScreenState extends State<ShopScreen> {
       _starterPackVariant = variant;
       _starterPackRemaining = left;
     });
+  }
+
+  /// 🆕 בודק אם "מבצע אלוף!" (בונוס ניצחון טורניר) פעיל כרגע, ומעדכן את
+  /// הבאנר/כרטיסי החבילות בהתאם - אותו דפוס בדיוק כמו _loadStarterPackOffer
+  /// למעלה.
+  Future<void> _loadTournamentBonus() async {
+    final active = await IapManager.tournamentBonusActive();
+    final left = active ? await IapManager.tournamentBonusRemaining() : Duration.zero;
+    if (!mounted) return;
+    setState(() {
+      _tournamentBonusActive = active;
+      _tournamentBonusRemaining = left;
+    });
+  }
+
+  /// 🆕 הכמות האמיתית שתתקבל עבור חבילת מטבעות בסיסית אם "מבצע אלוף!" פעיל
+  /// (base × IapManager.tournamentBonusMultiplier, מעוגל - ראו iap_manager.dart).
+  int _tournamentBoostedAmount(int base) => (base * IapManager.tournamentBonusMultiplier).round();
+
+  /// 🆕 מוסיף פסיקים כמפרידי אלפים (כמו "2,500") לכמות מוגדלת - לשימוש
+  /// בהצגת הכמות האמיתית על כרטיסי החבילות כשמבצע האלוף פעיל, באותו
+  /// פורמט בדיוק שהכרטיסים כבר כותבים אותו באופן קבוע (ראו amount למטה).
+  String _fmtThousands(int n) {
+    final s = n.toString();
+    final out = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) out.write(',');
+      out.write(s[i]);
+    }
+    return out.toString();
   }
 
   /// 🆕 גרסה כללית (הייתה קודם ספציפית ל"ללא פרסומות" בלבד, שוכפלה כדי
@@ -190,6 +249,7 @@ class _ShopScreenState extends State<ShopScreen> {
     final code = _couponController.text.trim();
     if (code.isEmpty || _redeemingCoupon) return;
     AudioManager.playClick();
+    final loc = AppLocalizations.of(context)!;
     setState(() => _redeemingCoupon = true);
 
     final deviceId = await DeviceId.get();
@@ -204,29 +264,30 @@ class _ShopScreenState extends State<ShopScreen> {
         final coins = prefs.getInt('coins') ?? 15;
         await prefs.setInt('coins', coins + outcome.coins);
         PlayerSyncService.syncCurrentProgress(); // 🩹 בלי זה מימוש קופון לא מסתנכרן לחשבון Google/Apple מקושר
+        AnalyticsService.logPromoCodeRedeemed(code.trim().toUpperCase()); // 🆕 מעקב אחרי קודים שמופצים בערוצים חיצוניים (למשל TIKTOK בביו)
         if (!mounted) return;
         _couponController.clear();
         _loadCoins();
-        _toast("הקוד מומש! קיבלת ${outcome.coins} מטבעות", Colors.green);
+        _toast(loc.shopCouponRedeemedMessage(outcome.coins), Colors.green);
         break;
       case CouponResult.notFound:
-        _toast("קוד לא קיים - בדוק שהקלדת נכון", Colors.redAccent);
+        _toast(loc.shopCouponNotFound, Colors.redAccent);
         break;
       case CouponResult.inactive:
-        _toast("הקוד הזה כבר לא פעיל", Colors.redAccent);
+        _toast(loc.shopCouponInactive, Colors.redAccent);
         break;
       case CouponResult.usedUp:
-        _toast("הקוד הזה נוצל עד הסוף על ידי שחקנים אחרים", Colors.redAccent);
+        _toast(loc.shopCouponUsedUp, Colors.redAccent);
         break;
       case CouponResult.alreadyUsedByThisDevice:
-        _toast("כבר מימשת את הקוד הזה בעבר", Colors.orange);
+        _toast(loc.shopCouponAlreadyUsed, Colors.orange);
         break;
       case CouponResult.error:
         // 🩺 זמני, לצורך אבחון: מציג את הודעת השגיאה האמיתית מ-Firestore
         // (למשל "permission-denied") במקום הודעה גנרית - כדי שאפשר יהיה
         // לצלם מסך ולזהות בדיוק מה משתבש. אפשר להחזיר להודעה הרגילה
         // ("שגיאה - בדוק חיבור לאינטרנט") ברגע שהתקלה נמצאת ונפתרת.
-        _toast("שגיאה: ${outcome.debugMessage ?? 'לא ידועה'}", Colors.redAccent);
+        _toast(loc.shopCouponGenericError(outcome.debugMessage ?? loc.shopUnknownErrorDetail), Colors.redAccent);
         break;
     }
   }
@@ -239,6 +300,128 @@ class _ShopScreenState extends State<ShopScreen> {
       currentCoins = prefs.getInt('coins') ?? 15;
       currentEnergy = energy;
     });
+  }
+
+  /// 🆕 נקרא פעם אחת ב-initState בלבד: מעניק בוסט ניסיון חינמי חד-פעמי
+  /// (3 דקות רמזים חינם, "טעימה" לפני שמוכרים את הבוסט האמיתי ב-150
+  /// מטבעות - ראו boost_service.dart.grantFreeTrialIfEligible) בפעם
+  /// הראשונה שהחנות נפתחת, ואז טוען את מצב הבוסט (כדי שאם הוא הוענק
+  /// כרגע - הכרטיס יציג אותו פעיל מיד).
+  Future<void> _initBoosts() async {
+    final granted = await BoostService.grantFreeTrialIfEligible();
+    if (!mounted) return;
+    _loadActiveBoost();
+    if (granted) {
+      final loc = AppLocalizations.of(context)!;
+      AppNotification.show(context, loc.shopBoostFreeTrialToast(BoostService.trialDuration.inMinutes), color: const Color(0xFFB8860A));
+    }
+  }
+
+  /// 🆕 מרענן את מצב הבוסט הפעיל (ראו boost_service.dart) - נקרא גם
+  /// ב-initState וגם כל שנייה מאותו טיימר שכבר קיים לקולדאון הפרסומת,
+  /// כדי שהספירה לאחור בכרטיס תתעדכן בזמן אמת בלי טיימר נוסף.
+  void _loadActiveBoost() async {
+    final active = await BoostService.getActive();
+    final left = active == null ? Duration.zero : await BoostService.getRemaining();
+    if (!mounted) return;
+    setState(() {
+      _activeBoost = active;
+      _activeBoostRemaining = left;
+    });
+  }
+
+  /// 🆕 קניית בוסט במטבעות - חסומה אם כבר יש בוסט פעיל, או אם אין מספיק
+  /// מטבעות. בניגוד לרכישות IAP (שעוברות דרך iap_manager.dart), זו קנייה
+  /// במטבע-המשחק הפנימי בלבד - אין צורך בשום מוצר בקונסולת החנות.
+  Future<void> _buyBoost(BoostType type) async {
+    AudioManager.playClick();
+    final loc = AppLocalizations.of(context)!;
+    if (_activeBoost != null) {
+      _toast(loc.shopBoostAlreadyActiveToast, Colors.orange);
+      return;
+    }
+    if (currentCoins < BoostService.priceCoins) {
+      _toast(loc.shopBoostNotEnoughCoinsToast, Colors.redAccent);
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('coins', currentCoins - BoostService.priceCoins);
+    await BoostService.activate(type);
+    PlayerSyncService.syncCurrentProgress(); // 🩹 בלי זה ניכוי המטבעות לא מסתנכרן לחשבון Google/Apple מקושר
+    if (!mounted) return;
+    _loadCoins();
+    _loadActiveBoost();
+    _toast(type == BoostType.freeHints ? loc.shopBoostHintsActivatedToast : loc.shopBoostDoubleActivatedToast, Colors.green);
+  }
+
+  /// 🆕 כרטיס בוסט בודד - אותו סגנון בדיוק כמו כרטיס "בונוס פרסומת" למעלה
+  /// (InkWell+Container, אייקון עגול + כותרת/תת-כותרת), עם שתי מצבים:
+  /// ניתן לקנייה (מחיר + לחיצה קונה), או פעיל כרגע (ספירה לאחור, נעול).
+  Widget _boostTile({required BoostType type, required IconData icon, required String title, required String subtitle, required Color color}) {
+    final loc = AppLocalizations.of(context)!;
+    final isThisActive = _activeBoost == type;
+    final isLocked = _activeBoost != null && !isThisActive;
+    return InkWell(
+      onTap: isLocked || isThisActive ? null : () => _buyBoost(type),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: isThisActive ? color.withValues(alpha: 0.14) : const Color(0xFF2A1B4D),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: isThisActive ? color : color.withValues(alpha: isLocked ? 0.18 : 0.55), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(color: Colors.white.withValues(alpha: isLocked ? 0.45 : 1), fontSize: 15.5, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: isLocked ? 0.3 : 0.54), fontSize: 12.5)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (isThisActive)
+              Text(loc.shopBoostActiveLabel(BoostService.formatRemaining(_activeBoostRemaining)), style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w900))
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: isLocked ? 0.04 : 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Opacity(
+                  opacity: isLocked ? 0.35 : 1,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CoinIcon(size: 13),
+                      const SizedBox(width: 4),
+                      Text("${BoostService.priceCoins}", style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _loadFirstPurchaseBonusAvailability() async {
+    final available = await IapManager.firstCoinsPurchaseBonusAvailable();
+    if (!mounted) return;
+    setState(() => _firstPurchaseBonusAvailable = available);
   }
 
   void _checkAdCooldown() async {
@@ -278,7 +461,7 @@ class _ShopScreenState extends State<ShopScreen> {
     AudioManager.playClick();
     if (!dailyAdAvailable) return;
     if (!AdsManager.isRewardedReady) {
-      _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע", Colors.deepPurple);
+      _toast(AppLocalizations.of(context)!.logoLevelNoAdAvailable, Colors.deepPurple);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -305,7 +488,7 @@ class _ShopScreenState extends State<ShopScreen> {
         context,
         rewardAmount: 15,
         currentCoins: currentCoins,
-        subtitle: "חוזר שוב בעוד 3 שעות",
+        subtitle: AppLocalizations.of(context)!.shopAdBonusResetSubtitle,
       );
     });
   }
@@ -323,15 +506,15 @@ class _ShopScreenState extends State<ShopScreen> {
   Future<void> _watchAdForEnergyShop() async {
     AudioManager.playClick();
     final adCooldown = await EnergyService.timeUntilNextAdEnergy();
+    if (!mounted) return;
     if (adCooldown != null) {
-      if (!mounted) return;
       final m = adCooldown.inMinutes;
       final s = adCooldown.inSeconds % 60;
-      _toast("אפשר לצפות בפרסומת נוספת בעוד $m:${s.toString().padLeft(2, '0')}", Colors.deepPurple);
+      _toast(AppLocalizations.of(context)!.shopNextAdAvailableIn('$m:${s.toString().padLeft(2, '0')}'), Colors.deepPurple);
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      _toast("אין פרסומת זמינה כרגע, נסה שוב עוד רגע", Colors.deepPurple);
+      _toast(AppLocalizations.of(context)!.logoLevelNoAdAvailable, Colors.deepPurple);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -364,6 +547,7 @@ class _ShopScreenState extends State<ShopScreen> {
     // את מסך הבית באותו רגע, לא רק כשחוזרים אליו.
     MainMenuScreen.onReturnedHome?.call();
     if (!mounted) return;
+    final loc = AppLocalizations.of(context)!;
 
     String? name;
     String description = "";
@@ -373,52 +557,65 @@ class _ShopScreenState extends State<ShopScreen> {
     // הכמות שכבר נזכתה בפועל (_grant) הייתה כפולה - חייבים להציג את זה
     // כאן בפופאפ, אחרת המשתמש פשוט לא ידע שקיבל בונוס בכלל.
     final bool firstPurchaseBonus = IapManager.lastGrantWasFirstPurchaseBonus;
-    String coinsValue(int base) => firstPurchaseBonus ? "+${base * 2} 🎁" : "+$base";
+    // 🆕 "מבצע אלוף!" - ראו IapManager.lastGrantWasTournamentBonus. שני
+    // הבונוסים בלעדיים הדדית ברמת _grant() (בונוס ניצחון טורניר לא חל
+    // כשבונוס רכישה ראשונה כבר חל), אז שרשרת if/else פשוטה מספיקה.
+    final bool tournamentBonus = IapManager.lastGrantWasTournamentBonus;
+    String coinsValue(int base) {
+      if (firstPurchaseBonus) return loc.shopDoubleBonusValue(base);
+      if (tournamentBonus) return loc.shopTournamentBonusValue(_tournamentBoostedAmount(base));
+      return "+$base";
+    }
+    String coinsDesc(String bestValueDesc) {
+      if (firstPurchaseBonus) return loc.shopFirstPurchaseBonusDesc;
+      if (tournamentBonus) return loc.shopTournamentBonusDesc;
+      return bestValueDesc;
+    }
 
     switch (productId) {
       case 'coins_100':
-        name = "100 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(100))];
+        name = loc.shopCoinsAmountLabel('100'); description = firstPurchaseBonus ? loc.shopFirstPurchaseBonusDesc : loc.shopCoinsPackDesc;
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: loc.shopCoinsLabel, value: coinsValue(100))];
         break;
       case 'coins_200':
-        name = "200 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(200))];
+        name = loc.shopCoinsAmountLabel('200'); description = firstPurchaseBonus ? loc.shopFirstPurchaseBonusDesc : loc.shopCoinsPackDesc;
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: loc.shopCoinsLabel, value: coinsValue(200))];
         break;
       case 'coins_1000':
-        name = "1000 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(1000))];
+        name = loc.shopCoinsAmountLabel('1000'); description = coinsDesc(loc.shopCoinsPackDesc);
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: loc.shopCoinsLabel, value: coinsValue(1000))];
         break;
       case 'coins_2500':
-        name = "2500 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(2500))];
+        name = loc.shopCoinsAmountLabel('2500'); description = coinsDesc(loc.shopCoinsPackDesc);
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: loc.shopCoinsLabel, value: coinsValue(2500))];
         break;
       case 'coins_6000':
-        name = "6000 מטבעות"; description = firstPurchaseBonus ? "בונוס רכישה ראשונה - כפול!" : "חבילת מטבעות - הכי משתלם";
-        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: "מטבעות", value: coinsValue(6000))];
+        name = loc.shopCoinsAmountLabel('6000'); description = coinsDesc(loc.shopCoinsPackBestValueDesc);
+        granted = [GrantedItem(icon: const CoinIcon(size: 18), label: loc.shopCoinsLabel, value: coinsValue(6000))];
         break;
       case 'energy_2':
-        name = "2 אנרגיה"; description = "חבילת אנרגיה";
-        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: "אנרגיה", value: "+2")];
+        name = loc.shopEnergyAmountLabel('2'); description = loc.shopEnergyPackDesc;
+        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: loc.shopEnergyLabel, value: "+2")];
         break;
       case 'energy_8':
-        name = "8 אנרגיה"; description = "חבילת אנרגיה";
-        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: "אנרגיה", value: "+8")];
+        name = loc.shopEnergyAmountLabel('8'); description = loc.shopEnergyPackDesc;
+        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: loc.shopEnergyLabel, value: "+8")];
         break;
       case 'energy_15':
-        name = "15 אנרגיה"; description = "חבילת אנרגיה";
-        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: "אנרגיה", value: "+15")];
+        name = loc.shopEnergyAmountLabel('15'); description = loc.shopEnergyPackDesc;
+        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: loc.shopEnergyLabel, value: "+15")];
         break;
       case 'energy_30':
-        name = "30 אנרגיה"; description = "חבילת אנרגיה";
-        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: "אנרגיה", value: "+30")];
+        name = loc.shopEnergyAmountLabel('30'); description = loc.shopEnergyPackDesc;
+        granted = [GrantedItem(icon: const EnergyIcon(size: 18), label: loc.shopEnergyLabel, value: "+30")];
         break;
       case 'no_ads_monthly':
-        name = "ללא פרסומות - חודשי"; description = "מנוי חודשי";
-        granted = [GrantedItem(icon: const Text("🚫", style: TextStyle(fontSize: 16)), label: "הוסרו כל הפרסומות", value: "✓")];
+        name = loc.shopNoAdsMonthlyName; description = loc.shopMonthlySubscriptionDesc;
+        granted = [GrantedItem(icon: const Text("🚫", style: TextStyle(fontSize: 16)), label: loc.shopAllAdsRemovedLabel, value: "✓")];
         break;
       case 'no_ads_lifetime':
-        name = "ללא פרסומות - לתמיד"; description = "רכישה חד-פעמית";
-        granted = [GrantedItem(icon: const Text("🚫", style: TextStyle(fontSize: 16)), label: "הוסרו כל הפרסומות", value: "✓")];
+        name = loc.shopNoAdsLifetimeName; description = loc.shopOneTimePurchaseDesc;
+        granted = [GrantedItem(icon: const Text("🚫", style: TextStyle(fontSize: 16)), label: loc.shopAllAdsRemovedLabel, value: "✓")];
         break;
       default:
         // 🆕 מוצר שלא מנוהל ישירות במסך הזה (למשל מארז פתיחה/באטל פאס/
@@ -451,9 +648,9 @@ class _ShopScreenState extends State<ShopScreen> {
     final uri = Uri.parse(url);
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok && mounted) _toast("לא ניתן לפתוח את הקישור כרגע", Colors.redAccent);
+      if (!ok && mounted) _toast(AppLocalizations.of(context)!.shopCannotOpenLinkError, Colors.redAccent);
     } catch (_) {
-      if (mounted) _toast("לא ניתן לפתוח את הקישור כרגע", Colors.redAccent);
+      if (mounted) _toast(AppLocalizations.of(context)!.shopCannotOpenLinkError, Colors.redAccent);
     }
   }
 
@@ -461,7 +658,7 @@ class _ShopScreenState extends State<ShopScreen> {
     AudioManager.playClick();
     bool started = await IapManager.buy(productId);
     if (!started && mounted) {
-      _toast("הרכישה אינה זמינה כרגע, נסה שוב מאוחר יותר", Colors.deepPurple);
+      _toast(AppLocalizations.of(context)!.shopPurchaseUnavailable, Colors.deepPurple);
     }
   }
 
@@ -501,13 +698,14 @@ class _ShopScreenState extends State<ShopScreen> {
   /// 🆕 באנר בולט למעלה עבור הצעת "מארז פתיחה" הפעילה של המשתמש - זהב
   /// עם גרדיאנט וגבול זוהר, כדי שהוא יבלוט ברור מעל שאר תוכן החנות.
   Widget _starterPackBanner() {
+    final loc = AppLocalizations.of(context)!;
     final variant = _starterPackVariant!;
     final coins = IapManager.starterPackCoins[variant] ?? 0;
     final energy = IapManager.starterPackEnergy[variant] ?? 0;
     final left = _starterPackRemaining ?? Duration.zero;
     final priceLabel = _price(variant, "");
-    String content = "$coins מטבעות";
-    if (energy > 0) content += " + $energy אנרגיה";
+    String content = loc.shopCoinsAmountLabel('$coins');
+    if (energy > 0) content += loc.shopStarterPackEnergySuffix(energy);
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: InkWell(
@@ -531,15 +729,15 @@ class _ShopScreenState extends State<ShopScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("מארז פתיחה ממתין לך!",
-                        style: TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
+                    Text(loc.shopStarterPackWaitingTitle,
+                        style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 2),
                     Text(
                       priceLabel.isEmpty ? content : "$content - $priceLabel",
                       style: const TextStyle(color: Color(0xFF2A1740), fontSize: 13.5, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 2),
-                    Text("נשארו ${_fmtDuration(left)} - ל-3 שעות בלבד",
+                    Text(loc.shopStarterPackTimeLeft(_fmtDuration(left)),
                         style: const TextStyle(color: Color(0xFF5A3A1A), fontSize: 12, fontWeight: FontWeight.w700)),
                   ],
                 ),
@@ -553,9 +751,56 @@ class _ShopScreenState extends State<ShopScreen> {
     );
   }
 
+  /// 🆕 באנר "מבצע אלוף!" - מוצג רק כש-IapManager.tournamentBonusActive()
+  /// חוזר true (24 שעות אחרי ניצחון בטורניר - ראו tournament_service.dart).
+  /// אותו מבנה חזותי בדיוק כמו _starterPackBanner למעלה (אייקון + כותרת +
+  /// שורת ספירה לאחור עם _fmtDuration), רק בלי onTap (אין דיאלוג נפרד
+  /// לפתוח - הבונוס פשוט חל אוטומטית על הכרטיסים הרלוונטיים למטה) וגוון
+  /// זהב-ירקרק כדי לא להתבלבל עם באנר מארז הפתיחה.
+  Widget _tournamentBonusBanner() {
+    final loc = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFF6EE7B7)]),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(color: const Color(0xFF6EE7B7).withValues(alpha: 0.45), blurRadius: 18, spreadRadius: 1),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.32), borderRadius: BorderRadius.circular(13)),
+              child: const Icon(Icons.emoji_events_rounded, color: Color(0xFF123A2A), size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(loc.shopTournamentBonusBannerTitle,
+                      style: const TextStyle(color: Color(0xFF123A2A), fontSize: 15.5, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 3),
+                  Text(loc.shopTournamentBonusTimeLeft(_fmtDuration(_tournamentBonusRemaining)),
+                      style: const TextStyle(color: Color(0xFF1E4A38), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     DebugLog.add("ShopScreen.build START");
+    final loc = AppLocalizations.of(context)!;
     final scaffold = Scaffold(
       backgroundColor: const Color(0xFF1D0E3C),
       body: Stack(
@@ -571,7 +816,6 @@ class _ShopScreenState extends State<ShopScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 2),
                 child: Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     _CircleBtn(
                       icon: Icons.arrow_forward_ios_rounded,
@@ -579,10 +823,9 @@ class _ShopScreenState extends State<ShopScreen> {
                       onTap: () => Navigator.pop(context),
                     ),
                     const Spacer(),
-                    const Text(
-                      "חנות",
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(
+                    Text(
+                      loc.shopScreenTitle,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -599,7 +842,13 @@ class _ShopScreenState extends State<ShopScreen> {
               Expanded(
                 child: ListView(
                   controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 128),
+                  // 🩹 תוקן לפי בקשה מפורשת ("המניו למטה... מופיעים מאחוריו
+                  // דברים") - ריפוד 128 קבוע לא כלל את MediaQuery.padding.bottom
+                  // (אזור הבטוח התחתון), בדיוק אותו באג שתוקן גם ב-
+                  // missions_screen.dart/leaderboard_screen.dart - במכשירים עם
+                  // אזור בטוח תחתון גדול יותר, הסרגל הצף (AppBottomNav) בפועל
+                  // גבוה יותר מהריפוד שחושב לו, כך שהפריט האחרון ברשימה מציץ מתחתיו.
+                  padding: EdgeInsets.fromLTRB(18, 10, 18, 128 + MediaQuery.of(context).padding.bottom),
                   children: [
                     // 🆕 באנר "מארז פתיחה" - זהוב ובולט, למעלה ממש, רק אם
                     // יש הצעה פעילה וממתינה למשתמש הזה (ראו _loadStarterPackOffer).
@@ -612,7 +861,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     // "פעולות מהירות" עם ריווח מצומצם, כדי שהחנות עצמה
                     // תהיה נגישה הרבה יותר מהר.
                     const SizedBox(height: 14),
-                    const _SectionTitle("פעולות מהירות", icon: Icons.bolt_rounded),
+                    _SectionTitle(loc.shopQuickActionsSection, icon: Icons.bolt_rounded),
                     const SizedBox(height: 10),
 
                     // ===== 🆕 מימוש קוד קופון =====
@@ -624,7 +873,6 @@ class _ShopScreenState extends State<ShopScreen> {
                         border: Border.all(color: const Color(0xFFFFC64B).withValues(alpha: 0.25)),
                       ),
                       child: Row(
-                        textDirection: TextDirection.rtl,
                         children: [
                           Expanded(
                             child: TextField(
@@ -635,7 +883,7 @@ class _ShopScreenState extends State<ShopScreen> {
                               style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1.5),
                               decoration: InputDecoration(
                                 isDense: true,
-                                hintText: "הקלד קוד קופון",
+                                hintText: loc.shopCouponHint,
                                 hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 14, fontWeight: FontWeight.w500),
                                 filled: true,
                                 fillColor: Colors.white.withValues(alpha: 0.06),
@@ -659,7 +907,7 @@ class _ShopScreenState extends State<ShopScreen> {
                                 ),
                                 child: _redeemingCoupon
                                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF2A1740)))
-                                    : const Text("מימוש", style: TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
+                                    : Text(loc.shopRedeemButton, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
                               ),
                             ),
                           ),
@@ -690,7 +938,6 @@ class _ShopScreenState extends State<ShopScreen> {
                           ),
                         ),
                         child: Row(
-                          textDirection: TextDirection.rtl,
                           children: [
                             Container(
                               width: 38,
@@ -716,22 +963,19 @@ class _ShopScreenState extends State<ShopScreen> {
                             Expanded(
                               child: dailyAdAvailable
                                   ? Column(
-                                      textDirection: TextDirection.rtl,
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          "צפה בפרסומת - קבל 15 מטבעות",
-                                          textDirection: TextDirection.rtl,
-                                          style: TextStyle(
+                                        Text(
+                                          loc.shopWatchAdGet15CoinsTitle,
+                                          style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 15.5,
                                               fontWeight: FontWeight.w900),
                                         ),
                                         const SizedBox(height: 4),
-                                        const Text(
-                                          "זמין שוב כל 3 שעות - מטבעות חינם",
-                                          textDirection: TextDirection.rtl,
-                                          style: TextStyle(
+                                        Text(
+                                          loc.shopAdBonusAvailableSubtitle,
+                                          style: const TextStyle(
                                               color: Colors.white54, fontSize: 12.5),
                                         ),
                                       ],
@@ -742,13 +986,11 @@ class _ShopScreenState extends State<ShopScreen> {
                                   // textDirection.rtl: הילד הראשון ברשימה
                                   // מוצג ראשון מימין).
                                   : Row(
-                                      textDirection: TextDirection.rtl,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Text(
-                                          "הבונוס הבא זמין בעוד: ",
-                                          textDirection: TextDirection.rtl,
-                                          style: TextStyle(
+                                        Text(
+                                          loc.shopNextBonusAvailableInLabel,
+                                          style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 14.5,
                                               fontWeight: FontWeight.w900),
@@ -789,7 +1031,6 @@ class _ShopScreenState extends State<ShopScreen> {
                             border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.55), width: 1.5),
                           ),
                           child: Row(
-                            textDirection: TextDirection.rtl,
                             children: [
                               Container(
                                 width: 38,
@@ -800,12 +1041,11 @@ class _ShopScreenState extends State<ShopScreen> {
                               const SizedBox(width: 11),
                               Expanded(
                                 child: Column(
-                                  textDirection: TextDirection.rtl,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text("צפה בפרסומת - קבל ${EnergyService.adRewardAmount} אנרגיה", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+                                    Text(loc.shopWatchAdGetEnergyTitle(EnergyService.adRewardAmount), style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
                                     const SizedBox(height: 4),
-                                    const Text("אין הגבלת פעמים - זמין תמיד כשהאנרגיה לא מלאה", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white54, fontSize: 12.5)),
+                                    Text(loc.shopEnergyAdUnlimitedSubtitle, style: const TextStyle(color: Colors.white54, fontSize: 12.5)),
                                   ],
                                 ),
                               ),
@@ -815,16 +1055,42 @@ class _ShopScreenState extends State<ShopScreen> {
                       ),
                     ],
 
+                    const SizedBox(height: 18),
+                    _SectionTitle(loc.shopBoostSectionTitle, icon: Icons.flash_on_rounded),
+                    const SizedBox(height: 10),
+                    _boostTile(
+                      type: BoostType.freeHints,
+                      icon: Icons.lightbulb_rounded,
+                      title: loc.shopBoostHintsTitle,
+                      subtitle: loc.shopBoostHintsSubtitle,
+                      color: const Color(0xFFFFB24D),
+                    ),
+                    const SizedBox(height: 10),
+                    _boostTile(
+                      type: BoostType.doublePoints,
+                      icon: Icons.bolt_rounded,
+                      title: loc.shopBoostDoubleTitle,
+                      subtitle: loc.shopBoostDoubleSubtitle,
+                      color: const Color(0xFF9333EA),
+                    ),
+
                     SizedBox(height: 18, key: _coinsSectionKey),
-                    const _SectionTitle("חנות המטבעות", icon: Icons.auto_awesome_rounded),
+                    _SectionTitle(loc.shopCoinsSectionTitle, icon: Icons.auto_awesome_rounded),
                     const SizedBox(height: 12),
+
+                    // 🆕 באנר "מבצע אלוף!" - רק אם בונוס ניצחון הטורניר פעיל
+                    // כרגע (ראו _loadTournamentBonus/IapManager.tournamentBonusActive).
+                    if (_tournamentBonusActive) _tournamentBonusBanner(),
 
                     // ===== כרטיס מוביל =====
                     _RecommendedHighlight(
                       highlighted: _recommendedCoinsProductId == IapManager.coins6000Id,
                       child: _FeaturedCard(
-                        title: "חבילת אגדה",
-                        amount: "6,000 מטבעות",
+                        title: loc.shopLegendPackTitle,
+                        amount: _tournamentBonusActive
+                            ? loc.shopCoinsAmountLabel(_fmtThousands(_tournamentBoostedAmount(6000)))
+                            : loc.shopCoinsAmountLabel('6,000'),
+                        bonusNote: _tournamentBonusActive ? loc.shopTournamentBonusTileNote : null,
                         price: _price(IapManager.coins6000Id, "₪160.00"),
                         onTap: () => _buy(IapManager.coins6000Id),
                       ),
@@ -841,9 +1107,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             child: _CoinTile(
                               icon: Icons.workspace_premium_rounded,
                               iconColor: const Color(0xFFFFC64B),
-                              title: "חבילת זהב",
+                              title: loc.shopGoldPackTitle,
                               amount: "200",
                               price: _price(IapManager.coins200Id, "₪10.00"),
+                              badge: _firstPurchaseBonusAvailable ? loc.shopFirstPurchaseDoubleBadge : null,
                               onTap: () => _buy(IapManager.coins200Id),
                             ),
                           ),
@@ -855,9 +1122,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             child: _CoinTile(
                               icon: Icons.shield_rounded,
                               iconColor: const Color(0xFF64B5F6),
-                              title: "חבילת מתחילים",
+                              title: loc.shopBeginnerPackTitle,
                               amount: "100",
                               price: _price(IapManager.coins100Id, "₪5.90"),
+                              badge: _firstPurchaseBonusAvailable ? loc.shopFirstPurchaseDoubleBadge : null,
                               onTap: () => _buy(IapManager.coins100Id),
                             ),
                           ),
@@ -873,9 +1141,10 @@ class _ShopScreenState extends State<ShopScreen> {
                             child: _CoinTile(
                               icon: Icons.diamond_rounded,
                               iconColor: const Color(0xFF4DD0E1),
-                              title: "חבילת מלכים",
-                              amount: "2,500",
+                              title: loc.shopKingsPackTitle,
+                              amount: _tournamentBonusActive ? _fmtThousands(_tournamentBoostedAmount(2500)) : "2,500",
                               price: _price(IapManager.coins2500Id, "₪80.00"),
+                              badge: _tournamentBonusActive ? loc.shopTournamentBonusBadge : null,
                               onTap: () => _buy(IapManager.coins2500Id),
                             ),
                           ),
@@ -887,9 +1156,12 @@ class _ShopScreenState extends State<ShopScreen> {
                             child: _CoinTile(
                               icon: Icons.rocket_launch_rounded,
                               iconColor: const Color(0xFFFF8A65),
-                              title: "חבילת VIP",
-                              amount: "1,000",
+                              title: loc.shopVipPackTitle,
+                              amount: _tournamentBonusActive ? _fmtThousands(_tournamentBoostedAmount(1000)) : "1,000",
                               price: _price(IapManager.coins1000Id, "₪35.00"),
+                              // 🆕 כשמבצע האלוף פעיל מעדיפים להציג אותו (מידע יקר-ערך
+                              // ומוגבל בזמן) במקום לערום את שני התגים זה על זה.
+                              badge: _tournamentBonusActive ? loc.shopTournamentBonusBadge : loc.shopMostPopularBadge,
                               onTap: () => _buy(IapManager.coins1000Id),
                             ),
                           ),
@@ -898,7 +1170,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
 
                     SizedBox(height: 18, key: _energySectionKey),
-                    const _SectionTitle("חנות האנרגיה", icon: Icons.bolt_rounded),
+                    _SectionTitle(loc.shopEnergySectionTitle, icon: Icons.bolt_rounded),
                     const SizedBox(height: 12),
 
                     // ===== רשת חבילות אנרגיה 2x2 - זהה בעיצוב לחבילות
@@ -909,7 +1181,7 @@ class _ShopScreenState extends State<ShopScreen> {
                           child: _CoinTile(
                             icon: Icons.bolt_rounded,
                             iconColor: const Color(0xFF7DD3FC),
-                            title: "מטען קטן",
+                            title: loc.shopEnergySmallTitle,
                             amount: "2 ⚡",
                             price: _price(IapManager.energy2Id, "₪2.90"),
                             onTap: () => _buy(IapManager.energy2Id),
@@ -920,7 +1192,7 @@ class _ShopScreenState extends State<ShopScreen> {
                           child: _CoinTile(
                             icon: Icons.electric_bolt_rounded,
                             iconColor: const Color(0xFF38BDF8),
-                            title: "מטען בינוני",
+                            title: loc.shopEnergyMediumTitle,
                             amount: "8 ⚡",
                             price: _price(IapManager.energy8Id, "₪10.90"),
                             onTap: () => _buy(IapManager.energy8Id),
@@ -935,7 +1207,7 @@ class _ShopScreenState extends State<ShopScreen> {
                           child: _CoinTile(
                             icon: Icons.battery_charging_full_rounded,
                             iconColor: const Color(0xFF0EA5E9),
-                            title: "מטען גדול",
+                            title: loc.shopEnergyLargeTitle,
                             amount: "15 ⚡",
                             price: _price(IapManager.energy15Id, "₪19.90"),
                             onTap: () => _buy(IapManager.energy15Id),
@@ -946,7 +1218,7 @@ class _ShopScreenState extends State<ShopScreen> {
                           child: _CoinTile(
                             icon: Icons.flash_on_rounded,
                             iconColor: const Color(0xFF0284C7),
-                            title: "מטען ענק",
+                            title: loc.shopEnergyHugeTitle,
                             amount: "30 ⚡",
                             price: _price(IapManager.energy30Id, "₪29.90"),
                             onTap: () => _buy(IapManager.energy30Id),
@@ -956,7 +1228,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     ),
 
                     SizedBox(height: 18, key: _noAdsSectionKey),
-                    const _SectionTitle("ללא פרסומות",
+                    _SectionTitle(loc.shopNoAdsSectionTitle,
                         icon: Icons.workspace_premium_rounded),
                     const SizedBox(height: 12),
 
@@ -971,18 +1243,16 @@ class _ShopScreenState extends State<ShopScreen> {
                               color: Colors.greenAccent.withValues(alpha: 0.6),
                               width: 1.5),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          textDirection: TextDirection.rtl,
                           children: [
-                            Icon(Icons.check_circle_rounded,
+                            const Icon(Icons.check_circle_rounded,
                                 color: Colors.greenAccent, size: 26),
-                            SizedBox(width: 10),
+                            const SizedBox(width: 10),
                             Flexible(
                               child: Text(
-                                "מצב ללא פרסומות פעיל! תודה על התמיכה 💜",
-                                textDirection: TextDirection.rtl,
-                                style: TextStyle(
+                                loc.shopNoAdsActiveMessage,
+                                style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold),
@@ -994,8 +1264,8 @@ class _ShopScreenState extends State<ShopScreen> {
                     else ...[
                       _WideCard(
                         icon: Icons.autorenew_rounded,
-                        title: "מנוי חודשי",
-                        subtitle: "בלי פרסומות בין שלבים, מתחדש כל חודש",
+                        title: loc.shopMonthlySubTitle,
+                        subtitle: loc.shopMonthlySubSubtitle,
                         price: _price(IapManager.noAdsMonthlyId, "₪15.00"),
                         accent: const Color(0xFFB388FF),
                         onTap: () => _buy(IapManager.noAdsMonthlyId),
@@ -1003,11 +1273,11 @@ class _ShopScreenState extends State<ShopScreen> {
                       const SizedBox(height: 14),
                       _WideCard(
                         icon: Icons.star_rounded,
-                        title: "לכל החיים",
-                        subtitle: "תשלום אחד - בלי פרסומות לתמיד",
+                        title: loc.shopLifetimeTitle,
+                        subtitle: loc.shopLifetimeSubtitle,
                         price: _price(IapManager.noAdsLifetimeId, "₪40.00"),
                         accent: const Color(0xFFFFC64B),
-                        badge: "הכי משתלם",
+                        badge: loc.shopBestValueBadge,
                         onTap: () => _buy(IapManager.noAdsLifetimeId),
                       ),
                     ],
@@ -1025,7 +1295,7 @@ class _ShopScreenState extends State<ShopScreen> {
                     Center(
                       child: TextButton(
                         onPressed: () => _openLink("https://sites.google.com/view/zehet-halogo-privacy"),
-                        child: Text("מדיניות פרטיות", style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5, decoration: TextDecoration.underline)),
+                        child: Text(loc.shopPrivacyPolicyLink, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5, decoration: TextDecoration.underline)),
                       ),
                     ),
 
@@ -1038,12 +1308,12 @@ class _ShopScreenState extends State<ShopScreen> {
                           AudioManager.playClick();
                           await IapManager.restorePurchases();
                           if (!mounted) return;
-                          _toast("בודק רכישות קודמות...", Colors.deepPurple);
+                          _toast(loc.shopCheckingPurchasesMessage, Colors.deepPurple);
                         },
                         icon: const Icon(Icons.restore_rounded,
                             color: Colors.white54, size: 20),
-                        label: const Text("שחזור רכישות",
-                            style: TextStyle(color: Colors.white54)),
+                        label: Text(loc.shopRestorePurchasesButton,
+                            style: const TextStyle(color: Colors.white54)),
                       ),
                     ),
                   ],
@@ -1101,7 +1371,6 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Text(
           text,
-          textDirection: TextDirection.rtl,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 19,
@@ -1151,7 +1420,7 @@ class _RecommendedHighlight extends StatelessWidget {
               color: const Color(0xFF16A46F),
               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 7)],
             ),
-            child: const Text("מומלץ לך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+            child: Text(AppLocalizations.of(context)!.shopRecommendedForYouBadge, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
           ),
         ),
       ],
@@ -1161,11 +1430,16 @@ class _RecommendedHighlight extends StatelessWidget {
 
 class _FeaturedCard extends StatelessWidget {
   final String title, amount, price;
+  // 🆕 הערה קטנה אופציונלית מתחת לכמות - מוצגת רק כש"מבצע אלוף!" פעיל
+  // (ראו ShopScreen.build), כדי לציין שהכמות שמוצגת למעלה היא כבר הכמות
+  // המוגדלת (base × IapManager.tournamentBonusMultiplier) ולא הבסיסית.
+  final String? bonusNote;
   final VoidCallback onTap;
   const _FeaturedCard({
     required this.title,
     required this.amount,
     required this.price,
+    this.bonusNote,
     required this.onTap,
   });
 
@@ -1198,7 +1472,6 @@ class _FeaturedCard extends StatelessWidget {
               children: [
                 // שורה עליונה: אייקון + טקסטים
                 Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     Container(
                       width: 54,
@@ -1213,12 +1486,10 @@ class _FeaturedCard extends StatelessWidget {
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
-                        textDirection: TextDirection.rtl,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             title,
-                            textDirection: TextDirection.rtl,
                             textAlign: TextAlign.right,
                             style: const TextStyle(
                               color: Color(0xFF3A2405),
@@ -1229,7 +1500,6 @@ class _FeaturedCard extends StatelessWidget {
                           const SizedBox(height: 3),
                           Text(
                             amount,
-                            textDirection: TextDirection.rtl,
                             textAlign: TextAlign.right,
                             style: TextStyle(
                               color: const Color(0xFF3A2405).withValues(alpha: 0.72),
@@ -1237,6 +1507,18 @@ class _FeaturedCard extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          if (bonusNote != null) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              bonusNote!,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: Color(0xFF16A46F),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1285,10 +1567,9 @@ class _FeaturedCard extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Text(
-              "הכי משתלם",
-              textDirection: TextDirection.rtl,
-              style: TextStyle(
+            child: Text(
+              AppLocalizations.of(context)!.shopBestValueBadge,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
@@ -1307,6 +1588,9 @@ class _CoinTile extends StatelessWidget {
   final Color iconColor;
   final String title, amount, price;
   final VoidCallback onTap;
+  // 🆕 תג קטן אופציונלי בפינה (כמו ב-_WideCard) - "הכי פופולרי" על חבילה
+  // אמצעית, או בונוס רכישה ראשונה על חבילות קטנות (ראו shop_screen build).
+  final String? badge;
   const _CoinTile({
     required this.icon,
     required this.iconColor,
@@ -1314,6 +1598,7 @@ class _CoinTile extends StatelessWidget {
     required this.amount,
     required this.price,
     required this.onTap,
+    this.badge,
   });
 
   // 🆕 אייקוני "משפחת אנרגיה" (בכל 4 חבילות חנות האנרגיה) - מוצגים כאימוג'י
@@ -1331,7 +1616,7 @@ class _CoinTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final card = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
@@ -1349,7 +1634,6 @@ class _CoinTile extends StatelessWidget {
               fit: BoxFit.scaleDown,
               child: Text(
                 title,
-                textDirection: TextDirection.rtl,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 14,
@@ -1392,6 +1676,35 @@ class _CoinTile extends StatelessWidget {
         ),
       ),
     );
+    if (badge == null) return card;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        card,
+        Positioned(
+          top: -9,
+          right: 10,
+          left: 10,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE5397A),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  badge!,
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -1428,7 +1741,6 @@ class _WideCard extends StatelessWidget {
               border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.5),
             ),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 Container(
                   width: 50,
@@ -1442,12 +1754,10 @@ class _WideCard extends StatelessWidget {
                 const SizedBox(width: 13),
                 Expanded(
                   child: Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         title,
-                        textDirection: TextDirection.rtl,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -1457,7 +1767,6 @@ class _WideCard extends StatelessWidget {
                       const SizedBox(height: 3),
                       Text(
                         subtitle,
-                        textDirection: TextDirection.rtl,
                         style: const TextStyle(color: Colors.white54, fontSize: 12.5),
                       ),
                     ],
@@ -1501,7 +1810,6 @@ class _WideCard extends StatelessWidget {
               ),
               child: Text(
                 badge!,
-                textDirection: TextDirection.rtl,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 11,

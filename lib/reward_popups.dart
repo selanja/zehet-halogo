@@ -19,6 +19,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon וקטוריים
+import 'l10n/app_localizations.dart';
 
 /// 🆕 פריט בודד ברשימת "נוסף לחשבון" בפופאפ הרכישה - אייקון (ווידג'ט
 /// חופשי, למשל CoinIcon(size: 18) או Text('✦')) + תווית + ערך. הוגדר
@@ -51,16 +52,13 @@ Future<T?> _showFullScreenPopup<T>(BuildContext context, Widget child) {
     barrierDismissible: false,
     barrierColor: Colors.black.withValues(alpha: 0.6),
     transitionDuration: const Duration(milliseconds: 260),
-    pageBuilder: (ctx, anim, secAnim) => Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: const BoxDecoration(gradient: _bgGradient),
-          child: SafeArea(child: child),
-        ),
+    pageBuilder: (ctx, anim, secAnim) => Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(gradient: _bgGradient),
+        child: SafeArea(child: child),
       ),
     ),
     transitionBuilder: (ctx, anim, secAnim, child) {
@@ -197,7 +195,6 @@ class _GradientText extends StatelessWidget {
       ).createShader(bounds),
       child: Text(
         text,
-        textDirection: TextDirection.rtl,
         style: TextStyle(fontSize: fontSize, fontWeight: fontWeight, color: Colors.white, height: 1.0),
       ),
     );
@@ -238,7 +235,6 @@ class _CtaButton extends StatelessWidget {
             child: Center(
               child: Text(
                 label,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: textColor, fontSize: fontSize, fontWeight: FontWeight.w900),
               ),
             ),
@@ -261,7 +257,6 @@ class _SecondaryLink extends StatelessWidget {
       onPressed: onTap,
       child: Text(
         label,
-        textDirection: TextDirection.rtl,
         style: TextStyle(color: Colors.white.withValues(alpha: 0.32), fontSize: 12.5, fontWeight: FontWeight.w700),
       ),
     );
@@ -288,9 +283,9 @@ class _StatPill extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w700)),
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w700)),
           const SizedBox(height: 2),
-          Text(value, textDirection: TextDirection.rtl, style: TextStyle(color: valueColor, fontSize: 16, fontWeight: FontWeight.w900)),
+          Text(value, style: TextStyle(color: valueColor, fontSize: 16, fontWeight: FontWeight.w900)),
         ],
       ),
     );
@@ -316,9 +311,11 @@ Future<void> showEnergyRewardPopup(
   required int rewardAmount,
   required int currentEnergy,
   required int maxEnergy,
-  String subtitle = "מספיק לשני דו־קרבים נוספים",
+  String? subtitle,
   VoidCallback? onDuelTap,
 }) {
+  final loc = AppLocalizations.of(context)!;
+  subtitle ??= loc.rewardPopupEnergyDefaultSubtitle;
   const cyanGradient = [Color(0xFFA5F3FC), Color(0xFF38BDF8), Color(0xFF2563EB)];
   return _showFullScreenPopup(
     context,
@@ -335,25 +332,25 @@ Future<void> showEnergyRewardPopup(
               child: EnergyIcon(size: 46),
             ),
             const SizedBox(height: 18),
-            Text("קיבלת", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 15, fontWeight: FontWeight.w700)),
+            Text(loc.rewardPopupGotLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
             _GradientText("+$rewardAmount", gradient: cyanGradient, fontSize: 46),
             const SizedBox(height: 2),
-            const Text("אנרגיה", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+            Text(loc.shopEnergyLabel, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
-            Text(subtitle, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12)),
+            Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12)),
             const SizedBox(height: 24),
-            _StatPill(label: "האנרגיה שלך", value: "$currentEnergy/$maxEnergy", valueColor: const Color(0xFF67E8F9)),
+            _StatPill(label: loc.rewardPopupYourEnergyLabel, value: "$currentEnergy/$maxEnergy", valueColor: const Color(0xFF67E8F9)),
             const SizedBox(height: 30),
             _CtaButton(
-              label: "יאללה, לדו־קרב ⚔",
+              label: loc.rewardPopupToDuelButton,
               gradient: const [Color(0xFF7DD3FC), Color(0xFF2563EB)],
               onTap: () {
                 Navigator.of(context).pop();
                 onDuelTap?.call();
               },
             ),
-            _SecondaryLink(label: "המשך", onTap: () => Navigator.of(context).pop()),
+            _SecondaryLink(label: loc.rewardPopupContinueLink, onTap: () => Navigator.of(context).pop()),
           ],
         ),
       ),
@@ -382,6 +379,7 @@ Future<void> showCoinsRewardPopup(
   required String subtitle,
   VoidCallback? onShopTap,
 }) {
+  final loc = AppLocalizations.of(context)!;
   const goldGradient = [Color(0xFFFFF3C4), Color(0xFFFFD86B), Color(0xFFF59E0B)];
   return _showFullScreenPopup(
     context,
@@ -398,23 +396,23 @@ Future<void> showCoinsRewardPopup(
               child: CoinIcon(size: 46),
             ),
             const SizedBox(height: 18),
-            Text("קיבלת", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 15, fontWeight: FontWeight.w700)),
+            Text(loc.rewardPopupGotLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
             _GradientText("+$rewardAmount", gradient: goldGradient, fontSize: 46),
             const SizedBox(height: 2),
-            const Text("מטבעות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+            Text(loc.shopCoinsLabel, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
-            Text(subtitle, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12)),
+            Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12)),
             const SizedBox(height: 24),
-            _StatPill(label: "המטבעות שלך", value: "$currentCoins", valueColor: const Color(0xFFFFD86B)),
+            _StatPill(label: loc.rewardPopupYourCoinsLabel, value: "$currentCoins", valueColor: const Color(0xFFFFD86B)),
             const SizedBox(height: 30),
             _CtaButton(
-              label: "מעולה",
+              label: loc.leagueGreatButton,
               gradient: const [Color(0xFFFFE08A), Color(0xFFF59E0B)],
               onTap: () => Navigator.of(context).pop(),
             ),
             _SecondaryLink(
-              label: "לחנות",
+              label: loc.rewardPopupToShopLink,
               onTap: () {
                 Navigator.of(context).pop();
                 onShopTap?.call();
@@ -448,6 +446,7 @@ Future<void> showPurchaseCompletePopup(
   required String itemDescription,
   required List<GrantedItem> grantedItems,
 }) {
+  final loc = AppLocalizations.of(context)!;
   const greenGradient = [Color(0xFFBBF7D0), Color(0xFF22C55E), Color(0xFF15803D)];
   return _showFullScreenPopup(
     context,
@@ -464,9 +463,9 @@ Future<void> showPurchaseCompletePopup(
               child: const Text("✓", style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Color(0xFF0F3D22))),
             ),
             const SizedBox(height: 18),
-            const Text("הרכישה הושלמה!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
+            Text(loc.rewardPopupPurchaseCompleteTitle, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
-            Text("הפריטים כבר בחשבון שלך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5)),
+            Text(loc.rewardPopupItemsInAccountSubtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5)),
             const SizedBox(height: 22),
             // כרטיס סיכום הפריט שנרכש
             Container(
@@ -493,21 +492,21 @@ Future<void> showPurchaseCompletePopup(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(itemName, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 17, fontWeight: FontWeight.w900)),
+                        Text(itemName, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 17, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 2),
-                        Text(itemDescription, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5)),
+                        Text(itemDescription, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5)),
                       ],
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(itemPrice, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                  Text(itemPrice, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                 ],
               ),
             ),
             const SizedBox(height: 22),
             Align(
               alignment: Alignment.centerRight,
-              child: Text("נוסף לחשבון", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w800)),
+              child: Text(loc.rewardPopupAddedToAccountLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w800)),
             ),
             const SizedBox(height: 10),
             ...grantedItems.map((g) => Padding(
@@ -523,15 +522,15 @@ Future<void> showPurchaseCompletePopup(
                       children: [
                         SizedBox(width: 22, height: 22, child: Center(child: g.icon)),
                         const SizedBox(width: 10),
-                        Expanded(child: Text(g.label, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w600))),
-                        Text(g.value, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFBBF7D0), fontSize: 14, fontWeight: FontWeight.w900)),
+                        Expanded(child: Text(g.label, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w600))),
+                        Text(g.value, style: const TextStyle(color: Color(0xFFBBF7D0), fontSize: 14, fontWeight: FontWeight.w900)),
                       ],
                     ),
                   ),
                 )),
             const SizedBox(height: 26),
             _CtaButton(
-              label: "מעולה, בחזרה למשחק",
+              label: loc.rewardPopupBackToGameButton,
               gradient: const [Color(0xFF86EFAC), Color(0xFF16A34A)],
               onTap: () => Navigator.of(context).pop(),
             ),

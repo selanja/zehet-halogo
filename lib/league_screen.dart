@@ -6,6 +6,7 @@ import 'app_background.dart';
 import 'device_id.dart';
 import 'league_service.dart';
 import 'main_menu_screen.dart';
+import 'l10n/app_localizations.dart';
 
 class LeagueScreen extends StatefulWidget {
   const LeagueScreen({super.key});
@@ -61,45 +62,47 @@ class _LeagueScreenState extends State<LeagueScreen> {
   }
 
   void _showRollover(LeagueRolloverResult r) {
+    final loc = AppLocalizations.of(context)!;
     final up = r.newTier > r.oldTier;
     final down = r.newTier < r.oldTier;
+    final tierName = LeagueService.tiers[r.newTier].name;
+    final body = '${loc.leaguePointsLastWeek(r.lastPoints)}\n'
+        '${r.coins > 0 ? '${loc.leagueCoinsReceived(r.coins)}\n' : ''}'
+        '${up ? loc.leagueTierUp(tierName) : down ? loc.leagueTierDown(tierName) : loc.leagueTierSame(tierName)}';
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF241a4f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: Text('סיכום שבוע: מקום ${r.lastRank} מתוך ${r.lastPlayers}', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        title: Text(loc.leagueRolloverSummaryTitle(r.lastRank, r.lastPlayers), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
-          '${r.lastPoints} נקודות בשבוע שעבר.\n'
-          '${r.coins > 0 ? 'קיבלת ${r.coins} מטבעות.\n' : ''}'
-          '${up ? 'עלית לליגת ${LeagueService.tiers[r.newTier].name}!' : down ? 'ירדת לליגת ${LeagueService.tiers[r.newTier].name}. חוזרים חזקים.' : 'נשארת בליגת ${LeagueService.tiers[r.newTier].name}.'}',
-          textDirection: TextDirection.rtl,
+          body,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.8), height: 1.5),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('מעולה'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(loc.leagueGreatButton))],
       ),
     );
   }
 
   String _timeLeft() {
+    final loc = AppLocalizations.of(context)!;
     final left = LeagueService.weekEnd().difference(DateTime.now());
-    if (left.isNegative) return 'מסתיים עכשיו';
+    if (left.isNegative) return loc.leagueEndsNow;
     final d = left.inDays;
     final h = left.inHours % 24;
-    return d > 0 ? 'נגמר בעוד $d ימים ו-$h שעות' : 'נגמר בעוד ${left.inHours} שעות';
+    return d > 0 ? loc.leagueEndsInDaysHours(d, h) : loc.leagueEndsInHours(left.inHours);
   }
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     final info = LeagueService.tiers[_tier];
     final tierColor = Color(info.color);
     final myIdx = _entries.indexWhere((e) => e.deviceId == _myId);
     return Scaffold(
       body: AppBackground(
         child: SafeArea(
-          child: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Column(
+          child: Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
@@ -107,7 +110,7 @@ class _LeagueScreenState extends State<LeagueScreen> {
                     children: [
                       IconButton(icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
                       const SizedBox(width: 4),
-                      const Text('ליגה שבועית', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                      Text(loc.leagueScreenTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                     ],
                   ),
                 ),
@@ -128,12 +131,12 @@ class _LeagueScreenState extends State<LeagueScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('ליגת ${info.name}', style: TextStyle(color: tierColor, fontSize: 20, fontWeight: FontWeight.w900)),
+                              Text(loc.leagueTierNameLabel(info.name), style: TextStyle(color: tierColor, fontSize: 20, fontWeight: FontWeight.w900)),
                               const SizedBox(height: 2),
                               Text(_timeLeft(), style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12.5, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 6),
                               Text(
-                                myIdx >= 0 ? 'מקום ${myIdx + 1} · $_myPoints נקודות' : '$_myPoints נקודות',
+                                myIdx >= 0 ? loc.leagueMyRankPoints(myIdx + 1, _myPoints) : loc.leaguePointsOnly(_myPoints),
                                 style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
                               ),
                             ],
@@ -146,7 +149,7 @@ class _LeagueScreenState extends State<LeagueScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 22),
                   child: Text(
-                    'כל שבוע מתחילים מאפס ומתחרים מול שחקנים באותה ליגה. מקומות 1-3: 100 / 60 / 40 מטבעות, וגם עלייה ליגה. משחקים, פותרים לוגואים ומנצחים כדי לצבור נקודות.',
+                    loc.leagueExplanationBody,
                     style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12.5, height: 1.4),
                   ),
                 ),
@@ -155,7 +158,7 @@ class _LeagueScreenState extends State<LeagueScreen> {
                   child: _loading
                       ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFD86B)))
                       : _entries.isEmpty
-                          ? Center(child: Text('עדיין אף אחד לא צבר נקודות השבוע. תהיו הראשונים!', style: TextStyle(color: Colors.white.withValues(alpha: 0.6))))
+                          ? Center(child: Text(loc.leagueEmptyMessage, style: TextStyle(color: Colors.white.withValues(alpha: 0.6))))
                           : RefreshIndicator(
                               onRefresh: _load,
                               child: ListView.separated(
@@ -168,13 +171,13 @@ class _LeagueScreenState extends State<LeagueScreen> {
                 ),
               ],
             ),
-          ),
         ),
       ),
     );
   }
 
   Widget _row(int i, LeagueEntry e) {
+    final loc = AppLocalizations.of(context)!;
     final me = e.deviceId == _myId;
     final medal = i == 0 ? '🥇' : i == 1 ? '🥈' : i == 2 ? '🥉' : null;
     return Container(
@@ -192,10 +195,10 @@ class _LeagueScreenState extends State<LeagueScreen> {
                 ? Text(medal, style: const TextStyle(fontSize: 22))
                 : Text('${i + 1}', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 15, fontWeight: FontWeight.w900)),
           ),
-          Expanded(child: Text(e.name.isEmpty ? 'שחקן' : e.name, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: me ? FontWeight.w900 : FontWeight.w700))),
+          Expanded(child: Text(e.name.isEmpty ? loc.leaguePlayerFallbackName : e.name, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: me ? FontWeight.w900 : FontWeight.w700))),
           Text('${e.points}', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(width: 4),
-          Text('נק׳', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
+          Text(loc.leaguePointsAbbrev, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
         ],
       ),
     );

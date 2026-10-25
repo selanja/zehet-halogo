@@ -19,6 +19,7 @@
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'notification_service.dart';
+import 'notification_manager.dart'; // 🆕 מתג "האנרגיה התמלאה" בטאב ההתראות (ראו _syncFullEnergyNotification)
 
 class EnergyService {
   EnergyService._();
@@ -209,7 +210,12 @@ class EnergyService {
       final lastUpdateMs = prefs.getInt(_keyLastUpdate) ?? DateTime.now().millisecondsSinceEpoch;
       final energiesNeeded = maxEnergy - energy;
       final fullAt = DateTime.fromMillisecondsSinceEpoch(lastUpdateMs).add(Duration(minutes: regenMinutes * energiesNeeded));
-      await NotificationService.scheduleEnergyFullNotification(fullAt.difference(DateTime.now()));
+      // 🆕 מגודר לפי מתג "האנרגיה התמלאה" בטאב ההתראות - ראו notification_manager.dart.
+      if (NotificationManager.notificationsEnabled && NotificationManager.energyNotificationsEnabled) {
+        await NotificationService.scheduleEnergyFullNotification(fullAt.difference(DateTime.now()));
+      } else {
+        await NotificationService.cancelEnergyFullNotification();
+      }
     } catch (_) {
       // שקט בכוונה - ראו ההסבר למעלה.
     }

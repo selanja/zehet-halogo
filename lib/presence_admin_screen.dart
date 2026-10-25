@@ -14,6 +14,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'presence_service.dart';
+import 'l10n/app_localizations.dart';
 
 class PresenceAdminScreen extends StatefulWidget {
   const PresenceAdminScreen({super.key});
@@ -63,13 +64,14 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
   }
 
   String _modeLabel(String mode) {
+    final loc = AppLocalizations.of(context)!;
     switch (mode) {
       case 'duel':
-        return 'דו-קרב';
+        return loc.presenceAdminModeDuel;
       case 'superdual':
-        return 'סדרת דו-קרב';
+        return loc.presenceAdminModeSuperDuel;
       case 'race':
-        return 'מירוץ';
+        return loc.presenceAdminModeRace;
       default:
         return mode;
     }
@@ -90,6 +92,7 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     final counts = _countsByMode;
     // 🩹 תוקן: "בפנים רשום 3 1 1" (הסה"כ לא שווה לסכום דו-קרב+מירוץ) -
     // total היה _entries.length, שסופר *כל* מסמך נוכחות כולל מוד לא מוכר
@@ -103,7 +106,7 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
       backgroundColor: const Color(0xFF12081F),
       appBar: AppBar(
         backgroundColor: const Color(0xFF12081F),
-        title: const Text("מעקב שחקנים אונליין", style: TextStyle(color: Colors.white, fontSize: 16)),
+        title: Text(loc.presenceAdminTitle, style: const TextStyle(color: Colors.white, fontSize: 16)),
         actions: [
           IconButton(icon: const Icon(Icons.refresh, color: Colors.white), onPressed: () { setState(() => _loading = true); _load(); }),
         ],
@@ -117,13 +120,13 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
                 // שביקשת ("כמה שחקנים מחוברים ברגע זה, איזה מוד").
                 Row(
                   children: [
-                    Expanded(child: _summaryCard("סה״כ", '$total', Colors.white)),
+                    Expanded(child: _summaryCard(loc.presenceAdminTotalLabel, '$total', Colors.white)),
                     const SizedBox(width: 8),
-                    Expanded(child: _summaryCard("דו-קרב", '${counts['duel'] ?? 0}', _modeColor('duel'))),
+                    Expanded(child: _summaryCard(loc.presenceAdminModeDuel, '${counts['duel'] ?? 0}', _modeColor('duel'))),
                     const SizedBox(width: 8),
-                    Expanded(child: _summaryCard("סדרה", '${counts['superdual'] ?? 0}', _modeColor('superdual'))),
+                    Expanded(child: _summaryCard(loc.presenceAdminSeriesLabel, '${counts['superdual'] ?? 0}', _modeColor('superdual'))),
                     const SizedBox(width: 8),
-                    Expanded(child: _summaryCard("מירוץ", '${counts['race'] ?? 0}', _modeColor('race'))),
+                    Expanded(child: _summaryCard(loc.presenceAdminModeRace, '${counts['race'] ?? 0}', _modeColor('race'))),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -131,8 +134,7 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
-                      'עודכן לפני ${DateTime.now().difference(_lastRefresh!).inSeconds} שניות · מתרענן אוטומטית כל 10 שניות',
-                      textDirection: TextDirection.rtl,
+                      loc.presenceAdminLastRefreshLabel(DateTime.now().difference(_lastRefresh!).inSeconds),
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
                     ),
                   ),
@@ -141,9 +143,8 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 40),
                     child: Text(
-                      "אף אחד לא מחובר כרגע (או שאין רשת) ⚠️ שים לב: שחקנים שכבר בתוך משחק דו-קרב פעיל (לא בלובי) לא נספרים - מגבלה ידועה, ראו הערה ב-presence_service.dart",
+                      loc.presenceAdminEmptyMessage,
                       textAlign: TextAlign.center,
-                      textDirection: TextDirection.rtl,
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5),
                     ),
                   )
@@ -162,13 +163,14 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
         children: [
           Text(value, style: TextStyle(color: color, fontSize: 22, fontWeight: FontWeight.w900)),
           const SizedBox(height: 4),
-          Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w700)),
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 
   Widget _deviceRow(Map<String, dynamic> e) {
+    final loc = AppLocalizations.of(context)!;
     final deviceId = e['deviceId'] as String;
     final mode = e['mode'] as String? ?? '?';
     final updatedAt = e['updatedAt'] as DateTime?;
@@ -179,19 +181,17 @@ class _PresenceAdminScreenState extends State<PresenceAdminScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: Colors.white.withValues(alpha: 0.04)),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: _modeColor(mode))),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               '$shortId · ${_modeLabel(mode)}',
-              textDirection: TextDirection.rtl,
               style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
           if (agoSec != null)
-            Text('לפני ${agoSec}s', style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
+            Text(loc.presenceAdminSecondsAgo(agoSec), style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11)),
         ],
       ),
     );

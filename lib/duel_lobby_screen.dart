@@ -28,18 +28,19 @@ import 'app_notification.dart';
 import 'not_enough_coins_dialog.dart'; // 🆕 "אין מספיק מטבעות" - עכשיו מקשר ישר לחנות
 import 'starter_pack_dialog.dart'; // 🆕 מציג מארז פתיחה ברגע חיכוך אם עדיין זכאי
 import 'out_of_resource.dart'; // 🆕 "נגמרו המטבעות" - פרסומת/חנות
+import 'l10n/app_localizations.dart';
 
 enum _LobbyState { checking, banned, notEnoughEnergy, notEnoughCoins, selectingStake, searching, found, noPlayers, error }
 
 // 🆕 טיפים קצרים שמתחלפים בזמן החיפוש - כדי שהחיפוש ירגיש פחות "מת"
 // וקצת יותר מעניין מרק ספינר סטטי.
-const List<String> _searchingTips = [
-  "טיפ: כל אחד עונה בקצב שלו - מי שמסיים ראשון את 10 הלוגואים מנצח",
-  "טיפ: אפשר לקנות רמז זול במיוחד בתוך הדו-קרב אם נתקעים",
-  "טיפ: המנצח לוקח את כל קופת המטבעות של שני השחקנים",
-  "טיפ: אין אינטרנט טוב ליריב? הוא יחזור לתור אחרי שנייה",
-  "טיפ: תרגלו במצב הרגיל כדי להכיר יותר לוגואים לפני דו-קרב",
-];
+List<String> _searchingTips(AppLocalizations loc) => [
+      loc.duelLobbySearchingTip1,
+      loc.duelLobbySearchingTip2,
+      loc.duelLobbySearchingTip3,
+      loc.duelLobbySearchingTip4,
+      loc.duelLobbySearchingTip5,
+    ];
 
 class DuelLobbyScreen extends StatefulWidget {
   final String username;
@@ -248,7 +249,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       if (!mounted) return;
       setState(() {
         _state = _LobbyState.error;
-        _errorText = 'משהו השתבש, האנרגיה הוחזרה. נסה שוב.';
+        _errorText = AppLocalizations.of(context)!.duelLobbyStakeErrorMessage;
       });
     }
   }
@@ -263,11 +264,11 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       if (!mounted) return;
       final m = adCooldown.inMinutes;
       final s = adCooldown.inSeconds % 60;
-      AppNotification.show(context, "אפשר לצפות בפרסומת נוספת בעוד $m:${s.toString().padLeft(2, '0')}", type: AppNotificationType.warning);
+      AppNotification.show(context, AppLocalizations.of(context)!.duelLobbyAdCooldownMsg('$m:${s.toString().padLeft(2, '0')}'), type: AppNotificationType.warning);
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
+      AppNotification.show(context, AppLocalizations.of(context)!.duelLobbyNoAdAvailable, type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -298,7 +299,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
     _tipTimer?.cancel();
     _tipTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted) return;
-      setState(() => _tipIndex = (_tipIndex + 1) % _searchingTips.length);
+      setState(() => _tipIndex = (_tipIndex + 1) % _searchingTips(AppLocalizations.of(context)!).length);
     });
   }
 
@@ -473,7 +474,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         _foundMatchSub?.cancel();
         setState(() {
           _state = _LobbyState.error;
-          _errorText = "היריב ביטל את הדו-קרב לפני שהתחיל";
+          _errorText = AppLocalizations.of(context)!.duelLobbyOpponentCancelledMessage;
         });
       }
     }, onError: (_) {});
@@ -614,21 +615,21 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   // 🆕 כותרת+תת-כותרת של הסרגל העליון, לפי המצב הנוכחי - תואם לעיצוב
   // שסופק ("דו־קרב 1 על 1" / "בחר על מה משחקים" בבחירת הימור, "מחפש
   // יריב" / "דו־קרב על X 🪙 · Y לוגואים" בזמן חיפוש).
-  (String, String) get _topBarTexts {
+  (String, String) _topBarTexts(AppLocalizations loc) {
     switch (_state) {
       case _LobbyState.searching:
         final stake = _selectedStake;
-        final sub = stake == null ? '' : 'דו־קרב על $stake מטבעות · ${DuelService.questionsForStake(stake)} לוגואים';
-        return ('מחפש יריב', sub);
+        final sub = stake == null ? '' : loc.duelLobbyBarSubtitleSearching(stake, DuelService.questionsForStake(stake));
+        return (loc.duelLobbyBarTitleSearching, sub);
       case _LobbyState.selectingStake:
-        return ('דו־קרב 1 על 1', 'בחר על מה משחקים');
+        return (loc.duelLobbyBarTitleDefault, loc.duelLobbyBarSubtitleChoosing);
       default:
-        return ('דו־קרב 1 על 1', '');
+        return (loc.duelLobbyBarTitleDefault, '');
     }
   }
 
   Widget _buildTopBar() {
-    final (title, subtitle) = _topBarTexts;
+    final (title, subtitle) = _topBarTexts(AppLocalizations.of(context)!);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       // 🆕 עיצוב מחדש - סדר הפוך (מסך 04 · לובי דו-קרב): פיל
@@ -658,10 +659,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           Expanded(
             child: Column(
               children: [
-                Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                 if (subtitle.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11, fontWeight: FontWeight.w500)),
+                  Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11, fontWeight: FontWeight.w500)),
                 ],
               ],
             ),
@@ -675,26 +676,28 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   // 🆕 מסך חסימה זמנית - מוצג כשהשחקן עזב דו-קרב באמצע יותר מפעם אחת
   // (ראו applyForfeitPenalty ב-duel_service.dart).
   Widget _buildBanned() {
+    final loc = AppLocalizations.of(context)!;
     final until = _banUntil;
     final remaining = until != null ? until.difference(DateTime.now()) : Duration.zero;
     final h = remaining.inHours;
     final m = remaining.inMinutes % 60;
-    final remainingText = remaining.isNegative ? "כמה רגעים" : (h > 0 ? "$h שעות ו-$m דקות" : "$m דקות");
+    final remainingText = remaining.isNegative
+        ? loc.duelLobbyBannedTimeFewMoments
+        : (h > 0 ? loc.duelLobbyBannedTimeHoursMinutes(h, m) : loc.duelLobbyBannedTimeMinutes(m));
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.block_rounded, color: Color(0xFFFF6B6B), size: 60),
         const SizedBox(height: 18),
-        const Text("חסום זמנית מדו-קרב", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(loc.duelLobbyBannedTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "עזבת דו-קרב באמצע המשחק יותר מפעם אחת - זו לא הוגן כלפי היריבים שממתינים לתשובה. תוכל לשחק דו-קרב שוב בעוד $remainingText.",
+          loc.duelLobbyBannedMessage(remainingText),
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
-        _buildTextButton("חזרה", onTap: () => Navigator.pop(context)),
+        _buildTextButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
         const SizedBox(height: 10),
         // 🆕 כפתור דיבאג קטן - מנקה את החסימה של המכשיר הזה בלבד, בלי
         // צורך לחפש/למחוק ידנית ב-Firebase Console. נראה עמום בכוונה
@@ -708,8 +711,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
             _loadRequirementsThenPickStake();
           },
           child: Text(
-            "נקה חסימה (דיבאג)",
-            textDirection: TextDirection.rtl,
+            loc.duelLobbyClearBanDebugButton,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11.5, fontWeight: FontWeight.w600),
           ),
         ),
@@ -737,6 +739,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   // כולו) - ה"ביטול" בפועל של הלובי קורה ב-_openStakeSheet אחרי שהגליון
   // נסגר, אם לא נבחרה רמת הימור.
   Widget _buildStakeSheet(BuildContext sheetContext) {
+    final loc = AppLocalizations.of(context)!;
     return SafeArea(
       top: false,
       child: Container(
@@ -760,11 +763,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                "על מה משחקים?",
+              Text(
+                loc.duelLobbyStakeSheetTitle,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900),
+                style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 18),
               // 🩹 תוקן: הוסרו כאן בכוונה כמה אלמנטים שהצטברו והפכו את
@@ -785,14 +787,12 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                   color: Colors.white.withValues(alpha: 0.05),
                 ),
                 child: Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     const EnergyIcon(size: 15),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "כל דו-קרב עולה ${EnergyService.duelCost} אנרגיה · יש לך $_energy",
-                        textDirection: TextDirection.rtl,
+                        loc.duelLobbyEnergyInfoRow(EnergyService.duelCost, _energy),
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w500),
                       ),
                     ),
@@ -803,7 +803,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
               Center(
                 child: TextButton(
                   onPressed: () => Navigator.pop(sheetContext),
-                  child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  child: Text(loc.duelLobbyCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
               ),
               const SizedBox(height: 10),
@@ -879,10 +879,11 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   // בולט עם ברק ותג "הכי פופולרי" (7 לוגואים), 200 = סגול/"אלופים"
   // (המשחק המלא, 10 לוגואים).
   Widget _stakeOption(int stake, BuildContext sheetContext) {
+    final loc = AppLocalizations.of(context)!;
     final canAfford = _coins >= stake;
     final questions = DuelService.questionsForStake(stake);
     final prize = stake * 2;
-    final subtitle = '$questions לוגואים · המנצח לוקח $prize';
+    final subtitle = loc.duelLobbyStakeSubtitle(questions, prize);
 
     void onTap() {
       if (canAfford) {
@@ -928,7 +929,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                       gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     ),
                     child: Row(
-                      textDirection: TextDirection.rtl,
                       children: [
                         Container(
                           width: 48,
@@ -940,12 +940,11 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                         const SizedBox(width: 13),
                         Expanded(
                           child: Column(
-                            textDirection: TextDirection.rtl,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('$stake מטבעות', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 19, fontWeight: FontWeight.w900)),
+                              Text(loc.duelLobbyStakeCoinsLabel(stake), style: const TextStyle(color: Color(0xFF2A1740), fontSize: 19, fontWeight: FontWeight.w900)),
                               const SizedBox(height: 2),
-                              Text(subtitle, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 11.5, fontWeight: FontWeight.w700).copyWith(color: const Color(0xFF2A1740).withValues(alpha: 0.68))),
+                              Text(subtitle, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 11.5, fontWeight: FontWeight.w700).copyWith(color: const Color(0xFF2A1740).withValues(alpha: 0.68))),
                             ],
                           ),
                         ),
@@ -965,7 +964,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                   gradient: const LinearGradient(colors: [Color(0xFFFB7185), Color(0xFFE11D74)]),
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 14, offset: const Offset(0, 6))],
                 ),
-                child: const Text('הכי פופולרי', style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
+                child: Text(loc.duelLobbyMostPopularBadge, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
               ),
             ),
           ],
@@ -993,7 +992,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         : (isCheap ? Icons.monetization_on_rounded : (isMid ? Icons.local_fire_department_rounded : (isHighRoller ? Icons.workspace_premium_rounded : Icons.diamond_rounded)));
     // 🩹 תוקן: "היי-רולר"/"אלופים" הוחלפו לפי בקשה מפורשת בתגים פשוטים
     // ונורמליים יותר (בלי סלנג הימורים/תחושת "תואר מפואר").
-    final String badgeText = isBlitz ? 'בזק ⚡' : (isCheap ? 'חימום' : (isMid ? 'מנוסים' : (isHighRoller ? 'מקסימלי' : 'מקצועי')));
+    final String badgeText = isBlitz ? loc.duelLobbyBadgeBlitz : (isCheap ? loc.duelLobbyBadgeWarmup : (isMid ? loc.duelLobbyBadgeExperienced : (isHighRoller ? loc.duelLobbyBadgeMax : loc.duelLobbyBadgePro)));
     final Color? badgeColor = needsDarkText ? accent : null;
     final Gradient? badgeGradient = needsDarkText ? null : LinearGradient(colors: isHighRoller ? const [Color(0xFFFFD86B), Color(0xFFF43F5E)] : const [Color(0xFFC084FC), Color(0xFF7DD3FC)]);
     final Color badgeTextColor = needsDarkText ? const Color(0xFF08281C) : const Color(0xFF2A1740);
@@ -1013,7 +1012,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
               gradient: LinearGradient(colors: [accent.withValues(alpha: 0.18), accent.withValues(alpha: 0.03)], begin: Alignment.centerLeft, end: Alignment.centerRight),
             ),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 Container(
                   width: 48,
@@ -1025,7 +1023,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                 const SizedBox(width: 13),
                 Expanded(
                   child: Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // 🩹 תוקן: היה Row עם Flexible+ellipsis על "$stake מטבעות" -
@@ -1037,9 +1034,8 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                         crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 7,
                         runSpacing: 4,
-                        textDirection: TextDirection.rtl,
                         children: [
-                          Text('$stake מטבעות', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                          Text(loc.duelLobbyStakeCoinsLabel(stake), style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
                             decoration: BoxDecoration(color: badgeColor, gradient: badgeGradient, borderRadius: BorderRadius.circular(8)),
@@ -1048,7 +1044,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w500)),
+                      Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 ),
@@ -1108,6 +1104,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   }
 
   Widget _buildSearching() {
+    final loc = AppLocalizations.of(context)!;
     final stake = _selectedStake;
     final elapsedText = '0:${_elapsedSeconds.toString().padLeft(2, '0')}';
     return Column(
@@ -1131,12 +1128,12 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                     children: [
                       _avatarCircle(widget.username, size: 66),
                       const SizedBox(height: 10),
-                      Text(widget.username, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
+                      Text(widget.username, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 9),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: const Color(0xFF34D399).withValues(alpha: 0.18), border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.45))),
-                        child: const Text('מוכן ✓', style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 10.5, fontWeight: FontWeight.w900)),
+                        child: Text(loc.duelLobbyReadyLabel, style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 10.5, fontWeight: FontWeight.w900)),
                       ),
                     ],
                   ),
@@ -1169,12 +1166,12 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                     children: [
                       _spinningOpponentAvatar(),
                       const SizedBox(height: 10),
-                      Text('מחפש…', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 15, fontWeight: FontWeight.w900)),
+                      Text(loc.duelLobbySearchingLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 15, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 9),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.white.withValues(alpha: 0.07), border: Border.all(color: Colors.white.withValues(alpha: 0.14))),
-                        child: Text('מתחבר…', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w900)),
+                        child: Text(loc.duelLobbyConnectingLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w900)),
                       ),
                     ],
                   ),
@@ -1218,7 +1215,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           ),
         ),
         const SizedBox(height: 14),
-        Text('מחפש יריב… $elapsedText', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+        Text(loc.duelLobbySearchingElapsed(elapsedText), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
         const SizedBox(height: 16),
         // 🆕 טיפ מתחלף - שובר את המונוטוניות של מסך "מחפש..." ריק
         SizedBox(
@@ -1229,9 +1226,8 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
               key: ValueKey(_tipIndex),
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
-                _searchingTips[_tipIndex],
+                _searchingTips(loc)[_tipIndex % _searchingTips(loc).length],
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500),
               ),
             ),
@@ -1248,6 +1244,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   }
 
   Widget _buildDuelConditionsGrid(int stake) {
+    final loc = AppLocalizations.of(context)!;
     final questions = DuelService.questionsForStake(stake);
     final prize = stake * 2;
     Widget stat(String value, String label, Color color, Color bg) => Expanded(
@@ -1258,7 +1255,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
               children: [
                 Text(value, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
-                Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
+                Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -1273,21 +1270,20 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       child: Column(
         children: [
           Row(
-            textDirection: TextDirection.rtl,
-            children: const [
-              Text('⚔️', style: TextStyle(fontSize: 13)),
-              SizedBox(width: 8),
-              Text('תנאי הדו־קרב', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
+            children: [
+              const Text('⚔️', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 8),
+              Text(loc.duelLobbyConditionsTitle, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              stat('$stake', 'הימור', const Color(0xFFFFE7A8), const Color(0xFFFFD86B)),
+              stat('$stake', loc.duelLobbyStatStake, const Color(0xFFFFE7A8), const Color(0xFFFFD86B)),
               const SizedBox(width: 9),
-              stat('$questions', 'לוגואים', const Color(0xFFBFDBFE), const Color(0xFF60A5FA)),
+              stat('$questions', loc.duelLobbyStatLogos, const Color(0xFFBFDBFE), const Color(0xFF60A5FA)),
               const SizedBox(width: 9),
-              stat('$prize', 'למנצח', const Color(0xFFA7F3D0), const Color(0xFF34D399)),
+              stat('$prize', loc.duelLobbyStatWinner, const Color(0xFFA7F3D0), const Color(0xFF34D399)),
             ],
           ),
         ],
@@ -1296,52 +1292,52 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   }
 
   Widget _buildNotEnoughEnergy() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const EnergyIcon(size: 52),
         const SizedBox(height: 18),
-        const Text("נגמרה האנרגיה ⚡", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(loc.duelLobbyNotEnoughEnergyTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "כל דו-קרב עולה ${EnergyService.duelCost} אנרגיות מתוך ${EnergyService.maxEnergy}. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.",
+          loc.duelLobbyNotEnoughEnergyMessage(EnergyService.duelCost, EnergyService.maxEnergy, EnergyService.regenMinutes),
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
-        _buildPrimaryButton("צפה בפרסומת (+${EnergyService.adRewardAmount} אנרגיה) 🎬", onTap: _watchAdForEnergy),
+        _buildPrimaryButton(loc.duelLobbyWatchAdEnergyButton(EnergyService.adRewardAmount), onTap: _watchAdForEnergy),
         const SizedBox(height: 12),
         // 🆕 מי שלא רוצה לחכות/לצפות בפרסומת - אפשרות לקנות אנרגיה
         // ישירות מהחנות. לוחצים וזה גולל אוטומטית לקטע "חנות האנרגיה".
-        _buildTextButton("קנה בחנות ⚡", onTap: () {
+        _buildTextButton(loc.duelLobbyBuyEnergyButton, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const ShopScreen(scrollToEnergy: true)));
         }),
         const SizedBox(height: 8),
-        _buildTextButton("חזרה", onTap: () => Navigator.pop(context)),
+        _buildTextButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
   Widget _buildNotEnoughCoins() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const CoinIcon(size: 52),
         const SizedBox(height: 18),
-        const Text("אין מספיק מטבעות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(loc.duelLobbyNotEnoughCoinsTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "דמי כניסה לדו-קרב: החל מ-${DuelService.stakeOptions.first} מטבעות (יש לך $_coins). המנצח לוקח את כל הקופה!",
+          loc.duelLobbyNotEnoughCoinsMessage(DuelService.stakeOptions.first, _coins),
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
         // 🆕 במקום רק "חזרה" - אפשר לקבל מטבעות בפרסומת או לקנות בחנות
-        ...OutOfResource.offerButtons(context, coins: true, onGranted: _loadRequirementsThenPickStake),
+        ...OutOfResource.offerButtons(context, coins: true, neededCoins: DuelService.stakeOptions.first, onGranted: _loadRequirementsThenPickStake),
         const SizedBox(height: 12),
-        _buildTextButton("חזרה", onTap: () => Navigator.pop(context)),
+        _buildTextButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
@@ -1364,15 +1360,16 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
 
   Widget _buildFoundFallback(Object error) {
     debugPrint('DuelLobby _buildFoundContent error: $error');
+    final loc = AppLocalizations.of(context)!;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 40, 20, 26),
       child: Column(
         children: [
           const Icon(Icons.check_circle_rounded, color: Color(0xFF4ADE80), size: 56),
           const SizedBox(height: 14),
-          const Text("נמצא יריב! ⚔️", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+          Text(loc.duelLobbyFoundTitleFallback, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
-          Text(_opponentName ?? "יריב", textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 16, fontWeight: FontWeight.w800)),
+          Text(_opponentName ?? loc.duelLobbyOpponentFallbackName, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 16, fontWeight: FontWeight.w800)),
           const SizedBox(height: 30),
           Text("$_readyCountdown", style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 40, fontWeight: FontWeight.w900)),
         ],
@@ -1381,6 +1378,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   }
 
   Widget _buildFoundContent() {
+    final loc = AppLocalizations.of(context)!;
     final gold = const Color(0xFFFFD86B);
     final pink = const Color(0xFFFDA4AF);
     final showH2H = (_h2hMine + _h2hTheirs) > 0;
@@ -1401,11 +1399,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              textDirection: TextDirection.rtl,
               children: [
                 const Icon(Icons.check_rounded, color: Color(0xFF6EE7B7), size: 14),
                 const SizedBox(width: 7),
-                const Text("נמצא יריב!", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                Text(loc.duelLobbyFoundBadge, style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 12.5, fontWeight: FontWeight.w800)),
               ],
             ),
           ),
@@ -1424,7 +1421,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                 Expanded(
                   child: _foundPlayerCard(
                     name: widget.username,
-                  label: "אתה",
+                  label: loc.duelLobbyYouLabel,
                   borderColor: gold,
                   nameColor: gold,
                   innerColors: const [Color(0xFFFFD86B), Color(0xFFFFA94D)],
@@ -1438,8 +1435,8 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
               _foundVsDivider(),
               Expanded(
                 child: _foundPlayerCard(
-                  name: _opponentName ?? "יריב",
-                  label: "היריב",
+                  name: _opponentName ?? loc.duelLobbyOpponentFallbackName,
+                  label: loc.duelLobbyOpponentLabel,
                   borderColor: pink,
                   nameColor: pink,
                   innerColors: const [Color(0xFFFDA4AF), Color(0xFFF43F5E)],
@@ -1460,7 +1457,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           const SizedBox(height: 14),
           _duelTermsCard(stake: stake, logos: logos, winnerReward: stake * 2),
           const SizedBox(height: 28),
-          Text("הדו־קרב מתחיל בעוד", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15, fontWeight: FontWeight.w800)),
+          Text(loc.duelLobbyStartingIn, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 14),
           _readyCountdownRing(),
           const SizedBox(height: 18),
@@ -1478,7 +1475,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
                   border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
                   color: Colors.white.withValues(alpha: 0.06),
                 ),
-                child: Text("ביטול הדו־קרב", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14.5, fontWeight: FontWeight.w800)),
+                child: Text(loc.duelLobbyCancelDuelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14.5, fontWeight: FontWeight.w800)),
               ),
             ),
           ),
@@ -1499,6 +1496,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
     required int? xp,
     required int wins,
   }) {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 18, 10, 16),
       decoration: BoxDecoration(
@@ -1516,11 +1514,11 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           const SizedBox(height: 12),
           Column(
             children: [
-              _foundStatRow("מקום", rank != null ? "#$rank" : "—", Colors.white),
+              _foundStatRow(loc.duelLobbyRankLabel, rank != null ? "#$rank" : "—", Colors.white),
               const SizedBox(height: 6),
               _foundStatRow("XP", xp != null ? _formatXp(xp) : "—", const Color(0xFF93C5FD)),
               const SizedBox(height: 6),
-              _foundStatRow("ניצחונות", "$wins", const Color(0xFFA7F3D0)),
+              _foundStatRow(loc.duelLobbyWinsLabel, "$wins", const Color(0xFFA7F3D0)),
             ],
           ),
         ],
@@ -1543,7 +1541,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: Colors.white.withValues(alpha: 0.06)),
       child: Row(
-        textDirection: TextDirection.rtl,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w700)),
@@ -1582,6 +1579,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   // 🆕 "מאזן ראש בראש" - כמה פעמים ניצחתי/הפסדתי ליריב הספציפי הזה בעבר,
   // מוצג רק אם באמת יש היסטוריה ביניכם (אחרת "0 — 0" לא אומר כלום).
   Widget _headToHeadCard() {
+    final loc = AppLocalizations.of(context)!;
     final mineFlex = _h2hMine == 0 ? 1 : _h2hMine;
     final theirsFlex = _h2hTheirs == 0 ? 1 : _h2hTheirs;
     return Container(
@@ -1595,10 +1593,9 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("מאזן ראש בראש", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w700)),
+              Text(loc.duelLobbyH2hTitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w700)),
               Text("$_h2hMine — $_h2hTheirs", style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
             ],
           ),
@@ -1608,7 +1605,6 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
             child: SizedBox(
               height: 8,
               child: Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   Expanded(
                     flex: mineFlex,
@@ -1624,11 +1620,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           ),
           const SizedBox(height: 8),
           Row(
-            textDirection: TextDirection.rtl,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("אתה $_h2hMine ניצחונות", style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 10.5, fontWeight: FontWeight.w700)),
-              Text("${_opponentName ?? 'היריב'} $_h2hTheirs", style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 10.5, fontWeight: FontWeight.w700)),
+              Text(loc.duelLobbyH2hYouWins(_h2hMine), style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 10.5, fontWeight: FontWeight.w700)),
+              Text(loc.duelLobbyH2hOpponentScore(_opponentName ?? loc.duelLobbyOpponentFallbackNameWithThe, _h2hTheirs), style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 10.5, fontWeight: FontWeight.w700)),
             ],
           ),
         ],
@@ -1639,6 +1634,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   // 🆕 "תנאי הדו-קרב" - הימור/מספר לוגואים/פרס למנצח, לפי הרמה שבאמת
   // נבחרה בלובי (לא מספרים בדויים).
   Widget _duelTermsCard({required int stake, required int logos, required int winnerReward}) {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1650,11 +1646,10 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               const Text("⚔", style: TextStyle(fontSize: 13)),
               const SizedBox(width: 8),
-              const Text("תנאי הדו־קרב", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
+              Text(loc.duelLobbyConditionsTitle, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 12),
@@ -1662,11 +1657,11 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
             children: [
               // 🩹 הוסר אימוג'י המטבע (🪙) מהתוויות - לא נתמך בפונט של חלק
               // מהמכשירים ומוצג כריבוע ריק במקום סמל.
-              Expanded(child: _termBox(value: "$stake", label: "הימור", bg: const Color(0xFFFFD86B), valueColor: const Color(0xFFFFE7A8))),
+              Expanded(child: _termBox(value: "$stake", label: loc.duelLobbyStatStake, bg: const Color(0xFFFFD86B), valueColor: const Color(0xFFFFE7A8))),
               const SizedBox(width: 9),
-              Expanded(child: _termBox(value: "$logos", label: "לוגואים", bg: const Color(0xFF60A5FA), valueColor: const Color(0xFFBFDBFE))),
+              Expanded(child: _termBox(value: "$logos", label: loc.duelLobbyStatLogos, bg: const Color(0xFF60A5FA), valueColor: const Color(0xFFBFDBFE))),
               const SizedBox(width: 9),
-              Expanded(child: _termBox(value: "$winnerReward", label: "למנצח", bg: const Color(0xFF34D399), valueColor: const Color(0xFFA7F3D0))),
+              Expanded(child: _termBox(value: "$winnerReward", label: loc.duelLobbyStatWinner, bg: const Color(0xFF34D399), valueColor: const Color(0xFFA7F3D0))),
             ],
           ),
         ],
@@ -1686,7 +1681,7 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
         children: [
           Text(value, style: TextStyle(color: valueColor, fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(height: 2),
-          Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
+          Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -1714,42 +1709,41 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
   }
 
   Widget _buildNoPlayers() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.person_off_rounded, color: Colors.white.withValues(alpha: 0.5), size: 64),
         const SizedBox(height: 20),
-        const Text(
-          "אין כרגע שחקנים מחוברים 🙁",
+        Text(
+          loc.duelLobbyNoPlayersTitle,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
-          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
+          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
         Text(
-          "נסה שוב בעוד כמה דקות, או שתף חברים כדי לשחק ביחד",
+          loc.duelLobbyNoPlayersMessage,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14.5),
         ),
         const SizedBox(height: 30),
-        _buildPrimaryButton("נסה שוב", onTap: _retrySameStake),
+        _buildPrimaryButton(loc.duelLobbyRetryButton, onTap: _retrySameStake),
         const SizedBox(height: 12),
-        _buildTextButton("חזרה", onTap: () => Navigator.pop(context)),
+        _buildTextButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
   Widget _buildError() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(Icons.wifi_off_rounded, color: Colors.redAccent.withValues(alpha: 0.8), size: 64),
         const SizedBox(height: 20),
-        const Text(
-          "משהו השתבש",
-          textDirection: TextDirection.rtl,
-          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
+        Text(
+          loc.duelLobbyErrorTitle,
+          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
         ),
         if (_errorText != null) ...[
           const SizedBox(height: 8),
@@ -1760,14 +1754,14 @@ class _DuelLobbyScreenState extends State<DuelLobbyScreen> with TickerProviderSt
           ),
         ],
         const SizedBox(height: 30),
-        _buildPrimaryButton("נסה שוב", onTap: _retrySameStake),
+        _buildPrimaryButton(loc.duelLobbyRetryButton, onTap: _retrySameStake),
         const SizedBox(height: 12),
-        _buildTextButton("חזרה", onTap: () => Navigator.pop(context)),
+        _buildTextButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
-  Widget _buildCancelButton() => _buildTextButton("ביטול", onTap: _cancelAndExit);
+  Widget _buildCancelButton() => _buildTextButton(AppLocalizations.of(context)!.duelLobbyCancelButton, onTap: _cancelAndExit);
 
   Widget _buildPrimaryButton(String label, {required VoidCallback onTap}) {
     return Material(

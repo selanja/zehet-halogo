@@ -12,9 +12,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'logo_level_screen.dart';
 import 'level_loading_screen.dart';
 import 'audio_manager.dart';
+import 'ads_manager.dart';
 import 'review_manager.dart';
 import 'app_notification.dart';
 import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
+import 'l10n/app_localizations.dart';
 
 class SubLevelsScreen extends StatefulWidget {
   final int mainLevel; // מקבל את הרמה הראשית (1, 2, 3...)
@@ -41,9 +43,17 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProgress();
-    FirstVisitExplainer.shouldShow('subLevels').then((show) {
-      if (show && mounted) setState(() => _showExplainer = true);
+    // 🐛 תוקן: מסך בחירת השלב (מצב קלאסי) מעולם לא נספר כ"גלישה".
+    AdsManager.recordBrowseNavigation();
+    // 🩹 תוקן באג מדווח: הסיור הוצג גם למשתמש עם משתמש/התקדמות אמיתית
+    // (לדוגמה אחרי שחזור ענן שמאפס את דגל "נראה כבר" המקומי בלי לאפס את
+    // ההתקדמות בפועל) - "אם הוא לא ברמה 1 זה לא יעבוד לו" - עכשיו ממתינים
+    // לטעינת ההתקדמות האמיתית ומציגים את הסיור רק אם המשתמש באמת בשלב 1.
+    _loadProgress().then((_) async {
+      final show = await FirstVisitExplainer.shouldShow('subLevels');
+      if (show && maxUnlockedLevel <= 1 && mounted) {
+        setState(() => _showExplainer = true);
+      }
     });
   }
 
@@ -97,53 +107,72 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
     18: 18, // תקשורת וחדשות ישראליות
     19: 40, // דגלים חלק ג'
     20: 20, // אלקטרוניקה חלק ב
+    21: 18, // כדורסל אירופי - יורוליג
+    22: 32, // NFL - פוטבול אמריקאי
+    23: 30, // קבוצות כדורגל ישראליות - ליגת העל וליגה לאומית
+    24: 30, // אולפני סרטים ובידור עולמי
+    25: 30, // חברות תעופה
+    26: 34, // קבוצות כדורגל אירופאיות חלק ב'
   };
 
   // פונקציה שמחזירה את שם הקטגוריה לפי מספר הרמה
   String getWorldName(int worldNum) {
+    final loc = AppLocalizations.of(context)!;
     switch (worldNum) {
       case 1:
-        return "חברות חלק א";
+        return loc.worldName1;
       case 2:
-        return "דגלים חלק א";
+        return loc.worldName2;
       case 3:
-        return "אפליקציות";
+        return loc.worldName3;
       case 4:
-        return "רכבים";
+        return loc.worldName4;
       case 5:
-        return "סופרים";
+        return loc.worldName5;
       case 6:
-        return "רשתות מוכרות";
+        return loc.worldName6;
       case 7:
-        return "חטיפים וממתקים";
+        return loc.worldName7;
       case 8:
-        return "קבוצות כדורגל";
+        return loc.worldName8;
       case 9:
-        return "ערים בישראל";
+        return loc.worldName9;
       case 10:
-        return "דגלים חלק ב";
+        return loc.worldName10;
       case 11:
-        return "בנקים וביטוח";
-        case 12:
-        return "חברות חלק ב";
-        case 13:
-        return "משחקים מוכרים";
+        return loc.worldName11;
+      case 12:
+        return loc.worldName12;
+      case 13:
+        return loc.worldName13;
       case 14:
-        return "קבוצות NBA";
+        return loc.worldName14;
       case 15:
-        return "יחידות בצה\"ל וכוחות הביטחון";
+        return loc.worldName15;
       case 16:
-        return "רכבים חלק ב";
+        return loc.worldName16;
       case 17:
-        return "אלקטרוניקה ומכשירי חשמל";
+        return loc.worldName17;
       case 18:
-        return "תקשורת וחדשות ישראליות";
+        return loc.worldName18;
       case 19:
-        return "דגלים חלק ג'";
+        return loc.worldName19;
       case 20:
-        return "אלקטרוניקה ומכשירי חשמל חלק ב";
+        return loc.worldName20;
+      case 21:
+        return loc.worldName21;
+      case 22:
+        return loc.worldName22;
+      case 23:
+        return loc.worldName23;
+      case 24:
+        return loc.worldName24;
+      case 25:
+        return loc.worldName25;
+      case 26:
+        return loc.worldName26;
       default:
-        return "כללי";
+        return loc.worldNameDefault;
     }
   }
 
@@ -166,7 +195,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
       MaterialPageRoute(
         builder: (context) => LevelLoadingScreen(
           puzzleId: puzzleId,
-          categoryLabel: "${getWorldName(widget.mainLevel)} · שלב $displayNum",
+          categoryLabel: AppLocalizations.of(context)!.subLevelsCategoryStageLabel(getWorldName(widget.mainLevel), displayNum),
         ),
       ),
     ).then((_) => _loadProgress());
@@ -174,6 +203,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     // חישוב דינמי של ה-ID הראשון ברמה הזו לפי מפת הכמויות
     int startPuzzleId = getFirstPuzzleIdOfMainLevel(widget.mainLevel);
     // שליפת כמות השלבים הייחודית לרמה הזו (ברירת מחדל 23)
@@ -216,11 +246,9 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              textDirection: TextDirection.rtl,
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Row(
-                                  textDirection: TextDirection.rtl,
                                   children: [
                                     Container(
                                       width: 38,
@@ -232,10 +260,9 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text("ההתקדמות שלך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                                        Text(loc.subLevelsYourProgressTitle, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
                                         Text(
-                                          allDone ? "כל השלבים הושלמו!" : "השלב הבא: שלב $currentDisplayNum",
-                                          textDirection: TextDirection.rtl,
+                                          allDone ? loc.subLevelsAllCompletedMessage : loc.subLevelsNextStageMessage(currentDisplayNum),
                                           style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w500),
                                         ),
                                       ],
@@ -260,11 +287,10 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                             ),
                             const SizedBox(height: 9),
                             Row(
-                              textDirection: TextDirection.rtl,
                               children: [
-                                Text("✓ $doneCount הושלמו", style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w700)),
+                                Text(loc.subLevelsDoneCount(doneCount), style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w700)),
                                 const SizedBox(width: 6),
-                                Text("· נותרו $leftCount שלבים", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11, fontWeight: FontWeight.w700)),
+                                Text(loc.subLevelsRemainingCount(leftCount), style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11, fontWeight: FontWeight.w700)),
                               ],
                             ),
                           ],
@@ -310,9 +336,9 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                                 setState(() => _showExplainer = false);
                               }
                               if (isLocked) {
-                                AppNotification.show(context, "המילה נעולה! פתור את הקודמות.", type: AppNotificationType.warning);
+                                AppNotification.show(context, loc.subLevelsLockedMessage, type: AppNotificationType.warning);
                               } else if (isCompleted) {
-                                AppNotification.show(context, "כבר מצאת את הלוגו הזה!");
+                                AppNotification.show(context, loc.subLevelsAlreadyFoundMessage);
                               } else {
                                 _openPuzzle(puzzleId, displayNum);
                               }
@@ -351,13 +377,13 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                                   FittedBox(
                                     fit: BoxFit.scaleDown,
                                     child: Text(
-                                      "$categoryName · רמה ${widget.mainLevel}",
+                                      loc.subLevelsCategoryWorldLabel(categoryName, widget.mainLevel),
                                       style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
                                     ),
                                   ),
                                   const SizedBox(height: 1),
                                   Text(
-                                    "$doneCount מתוך $totalSubLevels שלבים הושלמו",
+                                    loc.subLevelsDoneOfTotal(doneCount, totalSubLevels),
                                     style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w500),
                                   ),
                                 ],
@@ -404,7 +430,6 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                                 // 🆕 הוסרה שכבת "הברק" הלבנה - יצרה כתם לבן
                                 // בתוך הכפתור הזהוב, לפי בקשה מפורשת.
                                 Row(
-                                  textDirection: TextDirection.rtl,
                                   children: [
                                     Container(
                                       width: 34,
@@ -413,27 +438,19 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                                       child: const Icon(Icons.play_arrow_rounded, color: Color(0xFFFFD86B), size: 18),
                                     ),
                                     const SizedBox(width: 11),
-                                    // 🛠️ תוקן באג: לעמודה הזו לא היה textDirection משלה, אז
-                                    // ה-CrossAxisAlignment.start התיישר לפי כיווניות ברירת
-                                    // המחדל (LTR) ודחף את הטקסט העברי שמאלה - ממש לכיוון
-                                    // האחוזים, מה שיצר את המראה ה"דבוק"/מוזר. עכשיו העמודה
-                                    // עצמה מוגדרת RTL, כך ש-start אכן מתיישר לימין כמו שצריך.
                                     Expanded(
                                       child: Column(
-                                        textDirection: TextDirection.rtl,
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            "המשך לשלב $currentDisplayNum",
-                                            textDirection: TextDirection.rtl,
+                                            loc.subLevelsContinueToStage(currentDisplayNum),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900),
                                           ),
                                           Text(
-                                            "$categoryName · רמה ${widget.mainLevel}",
-                                            textDirection: TextDirection.rtl,
+                                            loc.subLevelsCategoryWorldLabel(categoryName, widget.mainLevel),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(color: const Color(0xFF2A1740).withValues(alpha: 0.62), fontSize: 10.5, fontWeight: FontWeight.w700),
@@ -479,6 +496,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
   // שלב 0: כרטיסייה ממורכזת מסבירה את מנגנון הנעילה (אותו דפוס בדיוק
   // כמו ב-levels_screen.dart, ברמת השלבים הבודדים במקום העולמות).
   Widget _buildSubLevelsTourInfoCard() {
+    final loc = AppLocalizations.of(context)!;
     return Positioned.fill(
       child: Stack(
         children: [
@@ -488,7 +506,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
             left: 18,
             child: TextButton(
               onPressed: _skipSubLevelsTour,
-              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+              child: Text(loc.mainMenuSkipButton, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
             ),
           ),
           Center(
@@ -505,9 +523,9 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('שלבים', textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                    Text(loc.subLevelsTourTitle, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 10),
-                    const Text('כל שלב נפתח אוטומטית ברגע שפותרים את השלב הקודם - בלי שום פעולה נוספת.', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
+                    Text(loc.subLevelsTourBody, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -522,7 +540,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                           AudioManager.playClick();
                           setState(() => _explainerStep = 1);
                         },
-                        child: const Text('המשך ›', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                        child: Text(loc.levelsTourContinueButton, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                       ),
                     ),
                   ],
@@ -537,6 +555,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
 
   // שלב 1: ספוטלייט על השלב הפתוח הראשון.
   Widget _buildSubLevelsTourSpotlight() {
+    final loc = AppLocalizations.of(context)!;
     final ctx = _tourFirstTileKey.currentContext;
     final box = ctx?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) {
@@ -559,7 +578,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
             left: 18,
             child: TextButton(
               onPressed: _skipSubLevelsTour,
-              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+              child: Text(loc.mainMenuSkipButton, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
             ),
           ),
           Positioned(left: 0, top: hole.bottom.clamp(0, screenSize.height), right: 0, bottom: 0, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
@@ -590,7 +609,7 @@ class _SubLevelsScreenState extends State<SubLevelsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('👆 ', style: TextStyle(fontSize: 15)),
-                  Flexible(child: Text('לחצו על השלב המואר כדי להתחיל לשחק', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900))),
+                  Flexible(child: Text(loc.subLevelsTourTapHighlighted, style: const TextStyle(color: Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900))),
                 ],
               ),
             ),
@@ -661,6 +680,7 @@ class _LevelTile extends StatefulWidget {
 
 class _LevelTileState extends State<_LevelTile> with TickerProviderStateMixin {
   bool _entered = false;
+  late AppLocalizations _loc;
 
   @override
   void initState() {
@@ -679,6 +699,7 @@ class _LevelTileState extends State<_LevelTile> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    _loc = AppLocalizations.of(context)!;
     Widget tile;
     if (widget.isLocked) {
       tile = _buildLocked();
@@ -820,7 +841,7 @@ class _LevelTileState extends State<_LevelTile> with TickerProviderStateMixin {
                   child: const Icon(Icons.play_arrow_rounded, color: Color(0xFFFFD86B), size: 18),
                 ),
                 const SizedBox(height: 4),
-                const Text("שחק", style: TextStyle(color: Color(0xFF2A1740), fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
+                Text(_loc.subLevelsPlayLabel, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
                 Text("${widget.displayNum}", style: const TextStyle(color: Color(0xFF6B4A1C), fontSize: 10, fontWeight: FontWeight.w800)),
               ],
             ),

@@ -20,7 +20,15 @@ import 'level_data.dart';
 import 'battle_pass_service.dart'; // 🆕 נקודות "באטל פאס" על תביעת פרסים
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי כל שינוי מטבעות/XP - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון פרסי משימות במכשיר אחר
 
-enum MissionEvent { logoSolved, hintUsed, duelPlayed, duelWon }
+enum MissionEvent {
+  logoSolved,
+  hintUsed,
+  duelPlayed,
+  duelWon,
+  tafzoretWorldCompleted, // 🆕 סיום מלא (30/30) של עולם במצב "תפזורת"
+  tournamentPlayed, // 🆕 השלמת טורניר יומי (כל ה-tournamentLogoCount הלוגואים)
+  tournamentWon, // 🆕 סיום במקום הראשון בטורניר יומי
+}
 
 class MissionDef {
   final String id;
@@ -88,6 +96,8 @@ class MissionsService {
     MissionDef(id: 'w_logos_80', event: MissionEvent.logoSolved, target: 80, reward: 45, title: 'פתור 80 לוגואים השבוע'),
     MissionDef(id: 'w_duel_play_8', event: MissionEvent.duelPlayed, target: 8, reward: 32, title: 'שחק 8 דו-קרבים השבוע'),
     MissionDef(id: 'w_duel_win_5', event: MissionEvent.duelWon, target: 5, reward: 36, title: 'נצח 5 דו-קרבים השבוע'),
+    MissionDef(id: 'w_tafzoret_1', event: MissionEvent.tafzoretWorldCompleted, target: 1, reward: 30, title: 'סיים עולם אחד בתפזורת'),
+    MissionDef(id: 'w_tournament_1', event: MissionEvent.tournamentPlayed, target: 1, reward: 20, title: 'השתתף בטורניר יומי'),
   ];
 
   // 🆕 משימות "פרימיום" - לפי בקשה מפורשת: משימות נוספות שמוצגות לכולם

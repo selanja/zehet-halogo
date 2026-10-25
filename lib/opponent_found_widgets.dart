@@ -6,6 +6,7 @@
 // בדיוק כמו בנמצא יריב בדו קרב". מקור האמת היחיד לעיצוב הזה מעכשיו הוא
 // כאן - שינוי עתידי כאן ישפיע על שני המודים יחד.
 import 'package:flutter/material.dart';
+import 'l10n/app_localizations.dart';
 
 /// עיגול אווטאר עם טבעת גרדיאנט זוהרת - האות הראשונה של השם באמצע.
 Widget avatarCircleWidget(
@@ -44,7 +45,7 @@ Widget avatarCircleWidget(
 }
 
 /// באדג' ירוק "נמצא יריב!" - זהה בכל המודים.
-Widget foundOpponentBadge() {
+Widget foundOpponentBadge(BuildContext context) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
     decoration: BoxDecoration(
@@ -52,13 +53,12 @@ Widget foundOpponentBadge() {
       border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.5)),
       color: const Color(0xFF34D399).withValues(alpha: 0.16),
     ),
-    child: const Row(
+    child: Row(
       mainAxisSize: MainAxisSize.min,
-      textDirection: TextDirection.rtl,
       children: [
-        Icon(Icons.check_rounded, color: Color(0xFF6EE7B7), size: 14),
-        SizedBox(width: 7),
-        Text("נמצא יריב!", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 12.5, fontWeight: FontWeight.w800)),
+        const Icon(Icons.check_rounded, color: Color(0xFF6EE7B7), size: 14),
+        const SizedBox(width: 7),
+        Text(AppLocalizations.of(context)!.duelLobbyFoundBadge, style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 12.5, fontWeight: FontWeight.w800)),
       ],
     ),
   );
@@ -79,7 +79,6 @@ Widget _foundStatRow(String label, String value, Color valueColor) {
     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: Colors.white.withValues(alpha: 0.06)),
     child: Row(
-      textDirection: TextDirection.rtl,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w700)),
@@ -93,6 +92,7 @@ Widget _foundStatRow(String label, String value, Color valueColor) {
 /// סטטיסטיקה (מקום/XP/ניצחונות). כשאין נתונים כאלה (למשל במרוץ, שאין בו
 /// דירוג/היסטוריה) - להשאיר rank/xp/wins כ-null ושורות הסטטיסטיקה לא יוצגו.
 Widget foundPlayerCard({
+  required BuildContext context,
   required String name,
   required String label,
   required Color borderColor,
@@ -104,6 +104,7 @@ Widget foundPlayerCard({
   int? xp,
   int? wins,
 }) {
+  final loc = AppLocalizations.of(context)!;
   final showStats = rank != null || xp != null || wins != null;
   return Container(
     padding: const EdgeInsets.fromLTRB(10, 18, 10, 16),
@@ -124,11 +125,11 @@ Widget foundPlayerCard({
           const SizedBox(height: 12),
           Column(
             children: [
-              _foundStatRow("מקום", rank != null ? "#$rank" : "—", Colors.white),
+              _foundStatRow(loc.duelLobbyRankLabel, rank != null ? "#$rank" : "—", Colors.white),
               const SizedBox(height: 6),
               _foundStatRow("XP", xp != null ? formatXpValue(xp) : "—", const Color(0xFF93C5FD)),
               const SizedBox(height: 6),
-              _foundStatRow("ניצחונות", "${wins ?? 0}", const Color(0xFFA7F3D0)),
+              _foundStatRow(loc.duelLobbyWinsLabel, "${wins ?? 0}", const Color(0xFFA7F3D0)),
             ],
           ),
         ],
@@ -176,7 +177,7 @@ Widget _termBox({required String value, required String label, required Color bg
       children: [
         Text(value, style: TextStyle(color: valueColor, fontSize: 16, fontWeight: FontWeight.w900)),
         const SizedBox(height: 2),
-        Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
       ],
     ),
   );
@@ -185,6 +186,7 @@ Widget _termBox({required String value, required String label, required Color bg
 /// כרטיס "תנאי המשחק" (הימור/לוגואים/פרס) - משמש גם דו-קרב וגם מרוץ,
 /// רק עם כותרת/אימוג'י/צבע מסגרת שונים לפי המוד.
 Widget gameTermsCard({
+  required BuildContext context,
   required String title,
   required String emoji,
   required Color accent,
@@ -192,6 +194,7 @@ Widget gameTermsCard({
   required int logos,
   required int winnerReward,
 }) {
+  final loc = AppLocalizations.of(context)!;
   return Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
@@ -203,21 +206,20 @@ Widget gameTermsCard({
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          textDirection: TextDirection.rtl,
           children: [
             Text(emoji, style: const TextStyle(fontSize: 13)),
             const SizedBox(width: 8),
-            Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
+            Text(title, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: _termBox(value: "$stake", label: "הימור", bg: const Color(0xFFFFD86B), valueColor: const Color(0xFFFFE7A8))),
+            Expanded(child: _termBox(value: "$stake", label: loc.duelLobbyStatStake, bg: const Color(0xFFFFD86B), valueColor: const Color(0xFFFFE7A8))),
             const SizedBox(width: 9),
-            Expanded(child: _termBox(value: "$logos", label: "לוגואים", bg: const Color(0xFF60A5FA), valueColor: const Color(0xFFBFDBFE))),
+            Expanded(child: _termBox(value: "$logos", label: loc.duelLobbyStatLogos, bg: const Color(0xFF60A5FA), valueColor: const Color(0xFFBFDBFE))),
             const SizedBox(width: 9),
-            Expanded(child: _termBox(value: "$winnerReward", label: "למנצח", bg: const Color(0xFF34D399), valueColor: const Color(0xFFA7F3D0))),
+            Expanded(child: _termBox(value: "$winnerReward", label: loc.duelLobbyStatWinner, bg: const Color(0xFF34D399), valueColor: const Color(0xFFA7F3D0))),
           ],
         ),
       ],

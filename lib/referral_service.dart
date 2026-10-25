@@ -28,6 +28,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'analytics_service.dart';
 import 'device_id.dart';
 import 'player_sync.dart';
 
@@ -124,8 +125,23 @@ class ReferralService {
     final myId = await DeviceId.get();
     try {
       final codeDoc = await db.collection('friendCodes').doc(code.toUpperCase()).get();
-      final referrerId = codeDoc.data()?['playerId'] as String?;
+      final codeData = codeDoc.data();
+      final referrerId = codeData?['playerId'] as String?;
       if (referrerId == null || referrerId.isEmpty || referrerId == myId) return null;
+
+      // 🆕 קודי מעקב שיווקי (למשל קישור בביו של אינסטגרם) - מזהים התקנות
+      // לצורך מדידה בלבד, בלי לתת בונוס מטבעות לאף צד: אין "חבר אמיתי"
+      // שמזמין, אז אין סיבה לתת מטבעות חינם רק על לחיצה על קישור בביו.
+      // סימון הקוד כ-trackOnly:true ב-friendCodes נעשה ידנית ב-Firestore
+      // Console, בלי שום עדכון קוד/בילד.
+      if (codeData?['trackOnly'] == true) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_keyClaimed, true);
+        AnalyticsService.logReferralClaimed(code.toUpperCase());
+        debugPrint('REFERRAL TRACK-ONLY: code=$code (no bonus granted)');
+        return null;
+      }
+
       // 🆕 שם המזמין - כדי שהפופאפ אצל המותקן החדש יוכל להציג "כי הורדת
       // דרך ההזמנה של X!" (בלי זה - "חבר" גנרי בלבד).
       final referrerDoc = await db.collection('players').doc(referrerId).get();
@@ -145,6 +161,7 @@ class ReferralService {
       }, SetOptions(merge: true));
 
       debugPrint('REFERRAL CLAIMED: code=$code referrer=$referrerId bonus=$bonusCoins');
+      AnalyticsService.logReferralClaimed(code.toUpperCase()); // 📊 כדי שאפשר יהיה לראות ב-Analytics כמה התקנות הגיעו דרך כל קוד הזמנה
       return ReferralClaimResult(coins: bonusCoins, referrerName: (referrerName != null && referrerName.isNotEmpty) ? referrerName : 'חבר');
     } catch (e) {
       debugPrint('REFERRAL CLAIM ERROR: $e');

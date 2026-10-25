@@ -19,6 +19,8 @@ import 'missions_service.dart';
 import 'app_icons.dart'; // 🆕 CoinIcon - אימוג'י מטבע במקום אייקון וקטורי
 import 'level_override_service.dart'; // 🆕 תיקוני שלבים מרחוק (Firestore) בלי לפרסם גרסה חדשה
 import 'battle_pass_service.dart';
+import 'promo_service.dart'; // 🆕 קידום יזום ללוגו פאס/חנות כל כמה שלבים
+import 'boost_service.dart'; // 🆕 בוסטים זמניים (רמזים חינם/נקודות כפולות) מהחנות
 import 'achievements_service.dart'; // 🆕 נקודות "באטל פאס" על פתרון שלבים
 import 'screenshot_guard_service.dart'; // 🆕 ענישה על צילום מסך חוזר - ראו _onRepeatedScreenshot
 import 'app_notification.dart';
@@ -31,8 +33,11 @@ import 'app_notification.dart';
 // היחידה, כדי שרמה חדשה שנוספת פעם אחת ב-level_data.dart תופיע
 // אוטומטית בכל מקום - לא רק בחלק מהמסכים.
 import 'level_data.dart';
+import 'locale_controller.dart'; // 🆕 שפת האפליקציה (עברית/אנגלית) - קובעת איזה ans/keyboard מוצגים
 import 'onboarding_gift_popup.dart'; // 🆕 פופאפ מתנת סיום ההדרכה - מוצג כאן ישירות, לא נדחה למסך הבית
 import 'first_visit_explainer.dart'; // 🆕 "האם זו הכניסה הראשונה למסך רמה" - עצמאי, לא תלוי בסיור במסך הבית
+import 'l10n/app_localizations.dart';
+import 'game_settings.dart'; // 🆕 "אישור לפני קניית רמז" - מתג בטאב "משחק" בהגדרות
 class LogoLevelScreen extends StatefulWidget {
   final int puzzleId;
   final bool isRandomMode; // מצב "אתגר רנדומלי"
@@ -60,13 +65,18 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
 
   int coins = 15;
   int xp = 0;
-  String username = "שחקן אנונימי";
+  String username = "";
   List<int> pressedKeysIndices = [];
 
   // מעקב אחרי רמזים בשלב הנוכחי (מתאפס בכל שלב חדש)
   int letterHintsUsed = 0;   // כל רמז אות מוריד 1 XP מהפרס
   bool usedWordHint = false; // פתרון מילה מלא = 5 XP בלבד ובלי מטבעות
   bool adHintUsedThisPuzzle = false; // רמז-פרסומת אחד בלבד לכל חידה
+  // 🆕 בוסט "רמזים חינם" (ראו boost_service.dart) - לפי בקשה מפורשת, לא
+  // חינם ללא הגבלה: רק רמז האות (לא פתרון המילה המלא), ומוגבל ל-2
+  // פעמים לכל חידה - מתאפס עם כל חידה חדשה, בדיוק כמו adHintUsedThisPuzzle.
+  int boostHintsUsedThisPuzzle = 0;
+  static const int boostHintsMaxPerPuzzle = 2;
 
   // 💡 "תקוע?" - אם עברו 10 שניות בלי שהפתרון הצליח (או אחרי טעות שמאפסת
   // את החידה), מציגים בועית קטנה מעל המנורה שמזמינה לקחת רמז.
@@ -82,6 +92,13 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
   Timer? _stuckHintTimer;
   final LayerLink _hintButtonLink = LayerLink();
   OverlayEntry? _stuckTipOverlayEntry;
+
+  // 🆕 "הצגת טיימר בשלבים" - מתג חדש בטאב "משחק" בהגדרות
+  // (GameSettings.levelTimerEnabled). סופר שניות שחלפו על החידה
+  // הנוכחית בלבד - מתאפס בכל חידה חדשה (ראו _restartLevelTimer,
+  // נקרא מ-_initGuessSlots). לא פעיל כשהמתג כבוי (ברירת מחדל).
+  Timer? _levelElapsedTimer;
+  int _levelElapsedSeconds = 0;
 
   // מה הרווחנו בשלב האחרון - לתצוגה בחלון "כל הכבוד"
   int lastEarnedXp = 0;
@@ -153,6 +170,11 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
       imagePath: base.imagePath,
       logoColor: base.logoColor,
       keyboard: overrideKeyboard ?? base.keyboard,
+      // 🆕 תיקון אדמין נוגע רק לעברית - אם הוא שינה את התשובה/המקלדת,
+      // ה-ansEn/keyboardEn המקוריים כבר לא תואמים לה, אז מפילים חזרה
+      // לעברית (null) במקום להציג תרגום אנגלי שלא תואם לתיקון.
+      ansEn: overrideAnswer == null ? base.ansEn : null,
+      keyboardEn: overrideKeyboard == null ? base.keyboardEn : null,
     );
   }
 
@@ -188,14 +210,26 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
   /// מאתחל את כל התאים למילה החדשה - נקרא בכל פעם שמתחילים חידה חדשה
   /// (לא ב"נסה שוב" על אותה חידה, שם רק מרוקנים את התאים הקיימים)
   void _initGuessSlots() {
-    int len = currentLevelData.answer.replaceAll(' ', '').length;
+    int len = currentLevelData.answerFor(localeController.isHebrew).replaceAll(' ', '').length;
     guessSlots = List<String?>.filled(len, null);
     typedOrder = [];
     hintedPositions = {};
     slotToKeyIndex = {};
     adHintUsedThisPuzzle = false; // רמז-הפרסומת מתאפס עם כל חידה חדשה
+    boostHintsUsedThisPuzzle = 0; // 🆕 בוסט רמזים חינם - גם מתאפס עם כל חידה חדשה
     _restartStuckHintTimer();
+    _restartLevelTimer(); // 🆕 "הצגת טיימר בשלבים" - מתאפס עם כל חידה חדשה
     _restoreSavedHints(); // 🔴 אם כבר נלקחו רמזים בחידה הזו קודם ויצאנו - מחזירים אותם
+  }
+
+  void _restartLevelTimer() {
+    _levelElapsedTimer?.cancel();
+    _levelElapsedSeconds = 0;
+    if (!GameSettings.levelTimerEnabled) return;
+    _levelElapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _levelElapsedSeconds++);
+    });
   }
 
   /// משחזר רמזי-אות ששולמו עליהם (מטבעות/פרסומת) בחידה הזו לפני שהמשתמש
@@ -214,12 +248,13 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
     // 🔴 האם רמז-הפרסומת כבר נוצל בחידה הזו - נשמר בנפרד, כדי שיציאה
     // וחזרה לאותה חידה לא "תשכח" שכבר נוצל וניתן שוב לצפות בפרסומת נוספת.
     final bool savedAdHintUsed = prefs.getBool('adHintUsed_$puzzleId') ?? false;
+    final int savedBoostHintsUsed = prefs.getInt('boostHintsUsed_$puzzleId') ?? 0; // 🆕 בוסט רמזים חינם
     // 🩹 בעבר נלקח כאן ישירות gameLevels[puzzleId] (התשובה הקבועה בקוד),
     // מה שהתעלם מתיקון אדמין פעיל לשלב הזה (ראו currentLevelData/
     // level_override_service.dart) וגרם לאותיות רמז שגויות אם התשובה
     // תוקנה מרחוק. puzzleId==currentPuzzleId תמיד כאן (נבדק למעלה), אז
     // currentLevelData (שכבר כולל את התיקון אם יש) הוא הנכון להשתמש בו.
-    final String answerNoSpaces = currentLevelData.answer.replaceAll(' ', '');
+    final String answerNoSpaces = currentLevelData.answerFor(localeController.isHebrew).replaceAll(' ', '');
 
     setState(() {
       for (final pos in positions) {
@@ -227,8 +262,9 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
         String letter = answerNoSpaces[pos];
         guessSlots[pos] = letter;
         hintedPositions.add(pos);
-        for (int i = 0; i < currentLevelData.keyboard.length; i++) {
-          if (currentLevelData.keyboard[i] == letter && !pressedKeysIndices.contains(i)) {
+        final keyboard = currentLevelData.keyboardFor(localeController.isHebrew);
+        for (int i = 0; i < keyboard.length; i++) {
+          if (keyboard[i] == letter && !pressedKeysIndices.contains(i)) {
             pressedKeysIndices.add(i);
             slotToKeyIndex[pos] = i;
             break;
@@ -238,6 +274,7 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
       letterHintsUsed = savedHintsUsed;
       usedWordHint = savedWordUsed;
       adHintUsedThisPuzzle = savedAdHintUsed;
+      boostHintsUsedThisPuzzle = savedBoostHintsUsed; // 🆕 בוסט רמזים חינם
     });
   }
 
@@ -248,6 +285,7 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
     await prefs.setInt('hintLetterCount_$currentPuzzleId', letterHintsUsed);
     await prefs.setBool('hintWordUsed_$currentPuzzleId', usedWordHint);
     await prefs.setBool('adHintUsed_$currentPuzzleId', adHintUsedThisPuzzle);
+    await prefs.setInt('boostHintsUsed_$currentPuzzleId', boostHintsUsedThisPuzzle); // 🆕 בוסט רמזים חינם
   }
 
   /// מנקה את מצב הרמזים השמור של חידה - נקרא אחרי שהיא נפתרה בהצלחה,
@@ -258,6 +296,7 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
     await prefs.remove('hintLetterCount_$puzzleId');
     await prefs.remove('hintWordUsed_$puzzleId');
     await prefs.remove('adHintUsed_$puzzleId');
+    await prefs.remove('boostHintsUsed_$puzzleId'); // 🆕 בוסט רמזים חינם
   }
 
   /// מפעיל מחדש את הטיימר של "תקוע?" - נקרא בתחילת כל חידה ואחרי כל טעות.
@@ -325,11 +364,12 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
         // ההדרכה ("תקועים? אפשר לקנות רמז עם המטבעות שהרווחתם").
         final bool isOnboardingTip = _isOnboardingLevel && !_onboardingHintTipShown;
         if (isOnboardingTip) _onboardingHintTipShown = true;
+        final loc = AppLocalizations.of(context)!;
         // 🩹 טקסט קצר בכוונה - הבועית הזו לא עוטפת שורות (softWrap: false
         // למטה), אז טקסט ארוך מדי פשוט היה גולש מחוץ למסך.
         final String bubbleText = isOnboardingTip
-            ? "אפשר לקנות רמז עם מטבעות 💡"
-            : (hasEnoughCoins ? "יש לך רמז! 💡" : (isFreeAd ? "פרסומת = רמז חינם 🎬" : "לחץ למנורה 💡"));
+            ? loc.logoLevelStuckTipOnboarding
+            : (hasEnoughCoins ? loc.logoLevelStuckTipHasHint : (isFreeAd ? loc.logoLevelStuckTipFreeAd : loc.logoLevelStuckTipTapLamp));
         final List<Color> bubbleGradient = isFreeAd
             ? const [Color(0xFF9B5CF6), Color(0xFF7C3AED)]
             : const [Color(0xFFFFE08A), Color(0xFFFFB24D)];
@@ -367,7 +407,6 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
                         bubbleText,
                         softWrap: false,
                         overflow: TextOverflow.visible,
-                        textDirection: TextDirection.rtl,
                         style: TextStyle(color: bubbleTextColor, fontSize: 12.5, fontWeight: FontWeight.w900),
                       ),
                     ),
@@ -413,49 +452,50 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
   };
 
   String _categoryWorldName(int worldNum) {
+    final loc = AppLocalizations.of(context)!;
     switch (worldNum) {
       case 1:
-        return "חברות חלק א";
+        return loc.worldName1;
       case 2:
-        return "דגלים חלק א";
+        return loc.worldName2;
       case 3:
-        return "אפליקציות";
+        return loc.worldName3;
       case 4:
-        return "רכבים";
+        return loc.worldName4;
       case 5:
-        return "סופרים";
+        return loc.worldName5;
       case 6:
-        return "רשתות מוכרות";
+        return loc.worldName6;
       case 7:
-        return "חטיפים וממתקים";
+        return loc.worldName7;
       case 8:
-        return "קבוצות כדורגל";
+        return loc.worldName8;
       case 9:
-        return "ערים בישראל";
+        return loc.worldName9;
       case 10:
-        return "דגלים חלק ב";
+        return loc.worldName10;
       case 11:
-        return "בנקים וביטוח";
-        case 12:
-        return "חברות חלק ב";
-        case 13:
-        return "משחקים מוכרים";
-        case 14:
-        return "קבוצות NBA";
+        return loc.worldName11;
+      case 12:
+        return loc.worldName12;
+      case 13:
+        return loc.worldName13;
+      case 14:
+        return loc.worldName14;
       case 15:
-        return "יחידות בצה\"ל וכוחות הביטחון";
+        return loc.worldName15;
       case 16:
-        return "רכבים חלק ב";
+        return loc.worldName16;
       case 17:
-        return "אלקטרוניקה ומכשירי חשמל";
+        return loc.worldName17;
       case 18:
-        return "תקשורת וחדשות ישראליות";
+        return loc.worldName18;
       case 19:
-        return "דגלים חלק ג'";
+        return loc.worldName19;
       case 20:
-        return "אלקטרוניקה ומכשירי חשמל חלק ב";
+        return loc.worldName20;
       default:
-        return "כללי";
+        return loc.worldNameDefault;
     }
   }
 
@@ -466,7 +506,7 @@ class _LogoLevelScreenState extends State<LogoLevelScreen> {
       idCounter += entry.value;
       if (currentPuzzleId <= idCounter) return _categoryWorldName(entry.key);
     }
-    return "כללי";
+    return AppLocalizations.of(context)!.worldNameDefault;
   }
 
   int get currentMainLevel {
@@ -606,6 +646,7 @@ void initState() {
   // מסך חסימה כשאין אינטרנט - בלי חיבור אין פרסומות, ובלי פרסומות
   // אין הכנסה, אז לא מאפשרים לשחק בכלל עד שיש חיבור
   Widget _buildNoInternetScreen() {
+    final loc = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFF120C2E),
       body: AppBackground(
@@ -617,17 +658,15 @@ void initState() {
               children: [
                 const Icon(Icons.wifi_off_rounded, color: Colors.white38, size: 80),
                 const SizedBox(height: 24),
-                const Text(
-                  "אין חיבור לאינטרנט",
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                Text(
+                  loc.logoLevelNoInternetTitle,
+                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  "כדי לשחק צריך חיבור פעיל לאינטרנט. בדקו את ה-WiFi או הסלולר ונסו שוב.",
+                Text(
+                  loc.logoLevelNoInternetBody,
                   textAlign: TextAlign.center,
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(color: Colors.white60, fontSize: 15),
+                  style: const TextStyle(color: Colors.white60, fontSize: 15),
                 ),
                 const SizedBox(height: 30),
                 ElevatedButton.icon(
@@ -637,7 +676,7 @@ void initState() {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   icon: const Icon(Icons.refresh_rounded, color: Colors.black),
-                  label: const Text("נסה שוב", style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                  label: Text(loc.logoLevelTryAgainButton, style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
                   onPressed: () {
                     setState(() => hasInternet = null);
                     _checkConnectivityAndStart();
@@ -646,7 +685,7 @@ void initState() {
                 const SizedBox(height: 14),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text("חזרה", style: TextStyle(color: Colors.white54)),
+                  child: Text(loc.duelLobbyBackButton, style: const TextStyle(color: Colors.white54)),
                 ),
               ],
             ),
@@ -747,24 +786,24 @@ void initState() {
   }
 
   void _showRandomCompleteDialog() {
+    final loc = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF241a4f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
-        content: const Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 90),
-            SizedBox(height: 15),
-            Text("וואו! 🎉", style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
-            SizedBox(height: 10),
+            const Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 90),
+            const SizedBox(height: 15),
+            Text(loc.logoLevelRandomCompleteTitle, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
             Text(
-              "פתרת את כל הלוגואים במצב הרנדומלי!",
+              loc.logoLevelRandomCompleteBody,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(color: Colors.white70, fontSize: 18),
+              style: const TextStyle(color: Colors.white70, fontSize: 18),
             ),
           ],
         ),
@@ -776,7 +815,7 @@ void initState() {
                 Navigator.pop(context); // סוגר את הדיאלוג
                 Navigator.pop(context); // חוזר למסך הראשי
               },
-              child: const Text("חזרה למסך הראשי", style: TextStyle(color: Colors.white)),
+              child: Text(loc.logoLevelBackToMainScreenButton, style: const TextStyle(color: Colors.white)),
             ),
           )
         ],
@@ -797,23 +836,21 @@ void initState() {
   }
 
   void _showAboutDialog() {
+    final loc = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF241a4f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
-        title: const Text("אודות האפליקציה", style: TextStyle(color: Colors.white)),
-        content: const Text(
-          "כל הלוגואים המוצגים באפליקציה זו שייכים לבעליהם בהתאמה. "
-          "השימוש בלוגואים למטרות זיהוי בלבד נעשה תחת עקרון 'שימוש הוגן'. "
-          "אפליקציה זו אינה קשורה, ממומנת או מאושרת על ידי החברות המוצגות.",
-          style: TextStyle(color: Colors.white70),
-          textDirection: TextDirection.rtl,
+        title: Text(loc.logoLevelAboutTitle, style: const TextStyle(color: Colors.white)),
+        content: Text(
+          loc.logoLevelAboutBody,
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("סגור", style: TextStyle(color: Colors.amber)),
+            child: Text(loc.logoLevelCloseButton, style: const TextStyle(color: Colors.amber)),
           ),
         ],
       ),
@@ -839,10 +876,11 @@ void initState() {
       DebugLog.add("LogoLevelScreen._loadPlayerData: not mounted after prefs, skipping setState");
       return;
     }
+    final anonymousFallback = AppLocalizations.of(context)!.logoLevelAnonymousPlayerFallback;
     setState(() {
       coins = prefs.getInt('coins') ?? 15;
       xp = prefs.getInt('xp') ?? 0;
-      username = prefs.getString('username') ?? "שחקן אנונימי";
+      username = prefs.getString('username') ?? anonymousFallback;
       bestRandomStreak = prefs.getInt('bestRandomStreak') ?? 0;
       randomStreak = prefs.getInt('randomStreak') ?? 0; // הרצף נשמר בין כניסות
     });
@@ -946,6 +984,14 @@ void initState() {
   void _watchRewardedAdForHint() {
     if (AdsManager.isRewardedReady) {
       AdsManager.showRewardedAd(onReward: () {
+        // 🩹 תוקן קריסה אמיתית: onReward הוא callback א-סינכרוני מה-SDK
+        // של הפרסומת, שיכול "לירות" אחרי שהמשתמש כבר יצא מהמסך הזה
+        // (למשל חזר הביתה בזמן שהפרסומת עדיין נסגרת) - setState בלי
+        // בדיקת mounted קורס עם "setState() called after dispose()".
+        // כל שאר הקריאות ל-showRewardedAd באפליקציה (shop_screen.dart,
+        // duel_lobby_screen.dart, out_of_resource.dart) כבר מגנות על זה -
+        // כאן זו הייתה הפעם היחידה שחסרה.
+        if (!mounted) return;
         // המשתמש צפה עד הסוף - מקבל חשיפת אות חינם, אבל רק פעם אחת לחידה הזו
         // (נשמר מיד ב-SharedPreferences כדי שגם אם ייצא ויחזור לאותה חידה
         // בלי לפתור אותה - הרמז לא "יתאפס" ויאפשר לצפות בפרסומת שוב)
@@ -954,7 +1000,7 @@ void initState() {
         _revealLetterHint(free: true);
       });
     } else {
-      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
+      AppNotification.show(context, AppLocalizations.of(context)!.logoLevelNoAdAvailable, type: AppNotificationType.warning);
     }
   }
 
@@ -972,10 +1018,12 @@ void initState() {
     final maxLevel = prefs.getInt('maxLevel') ?? 1;
     if (!mounted) return;
     final shownStarterPack = await StarterPackDialog.maybeShowAtFriction(context, maxLevel: maxLevel);
+    if (!mounted) return;
     if (shownStarterPack) {
       _restartStuckHintTimer();
       return;
     }
+    final loc = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1004,12 +1052,10 @@ void initState() {
                 child: const CoinIcon(size: 36),
               ),
               const SizedBox(height: 20),
-              const Text("אין לך מספיק מטבעות",
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+              Text(loc.logoLevelNotEnoughCoinsTitle,
+                  style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
               const SizedBox(height: 10),
-              Text("הרמז הזה עולה $cost מטבעות ויש לך רק $coins",
-                  textDirection: TextDirection.rtl,
+              Text(loc.logoLevelNotEnoughCoinsBody(cost, coins),
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 15, height: 1.4)),
               const SizedBox(height: 16),
@@ -1042,7 +1088,7 @@ void initState() {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text("חסרים ${(cost - coins).clamp(0, cost)}",
+                        Text(loc.logoLevelMissingCoins((cost - coins).clamp(0, cost)),
                             style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 11.5, fontWeight: FontWeight.w900)),
                         const SizedBox(width: 3),
                         const CoinIcon(size: 14),
@@ -1070,12 +1116,12 @@ void initState() {
                       borderRadius: BorderRadius.circular(16),
                       gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)]),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.shopping_cart_rounded, color: Color(0xFF2A1740)),
-                        SizedBox(width: 8),
-                        Text("לחנות המטבעות", style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                        const Icon(Icons.shopping_cart_rounded, color: Color(0xFF2A1740)),
+                        const SizedBox(width: 8),
+                        Text(loc.logoLevelGoToShopButton, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
                       ],
                     ),
                   ),
@@ -1091,7 +1137,7 @@ void initState() {
                     Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.12))),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text("או", style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 13)),
+                      child: Text(loc.logoLevelOrDivider, style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 13)),
                     ),
                     Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.12))),
                   ],
@@ -1107,8 +1153,8 @@ void initState() {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                     icon: const Icon(Icons.play_circle_fill_rounded, color: Colors.white),
-                    label: const Text("צפה בפרסומת 🎬",
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                    label: Text(loc.logoLevelWatchAdButton,
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
                     onPressed: () {
                       Navigator.pop(context);
                       _watchRewardedAdForHint();
@@ -1117,16 +1163,14 @@ void initState() {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "חושף אות אחת בלבד - לא פותר את כל המילה",
-                  textDirection: TextDirection.rtl,
+                  loc.logoLevelAdHintDescription,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5),
                 ),
               ] else ...[
                 const SizedBox(height: 18),
                 Text(
-                  "כבר ניצלת רמז-פרסומת בשלב הזה 🎬",
-                  textDirection: TextDirection.rtl,
+                  loc.logoLevelAdHintAlreadyUsed,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
                 ),
@@ -1135,7 +1179,7 @@ void initState() {
               const SizedBox(height: 22),
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 15)),
+                child: Text(loc.duelLobbyCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 15)),
               ),
             ],
           ),
@@ -1146,10 +1190,47 @@ void initState() {
     });
   }
 
-  void _revealLetterHint({bool free = false}) {
-    // free=true: רמז שהתקבל מצפייה בפרסומת - בלי מטבעות ובלי קנס XP
+  // 🆕 "אישור לפני קניית רמז" - מתג חדש בטאב "משחק" בהגדרות
+  // (GameSettings.hintConfirmEnabled, ברירת מחדל דלוק). כשהמתג דלוק
+  // ומדובר ברמז בתשלום אמיתי (לא בחינם מפרסומת/בוסט), מציג דיאלוג
+  // אישור קצר לפני שהמטבעות יורדות בפועל - [action] מורץ רק אם אושר.
+  // כשהמתג כבוי, פשוט מריץ [action] מיד (ההתנהגות הישנה, בלי שינוי).
+  void _confirmHintSpend(int cost, VoidCallback action) {
+    if (!GameSettings.hintConfirmEnabled) {
+      action();
+      return;
+    }
+    _stuckHintTimer?.cancel();
+    final loc = AppLocalizations.of(context)!;
+    showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF241a4f),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white.withValues(alpha: 0.14))),
+        title: Text(loc.logoLevelHintConfirmTitle, style: const TextStyle(color: Colors.white)),
+        content: Text(loc.logoLevelHintConfirmBody(cost), style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(loc.duelLobbyCancelButton, style: const TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(loc.logoLevelHintConfirmButton, style: const TextStyle(color: Color(0xFFFFD86B), fontWeight: FontWeight.w900))),
+        ],
+      ),
+    ).then((confirmed) {
+      if (mounted) _restartStuckHintTimer();
+      if (confirmed == true) action();
+    });
+  }
+
+  void _revealLetterHint({bool free = false}) async {
+    // free=true: רמז שהתקבל מצפייה בפרסומת - בלי מטבעות ובלי קנס XP.
+    // 🆕 בוסט "רמזים חינם" (ראו boost_service.dart) - לפי בקשה מפורשת:
+    // רק רמז האות (לא פתרון מילה מלא - ראו _revealWordHint), ומוגבל
+    // ל-boostHintsMaxPerPuzzle פעמים לכל חידה (לא בלתי מוגבל).
+    final bool boostOn = await BoostService.getActive() == BoostType.freeHints;
+    final bool usingBoost = !free && boostOn && boostHintsUsedThisPuzzle < boostHintsMaxPerPuzzle;
+    final bool isFree = free || usingBoost;
+    if (!mounted) return;
     // 🩹 מחיר הועלה מ-15 ל-20 מטבעות (תואם את המחיר בדו-קרב).
-    if (!free && coins < 20) {
+    if (!isFree && coins < 20) {
       _showNotEnoughCoinsDialog(20);
       return;
     }
@@ -1161,23 +1242,26 @@ void initState() {
     }
     if (emptySlots.isEmpty) return; // כל האותיות כבר גלויות
 
-    if (free || coins >= 20) {
+    if (isFree || coins >= 20) {
       setState(() {
-        String answerNoSpaces = currentLevelData.answer.replaceAll(' ', '');
+        String answerNoSpaces = currentLevelData.answerFor(localeController.isHebrew).replaceAll(' ', '');
         int randomSlot = emptySlots[Random().nextInt(emptySlots.length)];
         String revealedLetter = answerNoSpaces[randomSlot];
 
         guessSlots[randomSlot] = revealedLetter;
         hintedPositions.add(randomSlot); // נעול - אי אפשר למחוק בבק-ספייס
 
-        if (!free) {
+        if (!isFree) {
           coins -= 20;
           letterHintsUsed++; // כל רמז אות מוריד 1 XP מהפרס בסוף
           MissionsService.recordEvent(MissionEvent.hintUsed); // לא מחכים - לא חוסם את המשחק
+        } else if (usingBoost) {
+          boostHintsUsedThisPuzzle++; // 🆕 צורך אחת מ-boostHintsMaxPerPuzzle (לא חל על רמז-הפרסומת הרגיל)
         }
 
-        for (int i = 0; i < currentLevelData.keyboard.length; i++) {
-          if (currentLevelData.keyboard[i] == revealedLetter && !pressedKeysIndices.contains(i)) {
+        final keyboard = currentLevelData.keyboardFor(localeController.isHebrew);
+        for (int i = 0; i < keyboard.length; i++) {
+          if (keyboard[i] == revealedLetter && !pressedKeysIndices.contains(i)) {
             pressedKeysIndices.add(i);
             slotToKeyIndex[randomSlot] = i;
             break;
@@ -1193,13 +1277,15 @@ void initState() {
   }
 
   void _revealWordHint() {
+    // 🩹 לפי בקשה מפורשת: בוסט "רמזים חינם" חל רק על רמז האות הבודד
+    // (_revealLetterHint) - *לא* על פתרון המילה המלא. זה תמיד בתשלום.
     if (coins < 60) {
       _showNotEnoughCoinsDialog(60);
       return;
     }
     if (coins >= 60) {
       setState(() {
-        String answerNoSpaces = currentLevelData.answer.replaceAll(' ', '');
+        String answerNoSpaces = currentLevelData.answerFor(localeController.isHebrew).replaceAll(' ', '');
         for (int i = 0; i < answerNoSpaces.length; i++) {
           guessSlots[i] = answerNoSpaces[i];
         }
@@ -1211,11 +1297,12 @@ void initState() {
 
         pressedKeysIndices.clear();
         slotToKeyIndex.clear();
-        List<bool> usedIndices = List<bool>.filled(currentLevelData.keyboard.length, false);
+        final keyboard = currentLevelData.keyboardFor(localeController.isHebrew);
+        List<bool> usedIndices = List<bool>.filled(keyboard.length, false);
         for (int c = 0; c < answerNoSpaces.length; c++) {
           String letter = answerNoSpaces[c];
-          for (int i = 0; i < currentLevelData.keyboard.length; i++) {
-            if (!usedIndices[i] && currentLevelData.keyboard[i] == letter) {
+          for (int i = 0; i < keyboard.length; i++) {
+            if (!usedIndices[i] && keyboard[i] == letter) {
               usedIndices[i] = true;
               pressedKeysIndices.add(i);
               slotToKeyIndex[c] = i;
@@ -1236,9 +1323,19 @@ void initState() {
   /// לחיצה על בועית "תקוע?" - אם היא מציעה פרסומת, קופצים ישר לפרסומת;
   /// אחרת פותחים את תפריט הרמזים הרגיל. מופרד לפונקציה משלה (במקום closure
   /// מוטמע) כדי שתמיד תיקרא בבירור, בלי תלות בסדר ריבוי setState-ים.
-  void _onStuckBubbleTap() {
+  void _onStuckBubbleTap() async {
     AudioManager.playClick();
     _hideStuckTipOverlay();
+    // 🆕 בוסט "רמזים חינם" פעיל ועוד לא נוצל עד המכסה בחידה הזו - חושפים
+    // ישר, בלי להפנות לפרסומת מתגמלת גם אם אין מספיק מטבעות (ראו
+    // boost_service.dart). השחקן כבר שילם על הבוסט - אין סיבה לבקש ממנו
+    // גם לצפות בפרסומת.
+    if (boostHintsUsedThisPuzzle < boostHintsMaxPerPuzzle && await BoostService.getActive() == BoostType.freeHints) {
+      if (!mounted) return;
+      _revealLetterHint();
+      return;
+    }
+    if (!mounted) return;
     // 🐛 תוקן: הושוותה ל-20 (מחיר הרמז האמיתי בכל שאר הקוד - ראה
     // hasEnoughCoins למעלה ו-_revealLetterHint למטה) - כאן נשאר בטעות
     // הסף הישן (15) מלפני שמחיר הרמז הועלה, כך ששחקן עם 15-19 מטבעות
@@ -1249,16 +1346,23 @@ void initState() {
       _watchRewardedAdForHint();
     } else if (coins >= 20) {
       // יש מטבעות - במקום לפתוח תפריט ולבקש עוד לחיצה, חושפים ישר את הרמז
-      // ומראים לשחקן בדיוק איזו אות התגלתה
-      _revealLetterHint();
+      // ומראים לשחקן בדיוק איזו אות התגלתה (אחרי אישור אם המתג דלוק -
+      // ראו _confirmHintSpend)
+      _confirmHintSpend(20, _revealLetterHint);
     } else {
       // אין מטבעות וגם כבר נוצל רמז-הפרסומת לחידה הזו - מפנים לתפריט הרגיל
       _showHintMenu();
     }
   }
 
-  void _showHintMenu() {
+  void _showHintMenu() async {
     AudioManager.playClick();
+    // 🆕 בוסט "רמזים חינם" - חל רק על שורת רמז-האות (לא פתרון מילה מלא),
+    // ורק אם עוד לא נוצלה המכסה בחידה הזו (ראו boost_service.dart +
+    // boostHintsUsedThisPuzzle). זה רק מתקן את התווית שמוצגת - המחיר
+    // האמיתי כבר מחושב בנפרד ב-_revealLetterHint.
+    final bool freeHintsBoost = boostHintsUsedThisPuzzle < boostHintsMaxPerPuzzle && await BoostService.getActive() == BoostType.freeHints;
+    if (!mounted) return;
     // 🔴 קריטי: לא מספיק להסתיר את הבועית - חייבים גם לבטל את הטיימר של
     // 10 השניות! בלי זה, אם הטיימר ממשיך "לרוץ ברקע" בזמן שתפריט הרמזים
     // פתוח (למשל המשתמש קורא את האפשרויות זמן-מה), הוא "יורה" תוך כדי
@@ -1267,6 +1371,7 @@ void initState() {
     // מפעילים מחדש את הטיימר רק אחרי שהתפריט נסגר (אם החידה עוד לא נפתרה).
     _stuckHintTimer?.cancel();
     _hideStuckTipOverlay();
+    final loc = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1304,31 +1409,35 @@ void initState() {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text("בחר רמז", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                    Text(loc.logoLevelChooseHintTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 18),
                 _HintOptionTile(
                   icon: Icons.font_download_outlined,
-                  title: "חשוף את האות הבאה",
-                  subtitle: "אות אחת נוספת מתגלה מיד",
-                  price: 20,
+                  title: loc.logoLevelRevealNextLetterTitle,
+                  subtitle: loc.logoLevelRevealNextLetterSubtitle,
+                  price: freeHintsBoost ? null : 20,
                   accent: const Color(0xFFFFB24D),
                   onTap: () {
                     AudioManager.playClick();
                     Navigator.pop(context);
-                    _revealLetterHint();
+                    if (freeHintsBoost) {
+                      _revealLetterHint();
+                    } else {
+                      _confirmHintSpend(20, _revealLetterHint);
+                    }
                   },
                 ),
                 const SizedBox(height: 12),
                 _HintOptionTile(
                   icon: Icons.abc_rounded,
-                  title: "פתור את כל המילה",
-                  subtitle: "כל האותיות מתגלות בבת אחת",
-                  price: 60,
+                  title: loc.logoLevelSolveWholeWordTitle,
+                  subtitle: loc.logoLevelSolveWholeWordSubtitle,
+                  price: 60, // 🩹 הבוסט לא חל על פתרון מילה מלא - תמיד בתשלום
                   accent: const Color(0xFF9333EA),
                   onTap: () {
                     AudioManager.playClick();
                     Navigator.pop(context);
-                    _revealWordHint();
+                    _confirmHintSpend(60, _revealWordHint);
                   },
                 ),
                 // 🆕 שורה שלישית - רמז-פרסומת חינמי, בדיוק כמו במוקאפ "בחר
@@ -1337,8 +1446,8 @@ void initState() {
                   const SizedBox(height: 12),
                   _HintOptionTile(
                     icon: Icons.ondemand_video_rounded,
-                    title: "צפה בפרסומת",
-                    subtitle: "קבל אות אחת בחינם",
+                    title: loc.logoLevelWatchAdTitle,
+                    subtitle: loc.logoLevelWatchAdSubtitle,
                     accent: const Color(0xFF34D399),
                     onTap: () {
                       Navigator.pop(context);
@@ -1350,7 +1459,7 @@ void initState() {
                     Center(
                       child: TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13, fontWeight: FontWeight.bold)),
+                        child: Text(loc.duelLobbyCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13, fontWeight: FontWeight.bold)),
                       ),
                     ),
                   ],
@@ -1369,7 +1478,7 @@ void initState() {
 
   Future<void> _checkAnswer() async {
   String cleanGuess = guessSlots.map((slot) => slot ?? '').join();
-  String cleanAnswer = currentLevelData.answer.replaceAll(' ', '');
+  String cleanAnswer = currentLevelData.answerFor(localeController.isHebrew).replaceAll(' ', '');
 
   if (cleanGuess == cleanAnswer) {
     if (!mounted) return; 
@@ -1387,6 +1496,10 @@ void initState() {
     coins = freshPrefs.getInt('coins') ?? coins;
 
     bool newStreakRecord = false;
+    // 🆕 בוסט "נקודות כפולות" (ראו boost_service.dart) - נבדק *לפני*
+    // ה-setState כי setState חייב להיות סינכרוני, ושליפת הבוסט אסינכרונית.
+    final bool doublePoints = await BoostService.getActive() == BoostType.doublePoints;
+    if (!mounted) return;
 
     setState(() {
       // 🔥 במצב רנדומלי: כל מילה שהושלמה מגדילה את הרצף.
@@ -1401,8 +1514,9 @@ void initState() {
 
       if (usedWordHint) {
         // השתמש ברמז "פתור את כל המילה" - רק 5 נקודות, בלי מטבעות
-        xp += 5;
-        lastEarnedXp = 5;
+        final earnedXp = doublePoints ? 10 : 5; // 🆕 בוסט נקודות כפולות
+        xp += earnedXp;
+        lastEarnedXp = earnedXp;
         lastEarnedCoins = 0;
       } else {
         // פרס בסיסי 10 XP, פחות 1 על כל רמז אות (מינימום 1)
@@ -1412,6 +1526,8 @@ void initState() {
         if (widget.isRandomMode) {
           gainedXp += (randomStreak - 1).clamp(0, 5);
         }
+
+        if (doublePoints) gainedXp *= 2; // 🆕 בוסט נקודות כפולות
 
         xp += gainedXp;
         coins += 2;
@@ -1431,7 +1547,7 @@ void initState() {
       await prefs.setInt('randomStreak', randomStreak); // הרצף נשמר גם אחרי יציאה
       await prefs.setInt('bestRandomStreak', bestRandomStreak);
       if (newStreakRecord && bestRandomStreak >= 3 && mounted) {
-        AppNotification.show(context, "שיא רצף חדש: $bestRandomStreak!", type: AppNotificationType.success, duration: const Duration(seconds: 2));
+        AppNotification.show(context, AppLocalizations.of(context)!.logoLevelNewStreakRecord(bestRandomStreak), type: AppNotificationType.success, duration: const Duration(seconds: 2));
       }
     } else {
       _saveProgress();
@@ -1486,6 +1602,7 @@ void initState() {
     // מחזירים את מוזיקת הרקע לעוצמה שנבחרה כשיוצאים מהשלב
     AudioManager.restoreMusic();
     _stuckHintTimer?.cancel();
+    _levelElapsedTimer?.cancel();
     _stuckTipOverlayEntry?.remove();
     _stuckTipOverlayEntry = null;
     PlayerSyncService.remoteCoinsUpdate.removeListener(_onRemoteCoinsUpdate);
@@ -1503,11 +1620,19 @@ void initState() {
 
   // 🆕 צילום מסך שני (ואילך) בזמן שהשלב הזה פעיל - מעבירים בכוח לשלב
   // הבא (בדיוק כמו התקדמות רגילה - _goToNextLevel, בלי לזרוק שום פרס
-  // נוסף) ומראים הודעה ברורה שזו הסיבה. אין "לחזור לשלב הקודם" כי אין
-  // כאן ניווט בכלל - currentPuzzleId פשוט מתקדם באותו מסך.
+  // נוסף) ומראים הודעה ברורה שזו הסיבה.
+  // 🐛 תוקן: היה מקדם רק את currentPuzzleId בזיכרון, בלי לשמור את
+  // ההתקדמות (כמו שסקיפ/פתרון עושים) - כך שאם השחקן יצא מהמסך וחזר,
+  // ה-maxLevel/worldCursor השמורים עדיין הצביעו על השלב שהיה אמור
+  // להיות מדולג, וזה "זרק אותו אחורה" בדיוק לשלב שממנו ברח בצילום המסך.
   void _onRepeatedScreenshot() {
     if (!mounted) return;
-    AppNotification.show(context, "זוהה צילום מסך נוסף - עוברים לשלב הבא", type: AppNotificationType.error, duration: const Duration(seconds: 4));
+    AppNotification.show(context, AppLocalizations.of(context)!.logoLevelRepeatedScreenshotMessage, type: AppNotificationType.error, duration: const Duration(seconds: 4));
+    if (widget.isRandomMode) {
+      _markRandomSolved(currentPuzzleId);
+    } else {
+      _saveProgress();
+    }
     _goToNextLevel();
   }
 
@@ -1547,6 +1672,7 @@ void initState() {
     int finishedLevel = currentMainLevel;
     int nextMainLevel = finishedLevel + 1;
     bool hasNextLevel = levelsCounts.containsKey(nextMainLevel);
+    final loc = AppLocalizations.of(context)!;
 
     showDialog(
       context: context,
@@ -1595,12 +1721,11 @@ void initState() {
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text("כל הכבוד! 🎉", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                Text(loc.logoLevelLevelCompleteTitle, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 Text(
-                  "סיימת בהצלחה את רמה $finishedLevel",
+                  loc.logoLevelLevelCompleteBody(finishedLevel),
                   textAlign: TextAlign.center,
-                  textDirection: TextDirection.rtl,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14.5, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 22),
@@ -1628,7 +1753,7 @@ void initState() {
                         gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)]),
                       ),
                       child: Text(
-                        hasNextLevel ? "לרמה $nextMainLevel ›" : "סיום",
+                        hasNextLevel ? loc.logoLevelNextLevelButton(nextMainLevel) : loc.logoLevelFinishButton,
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900),
                       ),
@@ -1672,6 +1797,11 @@ void initState() {
     // יינתן בלי שום הסבר אם שחקן חדש נכנס קודם לרנדומלי.
     if (isCorrect && !widget.isRandomMode) _maybeGrantFirstLevelGift();
     final Color glow = isCorrect ? const Color(0xFF34D399) : const Color(0xFFFB7185);
+    final loc = AppLocalizations.of(context)!;
+    // 🆕 נלכד *לפני* ה-showDialog למטה - שם הפרמטר `context` של ה-builder
+    // "מסתיר" את context של המסך הזה, אז בלעדי זה אי אפשר להגיע אליו
+    // מתוך onTap בפנים (ראו PromoService.onLevelSolved למטה).
+    final BuildContext screenContext = context;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1719,7 +1849,7 @@ void initState() {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text(isCorrect ? "כל הכבוד!" : "טעות בשם", style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                Text(isCorrect ? loc.logoLevelCorrectTitle : loc.logoLevelWrongTitle, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
                 if (isCorrect) ...[
                   const SizedBox(height: 16),
                   Wrap(
@@ -1737,52 +1867,41 @@ void initState() {
                   if (showOnboardingCorrectTip) ...[
                     const SizedBox(height: 14),
                     Text(
-                      "ככה בדיוק משחקים! כל תשובה נכונה מזכה אתכם בנקודות ניסיון (XP) ומטבעות",
+                      loc.logoLevelOnboardingCorrectTip,
                       textAlign: TextAlign.center,
-                      textDirection: TextDirection.rtl,
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
                     ),
                   ],
                 ],
                 const SizedBox(height: 22),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(19),
-                    onTap: () {
-                      AudioManager.playClick();
-                      Navigator.pop(context);
-                      if (isCorrect) {
-                        DebugLog.add("LogoLevelScreen: calling AdsManager.onLevelSolved");
-                        AdsManager.onLevelSolved(); // כל 7 שלבים - פרסומת מסך מלא
-                        DebugLog.add("LogoLevelScreen: AdsManager.onLevelSolved returned, calling _goToNextLevel");
-                        _goToNextLevel();
-                      } else {
-                        // 🔁 טעות - האותיות שהוקלדו נשארות במקום (לא מתאפסות
-                        // אוטומטית). המשתמש יכול למחוק ידנית באמצעות בק-ספייס
-                        // (לפי סדר ההקלדה) רק את מה שהוא רוצה לתקן.
-                        setState(() {
-                          _restartStuckHintTimer(); // מתחילים למנות מחדש 10 שניות מהניסיון הזה
-                        });
-                      }
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(19),
-                        gradient: isCorrect
-                            ? const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)])
-                            : LinearGradient(colors: [Colors.white.withValues(alpha: 0.14), Colors.white.withValues(alpha: 0.06)]),
-                        border: isCorrect ? null : Border.all(color: Colors.white.withValues(alpha: 0.16)),
-                      ),
-                      child: Text(
-                        isCorrect ? "המשך לשלב הבא ›" : "נסה שוב",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: isCorrect ? const Color(0xFF2A1740) : Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                  ),
+                _AutoAdvanceButton(
+                  isCorrect: isCorrect,
+                  // 🆕 "מעבר אוטומטי ללוגו הבא" - מתג חדש בטאב "משחק" בהגדרות
+                  // (GameSettings.autoAdvanceEnabled, כבוי כברירת מחדל - שינוי
+                  // ניווט אוטומטי צריך להיות opt-in, לא ברירת מחדל). כשדלוק,
+                  // הכפתור סופר לאחור ומתקדם לבד - לחיצה ידנית בכל רגע מבטלת
+                  // את הספירה ומתקדמת מיד (ראו _AutoAdvanceButton למטה).
+                  autoAdvance: isCorrect && GameSettings.autoAdvanceEnabled,
+                  correctLabel: loc.logoLevelNextStageButton,
+                  wrongLabel: loc.logoLevelTryAgainButton,
+                  onConfirm: () {
+                    AudioManager.playClick();
+                    Navigator.pop(context);
+                    if (isCorrect) {
+                      DebugLog.add("LogoLevelScreen: calling AdsManager.onLevelSolved");
+                      AdsManager.onLevelSolved(); // כל 7 שלבים - פרסומת מסך מלא
+                      DebugLog.add("LogoLevelScreen: AdsManager.onLevelSolved returned, calling _goToNextLevel");
+                      _goToNextLevel();
+                      PromoService.onLevelSolved(screenContext); // 🆕 קידום יזום ללוגו פאס/חנות - כל 4 שלבים, לסירוגין
+                    } else {
+                      // 🔁 טעות - האותיות שהוקלדו נשארות במקום (לא מתאפסות
+                      // אוטומטית). המשתמש יכול למחוק ידנית באמצעות בק-ספייס
+                      // (לפי סדר ההקלדה) רק את מה שהוא רוצה לתקן.
+                      setState(() {
+                        _restartStuckHintTimer(); // מתחילים למנות מחדש 10 שניות מהניסיון הזה
+                      });
+                    }
+                  },
                 ),
               ],
             ),
@@ -1815,8 +1934,9 @@ void initState() {
   }
 
   Widget _buildInputArea(bool isEnglish) {
-    List<String> words = currentLevelData.answer.split(' ');
-    int totalLetters = currentLevelData.answer.replaceAll(' ', '').length;
+    final String activeAnswer = currentLevelData.answerFor(localeController.isHebrew);
+    List<String> words = activeAnswer.split(' ');
+    int totalLetters = activeAnswer.replaceAll(' ', '').length;
 
     // 📐 גודל תא דינמי לפי רוחב המסך בפועל (לא פיקסלים קבועים) - כך
     // שמילה ארוכה על מסך צר תמיד תתכווץ ותיכנס בשורה אחת, במקום
@@ -1926,7 +2046,8 @@ void initState() {
 
     int currentMainLevelDisplay = currentMainLevel;
     int currentPuzzleNumDisplay = displayPuzzleNum;
-    bool isEnglish = RegExp(r'[a-zA-Z]').hasMatch(currentLevelData.answer);
+    bool isEnglish = RegExp(r'[a-zA-Z]').hasMatch(currentLevelData.answerFor(localeController.isHebrew));
+    final loc = AppLocalizations.of(context)!;
 
     // בזמן בחירת חידה רנדומלית - מסך טעינה קצר
     if (isPickingRandom) {
@@ -1969,14 +2090,14 @@ void initState() {
                             child: Text(
                               widget.isRandomMode
                                   ? currentCategoryName
-                                  : "$currentCategoryName · שלב $currentPuzzleNumDisplay",
+                                  : loc.subLevelsCategoryStageLabel(currentCategoryName, currentPuzzleNumDisplay),
                               style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900),
                             ),
                           ),
                           Text(
                             widget.isRandomMode
-                                ? (randomStreak > 0 ? "🔥 רצף $randomStreak" : "אתגר רנדומלי")
-                                : "רמה $currentMainLevelDisplay",
+                                ? (randomStreak > 0 ? loc.logoLevelStreakHeader(randomStreak) : loc.logoLevelRandomChallengeHeader)
+                                : loc.accountConflictLevelLabel(currentMainLevelDisplay),
                             style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w600),
                           ),
                         ],
@@ -1986,6 +2107,17 @@ void initState() {
                     _headerPill(icon: Icons.monetization_on_rounded, color: const Color(0xFFFFD86B), text: "$coins"),
                     const SizedBox(width: 6),
                     _headerPill(icon: null, color: const Color(0xFF93C5FD), text: "$xp"),
+                    // 🆕 "הצגת טיימר בשלבים" - מתג חדש בטאב "משחק" בהגדרות,
+                    // כבוי כברירת מחדל. מציג רק שניות שחלפו על החידה
+                    // הנוכחית (ראו _restartLevelTimer) - לא עוד נתון אמיתי.
+                    if (GameSettings.levelTimerEnabled) ...[
+                      const SizedBox(width: 6),
+                      _headerPill(
+                        icon: Icons.timer_outlined,
+                        color: Colors.white70,
+                        text: "${_levelElapsedSeconds ~/ 60}:${(_levelElapsedSeconds % 60).toString().padLeft(2, '0')}",
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2017,7 +2149,13 @@ void initState() {
 
               const Spacer(),
 
-              // ===== שבבי פעולה: רמז / הסר אותיות (בלי "דלג" - לא קיים באפליקציה) =====
+              // ===== שבבי פעולה: רמז / הסר אותיות =====
+              // 🩹 כפתור "דלג" (למילים באנגלית) הוסר בכוונה - לפי בקשה מפורשת:
+              // דלג חינם סותר את הפואנטה של תשלום במטבעות על רמז/פתרון מלא
+              // (ראו _revealWordHint, 60 מטבעות = פתרון מלא) - חידות קשות
+              // אמורות להיפתר בתשלום, לא להתדלג עליהן בחינם. ראו גם
+              // tingly-enchanting-russell.md (תוכנית הלוקליזציה) שמתעד
+              // את ההחלטה הזו.
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -2026,7 +2164,7 @@ void initState() {
                   // קבוע על הכפתור עצמו מטעה (משתמע כאילו זה המחיר היחיד).
                   _ActionChip(
                     icon: Icons.lightbulb_rounded,
-                    label: "רמז",
+                    label: loc.logoLevelHintChipLabel,
                     color: const Color(0xFFFFD86B),
                     onTap: _showHintMenu,
                     link: _hintButtonLink,
@@ -2034,7 +2172,7 @@ void initState() {
                   const SizedBox(width: 12),
                   _ActionChip(
                     icon: Icons.backspace_rounded,
-                    label: "הסר אות",
+                    label: loc.logoRaceRemoveLetterButton,
                     color: const Color(0xFFFB7185),
                     onTap: _onBackspacePressed,
                   ),
@@ -2054,7 +2192,8 @@ void initState() {
                     const double spacing = 8;
                     const double maxKeyWidth = 45;
                     const double minKeyWidth = 30;
-                    int totalKeys = currentLevelData.keyboard.length;
+                    final keyboard = currentLevelData.keyboardFor(localeController.isHebrew);
+                    int totalKeys = keyboard.length;
                     int keysPerRow = (totalKeys / 2).ceil(); // תמיד שואפים לשתי שורות בדיוק
 
                     double idealWidth = (constraints.maxWidth - (keysPerRow - 1) * spacing) / keysPerRow;
@@ -2070,7 +2209,7 @@ void initState() {
                         runSpacing: 10,
                         children: List.generate(totalKeys, (index) {
                           bool isPressed = pressedKeysIndices.contains(index);
-                          String letter = currentLevelData.keyboard[index];
+                          String letter = keyboard[index];
                           return GestureDetector(
                             onTap: isPressed ? null : () => _onLetterPressed(index, letter),
                             child: Container(
@@ -2136,11 +2275,12 @@ void initState() {
   // נסגר מתחילה בועת "תקוע?" לרוץ (ראו _restartStuckHintTimer), וההסבר
   // על תשובה נכונה (ראו _showResultDialog) ממשיך כרגיל בהמשך.
   Widget _buildOnboardingIntroSpotlight() {
+    final loc = AppLocalizations.of(context)!;
     final steps = [
-      (_tourHeaderKey, 'איפה אתם נמצאים', 'כאן רואים את הקטגוריה והשלב הנוכחי - כל לוגו שפותרים מקדם אתכם לשלב הבא.'),
-      (_tourLogoKey, 'זהו את הלוגו', 'זה הלוגו שצריך לזהות ולכתוב את השם שלו.'),
-      (_tourSlotsKey, 'כאן התשובה שלכם', 'כל אות שתקלידו תופיע כאן. לחצו על אות שכבר הקלדתם כדי למחוק רק אותה.'),
-      (_tourKeyboardKey, 'כאן מקלידים', 'הקישו על האותיות כאן כדי למלא את התשובה - לפי הסדר שבו הן מופיעות במילה.'),
+      (_tourHeaderKey, loc.logoLevelTourStep1Title, loc.logoLevelTourStep1Body),
+      (_tourLogoKey, loc.logoLevelTourStep2Title, loc.logoLevelTourStep2Body),
+      (_tourSlotsKey, loc.logoLevelTourStep3Title, loc.logoLevelTourStep3Body),
+      (_tourKeyboardKey, loc.logoLevelTourStep4Title, loc.logoLevelTourStep4Body),
     ];
     final (targetKey, title, body) = steps[_onboardingIntroStep];
 
@@ -2210,10 +2350,9 @@ void initState() {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
-                        textDirection: TextDirection.rtl,
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('${_onboardingIntroStep + 1} מתוך $_onboardingIntroStepCount', style: TextStyle(color: Colors.black.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          Text(loc.logoLevelTourStepCounter(_onboardingIntroStep + 1, _onboardingIntroStepCount), style: TextStyle(color: Colors.black.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700)),
                           Row(
                             children: List.generate(_onboardingIntroStepCount, (i) => Container(
                                   width: 6,
@@ -2225,16 +2364,16 @@ void initState() {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
+                      Text(title, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 6),
-                      Text(body, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w600, height: 1.4)),
+                      Text(body, style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w600, height: 1.4)),
                       const SizedBox(height: 14),
                       if (isLastStep)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Text('👆 ', style: TextStyle(fontSize: 15)),
-                            Text('לחצו על אות כדי להתחיל', textDirection: TextDirection.rtl, style: TextStyle(color: const Color(0xFFBE8A00), fontSize: 13.5, fontWeight: FontWeight.w900)),
+                            Text(loc.logoLevelTourTapLetterToStart, style: const TextStyle(color: Color(0xFFBE8A00), fontSize: 13.5, fontWeight: FontWeight.w900)),
                           ],
                         )
                       else
@@ -2248,7 +2387,7 @@ void initState() {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                             onPressed: _advanceOnboardingIntro,
-                            child: const Text('הבא', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                            child: Text(loc.logoLevelTourNextButton, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                           ),
                         ),
                     ],
@@ -2309,6 +2448,100 @@ class _BubbleArrowPainter extends CustomPainter {
 /// שבב פעולה תחתון (רמז / הסר אות) - עיצוב זכוכיתי עקבי לשאר האפליקציה,
 /// עם תג-מחיר אופציונלי. אם מועבר link - הוא מתפקד גם כ"עוגן" למיקום
 /// בועית "תקוע?" (CompositedTransformTarget), בדיוק כמו כפתור הרמז הישן.
+// 🆕 כפתור דיאלוג התוצאה ("לשלב הבא" / "נסה שוב") - עם ספירה-לאחור
+// אופציונלית ("מעבר אוטומטי ללוגו הבא", GameSettings.autoAdvanceEnabled).
+// כשdautoAdvance דלוק ותשובה נכונה: הכפתור מתחיל ספירה לאחור מ-2 שניות
+// ("לשלב הבא (2)") ומתקדם לבד כשהיא מגיעה ל-0. לחיצה ידנית בכל רגע
+// מבטלת את הטיימר ומתקדמת מיד - תמיד אפשר "לדלג" על ההמתנה.
+// StatefulWidget עצמאי (לא רק closure) כדי שה-Timer ינוהל נכון עם
+// initState/dispose, בלי תלות במחזור החיים של הדיאלוג שמסביב.
+class _AutoAdvanceButton extends StatefulWidget {
+  final bool isCorrect;
+  final bool autoAdvance;
+  final String correctLabel;
+  final String wrongLabel;
+  final VoidCallback onConfirm;
+  const _AutoAdvanceButton({
+    required this.isCorrect,
+    required this.autoAdvance,
+    required this.correctLabel,
+    required this.wrongLabel,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_AutoAdvanceButton> createState() => _AutoAdvanceButtonState();
+}
+
+class _AutoAdvanceButtonState extends State<_AutoAdvanceButton> {
+  static const int _startSeconds = 2;
+  Timer? _timer;
+  int _secondsLeft = _startSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoAdvance) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!mounted) return;
+        setState(() => _secondsLeft--);
+        if (_secondsLeft <= 0) {
+          t.cancel();
+          widget.onConfirm();
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    _timer?.cancel();
+    widget.onConfirm();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool counting = widget.autoAdvance && _timer != null && _secondsLeft > 0;
+    final String label = widget.isCorrect ? widget.correctLabel : widget.wrongLabel;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(19),
+        onTap: _handleTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(19),
+            gradient: widget.isCorrect
+                ? const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)])
+                : LinearGradient(colors: [Colors.white.withValues(alpha: 0.14), Colors.white.withValues(alpha: 0.06)]),
+            border: widget.isCorrect ? null : Border.all(color: Colors.white.withValues(alpha: 0.16)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(label, textAlign: TextAlign.center, style: TextStyle(color: widget.isCorrect ? const Color(0xFF2A1740) : Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+              // 🩹 ספירה כ-Text ספרה נפרדת (לא "($label $sec)" במחרוזת אחת)
+              // - אותה בעיית bidi (אימוג'י/סוגריים+ספרה בלי עוגן RTL)
+              // שתועדה כבר כמה פעמים בקובץ הזה.
+              if (counting) ...[
+                const SizedBox(width: 6),
+                Text('($_secondsLeft)', textDirection: TextDirection.ltr, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2403,6 +2636,7 @@ class _HintOptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     final bool isFree = price == null;
     return InkWell(
       onTap: onTap,
@@ -2431,11 +2665,9 @@ class _HintOptionTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      textDirection: TextDirection.rtl,
                       style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 3),
                   Text(subtitle,
-                      textDirection: TextDirection.rtl,
                       style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5)),
                 ],
               ),
@@ -2449,7 +2681,7 @@ class _HintOptionTile extends StatelessWidget {
                 border: isFree ? Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.5)) : null,
               ),
               child: isFree
-                  ? const Text("חינם", style: TextStyle(color: Color(0xFFA7F3D0), fontWeight: FontWeight.w900, fontSize: 13))
+                  ? Text(loc.logoLevelFreeLabel, style: const TextStyle(color: Color(0xFFA7F3D0), fontWeight: FontWeight.w900, fontSize: 13))
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

@@ -13,10 +13,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'app_background.dart';
 import 'level_data.dart';
+import 'locale_controller.dart'; // 🆕 שפת האפליקציה (עברית/אנגלית) - קובעת איזה ans/keyboard מוצגים
 import 'missions_service.dart';
 import 'audio_manager.dart';
+import 'ads_manager.dart';
 import 'notification_service.dart';
+import 'notification_manager.dart'; // 🆕 מתג "תזכורות יומיות" בטאב ההתראות (ראו _onRemindMeTomorrow)
 import 'app_icons.dart'; // 🆕 CoinIcon/EnergyIcon - אימוג'י במקום אייקון וקטורי (ראו app_icons.dart)
+import 'l10n/app_localizations.dart';
 
 class DailyChallengeScreen extends StatefulWidget {
   const DailyChallengeScreen({super.key});
@@ -51,7 +55,10 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
   void _onRemindMeTomorrow() {
     if (_reminderSet) return;
     AudioManager.playClick();
-    NotificationService.scheduleDailyChallengeReminder();
+    // 🆕 מגודר לפי מתג "תזכורות יומיות" בטאב ההתראות - ראו notification_manager.dart.
+    if (NotificationManager.notificationsEnabled && NotificationManager.dailyNotificationsEnabled) {
+      NotificationService.scheduleDailyChallengeReminder();
+    }
     setState(() => _reminderSet = true);
   }
 
@@ -62,7 +69,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
         onPressed: _reminderSet ? null : _onRemindMeTomorrow,
         icon: Icon(_reminderSet ? Icons.notifications_active_rounded : Icons.notifications_none_rounded, size: 18, color: _reminderSet ? const Color(0xFF4ADE80) : Colors.white.withValues(alpha: 0.65)),
         label: Text(
-          _reminderSet ? 'נזכיר לך מחר!' : 'תזכיר לי מחר',
+          _reminderSet ? AppLocalizations.of(context)!.dailyChallengeReminderSet : AppLocalizations.of(context)!.dailyChallengeRemindMe,
           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _reminderSet ? const Color(0xFF4ADE80) : Colors.white.withValues(alpha: 0.65)),
         ),
       ),
@@ -95,6 +102,8 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
     // גם אם השחקן יוצא מהמסך באמצע הריצה בלי לסיים, לא רק על כישלון
     // מלא בתום הזמן.
     MissionsService.markDailyChallengeAttempted();
+    // 🐛 תוקן: אתגר היום מעולם לא חיבר לשום פרסומת - "נכנסים למשחק בפועל".
+    AdsManager.recordGameEntered();
     setState(() {
       _index = 0;
       _remainingSeconds = MissionsService.dailyChallengeSeconds.toDouble();
@@ -128,7 +137,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
 
   void _resetGuessForCurrent() {
     final level = _currentLevel;
-    final answerLen = level?.answer.replaceAll(' ', '').length ?? 0;
+    final answerLen = level?.answerFor(localeController.isHebrew).replaceAll(' ', '').length ?? 0;
     _guessSlots = List<String?>.filled(answerLen, null);
     _typedOrder = [];
     _pressedKeyIndices.clear();
@@ -163,7 +172,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
     final level = _currentLevel;
     if (level == null) return;
     final cleanGuess = _guessSlots.map((s) => s ?? '').join();
-    final cleanAnswer = level.answer.replaceAll(' ', '');
+    final cleanAnswer = level.answerFor(localeController.isHebrew).replaceAll(' ', '');
 
     if (cleanGuess != cleanAnswer) {
       Future.delayed(const Duration(milliseconds: 300), () {
@@ -189,6 +198,9 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
       _ticker?.cancel();
       final granted = await MissionsService.completeDailyChallenge();
       if (!mounted) return;
+      // 🐛 תוקן: השלמת אתגר היום מעולם לא נספרה לקראת פרסומת, בדיוק
+      // כמו השלמת שלב רגיל.
+      AdsManager.onLevelSolved();
       setState(() => _phase = _Phase.success);
       if (!granted) {
         // מקרה קצה נדיר (למשל שני טאבים) - עדיין מציגים הצלחה, רק בלי זיכוי כפול.
@@ -218,7 +230,8 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
     );
   }
 
-  Widget _buildTopBar({String title = 'אתגר היומי'}) {
+  Widget _buildTopBar({String? title}) {
+    final resolvedTitle = title ?? AppLocalizations.of(context)!.dailyChallengeTitle;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
       child: Row(
@@ -226,7 +239,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
           _RoundIconButton(icon: Icons.close_rounded, onTap: () => Navigator.pop(context)),
           Expanded(
             child: Center(
-              child: Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+              child: Text(resolvedTitle, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
             ),
           ),
           const SizedBox(width: 40), // מאזן את כפתור הסגירה כדי שהכותרת תישאר במרכז
@@ -248,14 +261,14 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                 children: [
                   const Icon(Icons.check_circle_rounded, color: Color(0xFF4ADE80), size: 70),
                   const SizedBox(height: 18),
-                  const Text('כבר השלמת את האתגר היומי!', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeAlreadyDoneTitle, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
-                  Text('לוגו חדש ואתגר חדש מחכים לך מחר', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeComeBackTomorrow, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
                   const SizedBox(height: 26),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740), padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('חזרה', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                    child: Text(AppLocalizations.of(context)!.duelLobbyBackButton, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                   ),
                   _buildRemindMeButton(),
                 ],
@@ -282,14 +295,14 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                 children: [
                   const Icon(Icons.timer_off_rounded, color: Color(0xFFFB7185), size: 64),
                   const SizedBox(height: 18),
-                  const Text('כבר ניסית את האתגר היומי', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeUsedUpTitle, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
-                  Text('יש רק ניסיון אחד ליום - נסה שוב מחר עם אתגר חדש', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeUsedUpMessage, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
                   const SizedBox(height: 26),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740), padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('חזרה', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                    child: Text(AppLocalizations.of(context)!.duelLobbyBackButton, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                   ),
                   _buildRemindMeButton(),
                 ],
@@ -320,14 +333,14 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                     child: const EnergyIcon(size: 40),
                   ),
                   const SizedBox(height: 20),
-                  Text('${MissionsService.dailyChallengeLogoCount} לוגואים · ${MissionsService.dailyChallengeSeconds} שניות בסך הכל', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeIntroStats(MissionsService.dailyChallengeLogoCount, MissionsService.dailyChallengeSeconds), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 10),
-                  Text('פתור את כל הלוגואים ברצף לפני שהזמן נגמר וזכה בבונוס. אין רמזים במסך הזה - זה מבחן מהירות!', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5, height: 1.5)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeIntroBody, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5, height: 1.5)),
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: const Color(0xFFFB7185).withValues(alpha: 0.14)),
-                    child: Text('⚠️ יש לך רק ניסיון אחד ליום - גם אם תיכשל', textDirection: TextDirection.rtl, style: TextStyle(color: const Color(0xFFFDA4AF).withValues(alpha: 0.9), fontSize: 12, fontWeight: FontWeight.w700)),
+                    child: Text(AppLocalizations.of(context)!.dailyChallengeOneAttemptWarning, style: TextStyle(color: const Color(0xFFFDA4AF).withValues(alpha: 0.9), fontSize: 12, fontWeight: FontWeight.w700)),
                   ),
                   const SizedBox(height: 22),
                   Container(
@@ -350,7 +363,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                       onPressed: _startRun,
-                      child: const Text('מוכן? התחל! ⚡', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900)),
+                      child: Text(AppLocalizations.of(context)!.dailyChallengeStartButton, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900)),
                     ),
                   ),
                 ],
@@ -364,7 +377,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
 
   Widget _buildPlaying() {
     final level = _currentLevel;
-    final isEnglish = level != null && RegExp(r'[a-zA-Z]').hasMatch(level.answer);
+    final isEnglish = level != null && RegExp(r'[a-zA-Z]').hasMatch(level.answerFor(localeController.isHebrew));
     final urgent = _remainingSeconds <= 10;
     return Column(
       children: [
@@ -377,9 +390,8 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
           child: Column(
             children: [
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
-                  Text('לוגו ${_index + 1} מתוך ${_logoIds.length}', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  Text(AppLocalizations.of(context)!.duelRoomLogoCounter(_index + 1, _logoIds.length), style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12.5, fontWeight: FontWeight.w700)),
                   const Spacer(),
                   Text(_remainingSeconds.toStringAsFixed(1), style: TextStyle(color: urgent ? const Color(0xFFFB7185) : const Color(0xFFFFD86B), fontSize: 16, fontWeight: FontWeight.w900)),
                   const SizedBox(width: 4),
@@ -443,7 +455,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
             child: TextButton.icon(
               onPressed: _onBackspace,
               icon: const Icon(Icons.backspace_rounded, color: Color(0xFFFB7185), size: 16),
-              label: const Text('הסר אות', style: TextStyle(color: Color(0xFFFB7185), fontSize: 12.5, fontWeight: FontWeight.w800)),
+              label: Text(AppLocalizations.of(context)!.logoRaceRemoveLetterButton, style: const TextStyle(color: Color(0xFFFB7185), fontSize: 12.5, fontWeight: FontWeight.w800)),
             ),
           ),
           const SizedBox(height: 8),
@@ -495,6 +507,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
   }
 
   Widget _buildKeyboard(LevelData level, bool isEnglish) {
+    final keyboard = level.keyboardFor(localeController.isHebrew);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: LayoutBuilder(
@@ -502,7 +515,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
           const double spacing = 7;
           const double maxKeyWidth = 42;
           const double minKeyWidth = 28;
-          final int totalKeys = level.keyboard.length;
+          final int totalKeys = keyboard.length;
           final int keysPerRow = (totalKeys / 2).ceil();
           final double idealWidth = (constraints.maxWidth - (keysPerRow - 1) * spacing) / keysPerRow;
           final double keyWidth = idealWidth.clamp(minKeyWidth, maxKeyWidth);
@@ -522,13 +535,13 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: isPressed ? null : () => _onKeyTap(level.keyboard[i], i),
+                    onTap: isPressed ? null : () => _onKeyTap(keyboard[i], i),
                     child: Container(
                       width: keyWidth,
                       height: keyHeight,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: isPressed ? Colors.transparent : Colors.white.withValues(alpha: 0.18))),
-                      child: Text(isPressed ? '' : level.keyboard[i], style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
+                      child: Text(isPressed ? '' : keyboard[i], style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
                     ),
                   ),
                 );
@@ -553,9 +566,9 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                 children: [
                   const Icon(Icons.emoji_events_rounded, color: Color(0xFFFFD86B), size: 74),
                   const SizedBox(height: 14),
-                  const Text('כל הכבוד! 🎉', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeSuccessTitle, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
-                  Text('סיימת את אתגר היום ב-${(MissionsService.dailyChallengeSeconds - _remainingSeconds).toStringAsFixed(1)} שניות', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeSuccessTime((MissionsService.dailyChallengeSeconds - _remainingSeconds).toStringAsFixed(1)), style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5)),
                   const SizedBox(height: 18),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -575,7 +588,7 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740), padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('חזרה', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                    child: Text(AppLocalizations.of(context)!.duelLobbyBackButton, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                   ),
                 ],
               ),
@@ -599,18 +612,18 @@ class _DailyChallengeScreenState extends State<DailyChallengeScreen> {
                 children: [
                   const Icon(Icons.timer_off_rounded, color: Color(0xFFFB7185), size: 64),
                   const SizedBox(height: 16),
-                  const Text('נגמר הזמן! ⏱️', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeTimeUpTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
-                  Text('הגעת ללוגו ${_index + 1} מתוך ${_logoIds.length} - ניצלת את הניסיון היחיד של היום', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeFailedProgress(_index + 1, _logoIds.length), textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5)),
                   const SizedBox(height: 4),
-                  Text('נסה שוב מחר עם אתגר חדש', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                  Text(AppLocalizations.of(context)!.dailyChallengeTryTomorrow, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
                   const SizedBox(height: 26),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('חזרה', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                      child: Text(AppLocalizations.of(context)!.duelLobbyBackButton, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                     ),
                   ),
                 ],

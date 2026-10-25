@@ -19,6 +19,7 @@ import 'dart:ui';
 import 'duel_service.dart';
 import 'device_id.dart';
 import 'app_background.dart';
+import 'l10n/app_localizations.dart';
 
 class DuelSeasonLeaderboardScreen extends StatefulWidget {
   const DuelSeasonLeaderboardScreen({super.key});
@@ -103,7 +104,6 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
               ),
             ),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 _GlassIconButton(icon: Icons.arrow_forward_rounded, color: Colors.white, onTap: () => Navigator.pop(context)),
                 const SizedBox(width: 10),
@@ -112,14 +112,14 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
                     children: [
                       Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Text("טבלת עונת הדו-קרבים", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                          SizedBox(width: 6),
-                          Text("🏆", style: TextStyle(fontSize: 16)),
+                        children: [
+                          Text(AppLocalizations.of(context)!.duelSeasonLbTitle, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                          const SizedBox(width: 6),
+                          const Text("🏆", style: TextStyle(fontSize: 16)),
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text(DuelService.seasonDisplayName(), textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11.5, fontWeight: FontWeight.w600)),
+                      Text(DuelService.seasonDisplayName(), style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11.5, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -145,12 +145,11 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
           children: [
             const Text('⚔️', style: TextStyle(fontSize: 46)),
             const SizedBox(height: 14),
-            const Text("עדיין אין ניצחונות החודש", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+            Text(AppLocalizations.of(context)!.duelSeasonLbEmptyTitle, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Text(
-              "תהיה הראשון לנצח דו-קרב החודש ולפתוח את הטבלה!",
+              AppLocalizations.of(context)!.duelSeasonLbEmptyMessage,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
             ),
           ],
@@ -174,7 +173,7 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
           _buildPodium(top3),
           if (rest.isNotEmpty) ...[
             const SizedBox(height: 20),
-            _buildSectionDivider("שאר המובילים"),
+            _buildSectionDivider(AppLocalizations.of(context)!.duelSeasonLbOthersSection),
             const SizedBox(height: 12),
             for (int i = 0; i < rest.length; i++)
               Padding(
@@ -184,9 +183,9 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
           ],
           if (showMyRowFooter) ...[
             const SizedBox(height: 6),
-            _buildSectionDivider("המקום שלך"),
+            _buildSectionDivider(AppLocalizations.of(context)!.duelSeasonLbYourPlaceSection),
             const SizedBox(height: 12),
-            _buildRow({'name': 'אתה', 'wins': _myWins, 'deviceId': _myDeviceId}, _myRank!, topWins),
+            _buildRow({'name': AppLocalizations.of(context)!.duelLobbyYouLabel, 'wins': _myWins, 'deviceId': _myDeviceId}, _myRank!, topWins),
           ],
         ],
       ),
@@ -201,7 +200,7 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+          child: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.42), fontSize: 11.5, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
         ),
         Expanded(
           child: Container(height: 1, decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.white.withValues(alpha: 0.22), Colors.white.withValues(alpha: 0.02)]))),
@@ -241,8 +240,9 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
   }
 
   Widget _podiumSpot(Map<String, dynamic> entry, int place, double height, Color color) {
+    final loc = AppLocalizations.of(context)!;
     final bool isMe = (entry['deviceId'] ?? '') == _myDeviceId && (_myDeviceId ?? '').isNotEmpty;
-    final String name = (entry['name'] ?? 'שחקן').toString();
+    final String name = (entry['name'] ?? loc.duelSeasonLbPlayerFallbackName).toString();
     final String initial = name.isNotEmpty ? name.characters.first : '?';
     final int wins = (entry['wins'] ?? 0) as int;
     final bool isFirst = place == 1;
@@ -269,10 +269,9 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
         ),
         const SizedBox(height: 8),
         Text(
-          isMe ? "$name (אתה)" : name,
+          isMe ? loc.duelSeasonLbYouSuffix(name) : name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: isMe ? const Color(0xFFFFD86B) : Colors.white.withValues(alpha: 0.92), fontSize: isFirst ? 15.5 : 13, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 9),
@@ -301,7 +300,7 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
               Text("$place", style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 1 : 0.9), fontSize: isFirst ? 26 : 20, fontWeight: FontWeight.w900)),
               SizedBox(height: isFirst ? 6 : 4),
               Text("$wins", style: TextStyle(color: Colors.white, fontSize: isFirst ? 17 : 14, fontWeight: FontWeight.w900)),
-              Text("ניצחונות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 0.7 : 0.55), fontSize: 9, fontWeight: FontWeight.w700)),
+              Text(loc.duelLobbyWinsLabel, style: TextStyle(color: Colors.white.withValues(alpha: isFirst ? 0.7 : 0.55), fontSize: 9, fontWeight: FontWeight.w700)),
             ],
           ),
         ),
@@ -311,8 +310,9 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
 
   // ===================== שורות 4 ומטה =====================
   Widget _buildRow(Map<String, dynamic> entry, int place, int topWins) {
+    final loc = AppLocalizations.of(context)!;
     final bool isMe = (entry['deviceId'] ?? '') == _myDeviceId && (_myDeviceId ?? '').isNotEmpty;
-    final String name = (entry['name'] ?? 'שחקן').toString();
+    final String name = (entry['name'] ?? loc.duelSeasonLbPlayerFallbackName).toString();
     final int wins = (entry['wins'] ?? 0) as int;
     final double pct = (wins / topWins).clamp(0.02, 1.0);
 
@@ -336,7 +336,6 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 Container(
                   width: 34,
@@ -352,16 +351,13 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        textDirection: TextDirection.rtl,
                         children: [
                           Flexible(
                             child: Text(
                               name,
-                              textDirection: TextDirection.rtl,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(color: isMe ? const Color(0xFFFFD86B) : Colors.white.withValues(alpha: 0.96), fontSize: isMe ? 15.5 : 15, fontWeight: FontWeight.bold),
@@ -372,7 +368,7 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
                               decoration: BoxDecoration(color: const Color(0xFFFFD86B).withValues(alpha: 0.9), borderRadius: BorderRadius.circular(8)),
-                              child: const Text("אתה", style: TextStyle(color: Color(0xFF2A1740), fontSize: 10, fontWeight: FontWeight.w900)),
+                              child: Text(loc.duelLobbyYouLabel, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 10, fontWeight: FontWeight.w900)),
                             ),
                           ],
                         ],
@@ -401,12 +397,11 @@ class _DuelSeasonLeaderboardScreenState extends State<DuelSeasonLeaderboardScree
                 ),
                 const SizedBox(width: 8),
                 Column(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("$wins", style: TextStyle(color: isMe ? const Color(0xFFFFE7A8) : const Color(0xFFBFDBFE), fontSize: isMe ? 14.5 : 14, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 2),
-                    Text("ניצחונות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9.5, fontWeight: FontWeight.w600)),
+                    Text(loc.duelLobbyWinsLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 9.5, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ],

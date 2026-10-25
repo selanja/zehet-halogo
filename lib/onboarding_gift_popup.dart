@@ -13,6 +13,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'app_icons.dart';
+import 'l10n/app_localizations.dart';
 
 Future<void> showOnboardingGiftPopup(
   BuildContext context, {
@@ -64,92 +65,88 @@ class _OnboardingGiftPopupState extends State<_OnboardingGiftPopup> with SingleT
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Material(
-        color: Colors.transparent,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                child: Container(color: Colors.black.withValues(alpha: 0.2)),
-              ),
+    final loc = AppLocalizations.of(context)!;
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: Container(color: Colors.black.withValues(alpha: 0.2)),
             ),
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
-                child: AnimatedBuilder(
-                  animation: _c,
-                  builder: (ctx, child) {
-                    final t = Curves.easeOutBack.transform(_c.value.clamp(0.0, 1.0));
-                    return Opacity(
-                      opacity: _c.value.clamp(0.0, 1.0),
-                      child: Transform.scale(scale: 0.75 + 0.25 * t, child: child),
-                    );
-                  },
-                  child: Container(
-                    width: 340,
-                    padding: const EdgeInsets.fromLTRB(20, 26, 20, 22),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(36),
-                      gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF3A2170), Color(0xFF1C1145)]),
-                      border: Border.all(color: const Color(0xFFFFC64B).withValues(alpha: 0.45)),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 40, offset: const Offset(0, 24))],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'סיימתם את ההדרכה',
-                          textDirection: TextDirection.rtl,
-                          style: TextStyle(color: const Color(0xFFFFD979).withValues(alpha: 0.8), fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1),
+          ),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 24),
+              child: AnimatedBuilder(
+                animation: _c,
+                builder: (ctx, child) {
+                  final t = Curves.easeOutBack.transform(_c.value.clamp(0.0, 1.0));
+                  return Opacity(
+                    opacity: _c.value.clamp(0.0, 1.0),
+                    child: Transform.scale(scale: 0.75 + 0.25 * t, child: child),
+                  );
+                },
+                child: Container(
+                  width: 340,
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 22),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(36),
+                    gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF3A2170), Color(0xFF1C1145)]),
+                    border: Border.all(color: const Color(0xFFFFC64B).withValues(alpha: 0.45)),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 40, offset: const Offset(0, 24))],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        loc.onboardingGiftHeader,
+                        style: TextStyle(color: const Color(0xFFFFD979).withValues(alpha: 0.8), fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1),
+                      ),
+                      const SizedBox(height: 14),
+                      _buildMedalAnimation(),
+                      const SizedBox(height: 8),
+                      AnimatedBuilder(
+                        animation: _c,
+                        builder: (ctx, child) {
+                          final local = ((_c.value - 0.45) / 0.55).clamp(0.0, 1.0);
+                          final eased = Curves.easeOut.transform(local);
+                          return Opacity(
+                            opacity: eased,
+                            child: Transform.translate(offset: Offset(0, (1 - eased) * 18), child: child),
+                          );
+                        },
+                        child: Column(
+                          children: [
+                            ShaderMask(
+                              shaderCallback: (bounds) => const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xFFFFF6D8), Color(0xFFF2793B)],
+                              ).createShader(bounds),
+                              child: Text(loc.onboardingGiftTitle, style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.1)),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              loc.onboardingGiftSubtitle,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
+                            ),
+                            const SizedBox(height: 16),
+                            _buildRewardSummaryPill(loc),
+                            const SizedBox(height: 18),
+                            _buildBottomButton(loc),
+                          ],
                         ),
-                        const SizedBox(height: 14),
-                        _buildMedalAnimation(),
-                        const SizedBox(height: 8),
-                        AnimatedBuilder(
-                          animation: _c,
-                          builder: (ctx, child) {
-                            final local = ((_c.value - 0.45) / 0.55).clamp(0.0, 1.0);
-                            final eased = Curves.easeOut.transform(local);
-                            return Opacity(
-                              opacity: eased,
-                              child: Transform.translate(offset: Offset(0, (1 - eased) * 18), child: child),
-                            );
-                          },
-                          child: Column(
-                            children: [
-                              ShaderMask(
-                                shaderCallback: (bounds) => const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Color(0xFFFFF6D8), Color(0xFFF2793B)],
-                                ).createShader(bounds),
-                                child: const Text('פרס נאסף!', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.1)),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'מגיע לכם על הרמה הראשונה - אתם מוכנים להמשיך בעצמכם!',
-                                textAlign: TextAlign.center,
-                                textDirection: TextDirection.rtl,
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.4),
-                              ),
-                              const SizedBox(height: 16),
-                              _buildRewardSummaryPill(),
-                              const SizedBox(height: 18),
-                              _buildBottomButton(),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -221,7 +218,7 @@ class _OnboardingGiftPopupState extends State<_OnboardingGiftPopup> with SingleT
     );
   }
 
-  Widget _buildRewardSummaryPill() {
+  Widget _buildRewardSummaryPill(AppLocalizations loc) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       decoration: BoxDecoration(
@@ -230,7 +227,6 @@ class _OnboardingGiftPopupState extends State<_OnboardingGiftPopup> with SingleT
         border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.4)),
       ),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Container(
             width: 42,
@@ -247,9 +243,9 @@ class _OnboardingGiftPopupState extends State<_OnboardingGiftPopup> with SingleT
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.energy > 0 ? '${widget.coins} מטבעות + ${widget.energy} אנרגיה' : '${widget.coins} מטבעות', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w900)),
+                Text(widget.energy > 0 ? loc.onboardingGiftRewardCoinsEnergy(widget.coins, widget.energy) : loc.onboardingGiftRewardCoinsOnly(widget.coins), style: const TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
-                Text('מתנת השלמת ההדרכה', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
+                Text(loc.onboardingGiftRewardLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -258,7 +254,7 @@ class _OnboardingGiftPopupState extends State<_OnboardingGiftPopup> with SingleT
     );
   }
 
-  Widget _buildBottomButton() {
+  Widget _buildBottomButton(AppLocalizations loc) {
     return SizedBox(
       width: double.infinity,
       child: Material(
@@ -276,8 +272,8 @@ class _OnboardingGiftPopupState extends State<_OnboardingGiftPopup> with SingleT
               gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFF2793B)]),
               boxShadow: [BoxShadow(color: const Color(0xFFF2793B).withValues(alpha: 0.42), blurRadius: 26, offset: const Offset(0, 12))],
             ),
-            child: const Center(
-              child: Text('המשיכו לשחק ›', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900)),
+            child: Center(
+              child: Text(loc.onboardingGiftContinueButton, style: const TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900)),
             ),
           ),
         ),

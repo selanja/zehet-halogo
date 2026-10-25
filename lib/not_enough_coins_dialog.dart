@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'app_icons.dart';
 import 'shop_screen.dart';
+import 'l10n/app_localizations.dart';
 
 void showNotEnoughCoinsDialog(
   BuildContext context, {
@@ -16,9 +17,22 @@ void showNotEnoughCoinsDialog(
   required int coins,
   VoidCallback? onReturnedFromShop,
 }) {
+  // 🩹 נשמר בנפרד מה-context שבתוך builder (ראו ההערה למטה ליד onTap) -
+  // זה ה-context של המסך הקורא עצמו (דו-קרב/מרוץ/טורניר), לא של הדיאלוג.
+  final callerContext = context;
   showDialog(
     context: context,
-    builder: (context) => Dialog(
+    // 🩹 בדיקה אמיתית בהאמולטור: אחרי שחוזרים מהחנות עם "בית" (לא "חזרה"),
+    // AppBottomNav._goHome עושה Navigator.popUntil על ה-Navigator *הקרוב*
+    // (לא ה-root) - ו-showDialog כברירת מחדל נדחף ל-root navigator. בלי
+    // useRootNavigator: false הדיאלוג הזה לא על אותו Navigator שה-popUntil
+    // מרוקן, אז הוא נשאר תלוי מעל מסך הבית (לא קורס, לא תקוע - עדיין אפשר
+    // לסגור אותו - אבל לא אמור להישאר שם בכלל). עכשיו הוא על אותו Navigator
+    // כמו שאר המעברים באפליקציה, אז popUntil מנקה גם אותו.
+    useRootNavigator: false,
+    builder: (context) {
+      final loc = AppLocalizations.of(context)!;
+      return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 28),
       child: Container(
@@ -42,10 +56,10 @@ void showNotEnoughCoinsDialog(
               child: const CoinIcon(size: 36),
             ),
             const SizedBox(height: 20),
-            const Text("אין לך מספיק מטבעות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+            Text(loc.notEnoughCoinsTitle, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
             const SizedBox(height: 10),
-            Text("זה עולה $cost מטבעות ויש לך רק $coins",
-                textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 15, height: 1.4)),
+            Text(loc.notEnoughCoinsMessage(cost, coins),
+                textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 15, height: 1.4)),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -67,7 +81,7 @@ void showNotEnoughCoinsDialog(
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text("חסרים ${(cost - coins).clamp(0, cost)}", style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                      Text(loc.notEnoughCoinsMissing((cost - coins).clamp(0, cost)), style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 11.5, fontWeight: FontWeight.w900)),
                       const SizedBox(width: 3),
                       const CoinIcon(size: 14),
                     ],
@@ -83,20 +97,45 @@ void showNotEnoughCoinsDialog(
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(
-                    context,
+                    callerContext,
                     MaterialPageRoute(builder: (context) => ShopScreen(highlightNeededCoins: (cost - coins).clamp(1, cost))),
-                  ).then((_) => onReturnedFromShop?.call());
+                  ).then((_) {
+                    // 🩹 תוקנה קריסה אמיתית: אם מתוך החנות לוחצים "בית"
+                    // (לא "חזרה" רגיל), AppBottomNav._goHome עושה
+                    // Navigator.popUntil(isFirst) שמסיר בבת אחת גם את
+                    // החנות וגם את המסך שממנו נפתח הדיאלוג הזה (דו-קרב/
+                    // מרוץ/טורניר). משותף ל-7 מסכים שונים (דו-קרב/מרוץ/
+                    // טורניר רגיל/טורניר מתוזמן) - תיקון כאן מגן על כולם
+                    // בבת אחת.
+                    //
+                    // 🩹 נבדק בפועל באמולטור, פעמיים: גם callerContext.mounted
+                    // מיד, וגם אחרי WidgetsBinding.addPostFrameCallback - אף
+                    // אחד מהם לא הספיק. פירוק ה-Element בפועל (וה-mounted
+                    // flag שלו) נראה שקורה רק אחרי אנימציית היציאה של המסך
+                    // (כמה פריימים, לא רק אחד), אז mounted עדיין קורא True
+                    // ברגע שהקוד הזה רץ - onReturnedFromShop (=ניסיון הרמז
+                    // שוב) מופעל, מגלה שוב "אין מספיק מטבעות", ופותח דיאלוג
+                    // *חדש* שצף מעל מסך הבית (לא קורס - נשאר תלוי שם בטעות).
+                    // ModalRoute.of(callerContext)?.isCurrent הוא בדיקה
+                    // טובה יותר: היא משקפת את רשימת ה-routes בפועל של
+                    // ה-Navigator (עדכון סינכרוני בתוך popUntil עצמו), לא
+                    // תלויה בתזמון פירוק ה-Element/אנימציה בכלל.
+                    final route = ModalRoute.of(callerContext);
+                    if (callerContext.mounted && (route?.isCurrent ?? false)) {
+                      onReturnedFromShop?.call();
+                    }
+                  });
                 },
                 child: Container(
                   width: double.infinity,
                   height: 54,
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)])),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.shopping_cart_rounded, color: Color(0xFF2A1740)),
-                      SizedBox(width: 8),
-                      Text("לחנות המטבעות", style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                      const Icon(Icons.shopping_cart_rounded, color: Color(0xFF2A1740)),
+                      const SizedBox(width: 8),
+                      Text(loc.notEnoughCoinsShopButton, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
                     ],
                   ),
                 ),
@@ -105,11 +144,12 @@ void showNotEnoughCoinsDialog(
             const SizedBox(height: 14),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 15)),
+              child: Text(loc.notEnoughCoinsCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 15)),
             ),
           ],
         ),
       ),
-    ),
+      );
+    },
   );
 }

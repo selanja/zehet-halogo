@@ -19,6 +19,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart'; // 🆕 מזהה "אפקטיבי" (uid מקושר או deviceId) - לסנכרון הבאטל פאס בין מכשירים
+import 'boost_service.dart'; // 🆕 פרס בוסט (רמזים חינם) בנתיב הפרימיום - ראו premiumBoost
 import 'energy_service.dart';
 import 'league_service.dart'; // 🆕 ליגה שבועית - אותן נקודות XP נספרות גם לשבוע הנוכחי
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי תביעת פרס באטל פאס - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר
@@ -30,6 +31,11 @@ class BattlePassTier {
   final int freeEnergy;
   final int premiumCoins;
   final int premiumEnergy;
+  // 🆕 פרס בוסט בנתיב הפרימיום בלבד (ראו boost_service.dart) - לפי בקשה
+  // מפורשת: "תוסיף את זה ללוגו פאס... תוריד מקום של כמות מטבעות ותשים
+  // את זה" - מחליף (לא מתווסף ל-) פרס מטבעות בשלב ספציפי, לא קיים
+  // בנתיב החינמי.
+  final BoostType? premiumBoost;
   const BattlePassTier({
     required this.tier,
     required this.pointsRequired,
@@ -37,10 +43,11 @@ class BattlePassTier {
     this.freeEnergy = 0,
     this.premiumCoins = 0,
     this.premiumEnergy = 0,
+    this.premiumBoost,
   });
 
   bool get hasFreeReward => freeCoins > 0 || freeEnergy > 0;
-  bool get hasPremiumReward => premiumCoins > 0 || premiumEnergy > 0;
+  bool get hasPremiumReward => premiumCoins > 0 || premiumEnergy > 0 || premiumBoost != null;
 }
 
 class BattlePassService {
@@ -65,7 +72,7 @@ class BattlePassService {
     BattlePassTier(tier: 9, pointsRequired: 840, freeEnergy: 1, premiumCoins: 50, premiumEnergy: 2),
     BattlePassTier(tier: 10, pointsRequired: 990, freeCoins: 30, premiumCoins: 80),
     BattlePassTier(tier: 11, pointsRequired: 1150, freeCoins: 25, premiumCoins: 65, premiumEnergy: 1),
-    BattlePassTier(tier: 12, pointsRequired: 1320, freeCoins: 40, premiumCoins: 100),
+    BattlePassTier(tier: 12, pointsRequired: 1320, freeCoins: 40, premiumBoost: BoostType.freeHints),
     BattlePassTier(tier: 13, pointsRequired: 1500, freeEnergy: 2, premiumCoins: 70, premiumEnergy: 2),
     BattlePassTier(tier: 14, pointsRequired: 1690, freeCoins: 45, premiumCoins: 115),
     BattlePassTier(tier: 15, pointsRequired: 1890, freeCoins: 30, premiumCoins: 80, premiumEnergy: 1),
@@ -200,10 +207,10 @@ class BattlePassService {
     return tier;
   }
 
-  /// תובע פרס משלב מסוים (נתיב חינמי או פרימיום). מחזיר {coins, energy}
-  /// שהוענקו בפועל, או null אם אי אפשר (השלב עדיין נעול, כבר נתבע,
-  /// או שזה נתיב פרימיום בלי רכישה פעילה לעונה הזו).
-  static Future<Map<String, int>?> claimTier(int tier, {required bool premium}) async {
+  /// תובע פרס משלב מסוים (נתיב חינמי או פרימיום). מחזיר {coins, energy,
+  /// boost} שהוענקו בפועל, או null אם אי אפשר (השלב עדיין נעול, כבר
+  /// נתבע, או שזה נתיב פרימיום בלי רכישה פעילה לעונה הזו).
+  static Future<Map<String, dynamic>?> claimTier(int tier, {required bool premium}) async {
     BattlePassTier? def;
     for (final t in tiers) {
       if (t.tier == tier) def = t;
@@ -216,7 +223,8 @@ class BattlePassService {
     final prefs = await SharedPreferences.getInstance();
     final coins = premium ? def.premiumCoins : def.freeCoins;
     final energy = premium ? def.premiumEnergy : def.freeEnergy;
-    if (coins <= 0 && energy <= 0) return null; // אין פרס בנתיב הזה בשלב הזה
+    final boost = premium ? def.premiumBoost : null; // בוסט קיים רק בנתיב הפרימיום
+    if (coins <= 0 && energy <= 0 && boost == null) return null; // אין פרס בנתיב הזה בשלב הזה
 
     if (premium) {
       if (!await isPremiumUnlocked()) return null;
@@ -239,8 +247,11 @@ class BattlePassService {
     if (energy > 0) {
       await EnergyService.addAmount(energy);
     }
+    if (boost != null) {
+      await BoostService.activate(boost);
+    }
     syncToCloud();
-    return {'coins': coins, 'energy': energy};
+    return {'coins': coins, 'energy': energy, 'boost': boost};
   }
 
   /// כמה פרסים ממתינים לאיסוף כרגע (לתג-מספר על כרטיס הבאטל פאס

@@ -31,12 +31,14 @@
 
 import 'package:flutter/material.dart';
 import 'battle_pass_service.dart';
+import 'boost_service.dart'; // 🆕 BoostType - פרס בוסט בשלב 12 בנתיב הפרימיום
 import 'app_background.dart';
 import 'app_icons.dart'; // CoinIcon/EnergyIcon - אייקון וקטורי אמיתי, לא אימוג'י (ראה הערה למטה)
 import 'battle_pass_reward_popup.dart'; // 🆕 פופאפ "פרס נאסף!" עם אנימציית תיבה נפתחת
 import 'iap_manager.dart';
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות/אנרגיה במסך הבית (ראו _claim/_buyPremium)
 import 'app_notification.dart';
+import 'l10n/app_localizations.dart';
 
 class BattlePassScreen extends StatefulWidget {
   const BattlePassScreen({super.key});
@@ -116,8 +118,9 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     final result = await BattlePassService.claimTier(tier, premium: premium);
     _claiming = false;
     if (!mounted || result == null) return;
-    final coins = result['coins'] ?? 0;
-    final energy = result['energy'] ?? 0;
+    final coins = result['coins'] as int? ?? 0;
+    final energy = result['energy'] as int? ?? 0;
+    final boost = result['boost'] as BoostType?;
     // 🩹 באג שתוקן: תביעת פרס עם מטבעות/אנרגיה לא עדכנה את מסך הבית -
     // היה צריך לנווט למסך אחר כדי לראות את המספר החדש. זהה לתיקון שכבר
     // קיים ב-duel_lobby_screen.dart/shop_screen.dart - MainMenuScreen
@@ -145,6 +148,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
       premium: premium,
       coins: coins,
       energy: energy,
+      boost: boost,
       currentPoints: _points,
       nextTier: nextPending?.tier,
       onClaimNext: nextPending == null
@@ -181,7 +185,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     final ok = await IapManager.buy(IapManager.battlePassPremiumId);
     if (mounted && !ok) {
       setState(() => _buying = false);
-      AppNotification.show(context, 'הרכישה לא זמינה כרגע - נסה שוב עוד רגע', type: AppNotificationType.error);
+      AppNotification.show(context, AppLocalizations.of(context)!.battlePassPurchaseUnavailable, type: AppNotificationType.error);
     }
     // בהצלחה - _onPurchaseUpdated יטען מחדש ויכבה את _buying דרך _load אינו
     // מכבה אותו ישירות, לכן מכבים כאן גם למקרה שהמשתמש ביטל את חלון הרכישה.
@@ -190,24 +194,24 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
 
   // 🆕 שאלת אישור אחרי לחיצה על "עם פרימיום היית מקבל" בפופאפ האיסוף.
   Future<void> _askUpgradeToPremium() async {
+    final loc = AppLocalizations.of(context)!;
     final priceLabel = IapManager.product(IapManager.battlePassPremiumId)?.price ?? '₪24.90';
     final yes = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF241a4f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('לשדרג לפרימיום?', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        title: Text(loc.battlePassUpgradeDialogTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
-          'תקבל את כל פרסי הפרימיום של העונה, כולל אלה שכבר פתחת, במחיר $priceLabel.',
-          textDirection: TextDirection.rtl,
+          loc.battlePassUpgradeDialogBody(priceLabel),
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('לא עכשיו')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(loc.levelsNotNowButton)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFB24D), foregroundColor: const Color(0xFF2A1740)),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text('כן, לשדרג · $priceLabel', style: const TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(loc.battlePassUpgradeConfirmButton(priceLabel), style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         ],
       ),
@@ -225,9 +229,13 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // נרכש (ראו קריאה ב-_rewardPill) - זה בדיוק הרגע שבו כדאי להראות למה
   // שווה לקנות, לא רק מנעול סתמי בלי הסבר.
   void _showPremiumUpsellDialog() {
+    final loc = AppLocalizations.of(context)!;
     final premiumTiers = BattlePassService.tiers.where((t) => t.hasPremiumReward).toList();
     final totalCoins = premiumTiers.fold<int>(0, (sum, t) => sum + t.premiumCoins);
     final totalEnergy = premiumTiers.fold<int>(0, (sum, t) => sum + t.premiumEnergy);
+    // 🆕 פרס בוסט (ראו boost_service.dart) - לא נספר בתוך totalCoins/
+    // totalEnergy כי הוא לא מטבעות/אנרגיה, אז מוזכר בנפרד בטקסט המכירה.
+    final hasBoostTier = premiumTiers.any((t) => t.premiumBoost != null);
     final priceLabel = IapManager.product(IapManager.battlePassPremiumId)?.price ?? '₪24.90';
     showDialog(
       context: context,
@@ -254,18 +262,18 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 child: const Icon(Icons.workspace_premium_rounded, color: Color(0xFF40170F), size: 30),
               ),
               const SizedBox(height: 14),
-              const Text(
-                "באטל פאס פרימיום",
+              Text(
+                loc.battlePassUpsellTitle,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
+                style: const TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               Text(
-                "פותח ${premiumTiers.length} פרסים נוספים לאורך כל העונה - בערך $totalCoins מטבעות"
-                "${totalEnergy > 0 ? ' ו-$totalEnergy אנרגיה' : ''} בסך הכול, בנוסף לכל מה שכבר מקבלים בנתיב החינמי.",
+                "${loc.battlePassUpsellBody(premiumTiers.length, totalCoins)}"
+                "${totalEnergy > 0 ? loc.battlePassUpsellEnergySuffix(totalEnergy) : ''}"
+                "${hasBoostTier ? loc.battlePassUpsellBoostSuffix(BoostService.duration.inMinutes) : ''}"
+                "${loc.battlePassUpsellBodySuffix}",
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13.5, height: 1.4),
               ),
               const SizedBox(height: 18),
@@ -282,13 +290,13 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: Text("שדרג עכשיו · $priceLabel", textDirection: TextDirection.rtl, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                  child: Text(loc.battlePassUpgradeNowButton(priceLabel), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                 ),
               ),
               const SizedBox(height: 6),
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text("אולי אחר כך", style: TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
+                child: Text(loc.battlePassMaybeLaterButton, style: const TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -300,27 +308,23 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // 🆕 כפתור המידע 'i' בסרגל העליון (חדש - לא היה קיים קודם) פותח דיאלוג
   // קצר שמסביר מה זה באטל פאס, במקום להיות רק קישוט ריק.
   void _showInfoDialog() {
+    final loc = AppLocalizations.of(context)!;
     showDialog(
       context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF2A1550),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('מה זה באטל פאס?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-          content: const Text(
-            'צובר נקודות ממשימות ומהאתגר היומי, ועולה דרגות לאורך העונה. '
-            'כל דרגה פותחת פרס בנתיב החינמי, ומי שרוכש פרימיום מקבל פרס גדול '
-            'יותר באותה דרגה. בתחילת כל חודש נפתחת עונה חדשה מ-0.',
-            style: TextStyle(color: Colors.white70, fontSize: 13.5, height: 1.5),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('הבנתי', style: TextStyle(color: Color(0xFFFFD979), fontWeight: FontWeight.w900)),
-            ),
-          ],
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A1550),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(loc.battlePassInfoDialogTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text(
+          loc.battlePassInfoDialogBody,
+          style: const TextStyle(color: Colors.white70, fontSize: 13.5, height: 1.5),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(loc.battlePassGotItButton, style: const TextStyle(color: Color(0xFFFFD979), fontWeight: FontWeight.w900)),
+          ),
+        ],
       ),
     );
   }
@@ -369,10 +373,10 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // מתחת לסרגל - ראה _buildSeasonTitle/_buildHeroCard), וכפתור מידע 'i' חדש בצד שמאל
   // (לא היה קיים קודם - במוקאפ יש אייקון 'i' עגול שם, ולא תג X/Y).
   Widget _buildTopBar() {
+    final loc = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Material(
             color: Colors.white.withValues(alpha: 0.08),
@@ -386,12 +390,11 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
               ),
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              "באטל פאס",
+              loc.battlePassScreenTitle,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
             ),
           ),
           // 🆕 כפתור מידע 'i' - חדש, לא היה קיים בגרסה הקודמת.
@@ -439,14 +442,14 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // "⏳ נותרו X ימים" (היה קיים בעבר, נעלם בטעות בעיצוב-מחדש קודם) -
   // עכשיו במיוחד רלוונטי כי העונה הרבה יותר ארוכה (45 יום קבועים).
   Widget _buildSeasonTitle() {
+    final loc = AppLocalizations.of(context)!;
     final seasonName = BattlePassService.seasonDisplayName();
     final seasonNumber = BattlePassService.currentSeasonNumber();
     final daysLeft = BattlePassService.daysLeftInSeason();
     return Column(
       children: [
         Text(
-          'עונה $seasonNumber',
-          textDirection: TextDirection.rtl,
+          loc.battlePassSeasonNumberLabel(seasonNumber),
           style: TextStyle(color: const Color(0xFFFFD979).withValues(alpha: 0.75), fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 2),
         ),
         const SizedBox(height: 4),
@@ -459,7 +462,6 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
           ).createShader(bounds),
           child: Text(
             seasonName,
-            textDirection: TextDirection.rtl,
             style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900, height: 1.1),
           ),
         ),
@@ -472,8 +474,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
             border: Border.all(color: const Color(0xFFFDA4AF).withValues(alpha: 0.4)),
           ),
           child: Text(
-            daysLeft <= 0 ? 'העונה מסתיימת היום' : 'נותרו $daysLeft ימים',
-            textDirection: TextDirection.rtl,
+            daysLeft <= 0 ? loc.battlePassSeasonEndsToday : loc.battlePassDaysLeft(daysLeft),
             style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 11, fontWeight: FontWeight.w900),
           ),
         ),
@@ -488,6 +489,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // ("X פרסים לאיסוף" עם ספירה אמיתית, ו"🏅 תג בסיום" עיטורי-בלבד - אין
   // דאטה אמיתית לתג עונה במודל הקיים, ראה הערה למטה).
   Widget _buildHeroCard() {
+    final loc = AppLocalizations.of(context)!;
     final firstReq = BattlePassService.tiers.first.pointsRequired;
     final lastReq = BattlePassService.tiers.last.pointsRequired;
     final overallRatio = lastReq == firstReq ? 1.0 : ((_points - firstReq) / (lastReq - firstReq)).clamp(0.0, 1.0);
@@ -499,7 +501,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
         break;
       }
     }
-    final String nextLabel = nextTier == null ? 'הדרגה האחרונה!' : 'עוד ${nextTier.pointsRequired - _points} ⭐';
+    final String nextLabel = nextTier == null ? loc.battlePassLastTierLabel : loc.battlePassPointsToNextTier(nextTier.pointsRequired - _points);
     final int pending = _pendingClaimsCount();
 
     return Container(
@@ -535,7 +537,6 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
               Column(
                 children: [
                   Row(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       // אייקון דרגה 62x62 עם זוהר פועם (glowPulse).
@@ -572,7 +573,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text('$_tier', style: const TextStyle(color: Color(0xFF40170F), fontSize: 24, fontWeight: FontWeight.w900, height: 1.0)),
-                                  Text('דרגה', textDirection: TextDirection.rtl, style: TextStyle(color: const Color(0xFF40170F).withValues(alpha: 0.6), fontSize: 8, fontWeight: FontWeight.w900)),
+                                  Text(loc.battlePassTierLabel, style: TextStyle(color: const Color(0xFF40170F).withValues(alpha: 0.6), fontSize: 8, fontWeight: FontWeight.w900)),
                                 ],
                               ),
                             ),
@@ -585,11 +586,10 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Row(
-                              textDirection: TextDirection.rtl,
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('⭐ $_points / $lastReq', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
-                                Text(nextLabel, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFFD979), fontSize: 10.5, fontWeight: FontWeight.w900)),
+                                Text('⭐ $_points / $lastReq', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                                Text(nextLabel, style: const TextStyle(color: Color(0xFFFFD979), fontSize: 10.5, fontWeight: FontWeight.w900)),
                               ],
                             ),
                             const SizedBox(height: 9),
@@ -615,14 +615,13 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                             ),
                             const SizedBox(height: 9),
                             Row(
-                              textDirection: TextDirection.rtl,
                               children: [
-                                _heroTagPill(pending > 0 ? '$pending פרסים לאיסוף' : 'הכל נאסף ✓'),
+                                _heroTagPill(pending > 0 ? loc.battlePassPendingRewards(pending) : loc.battlePassAllClaimed),
                                 const SizedBox(width: 7),
                                 // 🩹 עיטורי-בלבד: אין במודל הנתונים הקיים (BattlePassTier)
                                 // "תג עונה" אמיתי - זה קישוט חזותי סטטי בלבד, בדיוק כמו
                                 // שהוא רק "דוגמת עיצוב" במוקאפ (אין נתון אמיתי מאחוריו).
-                                _heroTagPill('🏅 תג בסיום'),
+                                _heroTagPill(loc.battlePassSeasonBadgeDecorative),
                               ],
                             ),
                           ],
@@ -643,7 +642,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.black.withValues(alpha: 0.3)),
-      child: Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 9.5, fontWeight: FontWeight.w900)),
+      child: Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 9.5, fontWeight: FontWeight.w900)),
     );
   }
 
@@ -685,6 +684,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   }
 
   Widget _buildUpgradeCta() {
+    final loc = AppLocalizations.of(context)!;
     final priceLabel = IapManager.product(IapManager.battlePassPremiumId)?.price ?? '₪24.90';
     final premiumTiers = BattlePassService.tiers.where((t) => t.hasPremiumReward).toList();
     final lockedCount = premiumTiers.length;
@@ -709,11 +709,10 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
               ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF40170F))))
               : Column(
                   children: [
-                    Text('שדרג לפרימיום · $priceLabel', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF40170F), fontSize: 18, fontWeight: FontWeight.w900)),
+                    Text(loc.battlePassUpgradeCtaTitle(priceLabel), style: const TextStyle(color: Color(0xFF40170F), fontSize: 18, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 3),
                     Text(
-                      alreadyReachedCount > 0 ? 'פותח $lockedCount פרסים · כולל $alreadyReachedCount שכבר צברת' : 'פותח $lockedCount פרסים נוספים',
-                      textDirection: TextDirection.rtl,
+                      alreadyReachedCount > 0 ? loc.battlePassUpgradeCtaSubtitleWithReached(lockedCount, alreadyReachedCount) : loc.battlePassUpgradeCtaSubtitle(lockedCount),
                       style: const TextStyle(color: Color(0x9E40170F), fontSize: 10.5, fontWeight: FontWeight.w900),
                     ),
                   ],
@@ -729,14 +728,13 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   // של 7 סביבו, בדיוק כמו ברווחים ב-_buildTierRow) במקום ההזחה החד-
   // צדדית הישנה שהתאימה לתג-בקצה.
   Widget _buildColumnLabels() {
+    final loc = AppLocalizations.of(context)!;
     return Row(
-      textDirection: TextDirection.rtl,
       children: [
         Expanded(
           child: Text(
-            'חינם',
+            loc.logoLevelFreeLabel,
             textAlign: TextAlign.center,
-            textDirection: TextDirection.rtl,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w900),
           ),
         ),
@@ -744,10 +742,10 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Text('⭐', style: TextStyle(fontSize: 10)),
-              SizedBox(width: 3),
-              Text('פרימיום', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFFFD979), fontSize: 11, fontWeight: FontWeight.w900)),
+            children: [
+              const Text('⭐', style: TextStyle(fontSize: 10)),
+              const SizedBox(width: 3),
+              Text(loc.battlePassPremiumColumnLabel, style: const TextStyle(color: Color(0xFFFFD979), fontSize: 11, fontWeight: FontWeight.w900)),
             ],
           ),
         ),
@@ -822,7 +820,6 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
       // לעין להפריד בין שלב לשלב.
       decoration: isLast ? null : BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)))),
       child: Row(
-        textDirection: TextDirection.rtl,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // 🩹 עמודת "חינם" - עכשיו הילד הראשון (RTL => צד ימין),
@@ -881,6 +878,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
               child: _rewardPill(
                 coins: def.premiumCoins,
                 energy: def.premiumEnergy,
+                boost: def.premiumBoost,
                 unlocked: unlocked,
                 claimed: premiumClaimed,
                 canClaim: premiumCanClaim,
@@ -905,6 +903,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
   Widget _rewardPill({
     required int coins,
     required int energy,
+    BoostType? boost,
     required bool unlocked,
     required bool claimed,
     required bool canClaim,
@@ -912,7 +911,8 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
     required int pointsRequired,
     required VoidCallback onTap,
   }) {
-    final bool hasReward = coins > 0 || energy > 0;
+    final loc = AppLocalizations.of(context)!;
+    final bool hasReward = coins > 0 || energy > 0 || boost != null;
     if (!hasReward) {
       return Container(
         constraints: const BoxConstraints(minHeight: 44),
@@ -965,21 +965,33 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                textDirection: TextDirection.rtl,
                 children: [
-                  // 🩹 אייקון וקטורי אמיתי (CoinIcon/EnergyIcon) ולא אימוג'י -
-                  // בדיוק כמו שכבר תוקן בשאר האפליקציה (אימוג'י מטבע/אנרגיה
-                  // לא אמינים בין מכשירים, ראה app_icons.dart).
-                  if (isEnergy) const EnergyIcon(size: 14) else const CoinIcon(size: 14),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      '${isEnergy ? energy : coins}',
-                      textDirection: TextDirection.rtl,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 12.5, fontWeight: FontWeight.w900),
+                  // 🆕 פרס בוסט (ראו boost_service.dart) - אייקון ברק זהוב
+                  // במקום מטבעות/אנרגיה, בלי מספר (הזמן מוצג בשורה עצמה).
+                  if (boost != null) ...[
+                    const Icon(Icons.bolt_rounded, color: Color(0xFFFFD979), size: 15),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        loc.battlePassBoostPillLabel(BoostService.duration.inMinutes),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 11.5, fontWeight: FontWeight.w900),
+                      ),
                     ),
-                  ),
+                  ] else ...[
+                    // 🩹 אייקון וקטורי אמיתי (CoinIcon/EnergyIcon) ולא אימוג'י -
+                    // בדיוק כמו שכבר תוקן בשאר האפליקציה (אימוג'י מטבע/אנרגיה
+                    // לא אמינים בין מכשירים, ראה app_icons.dart).
+                    if (isEnergy) const EnergyIcon(size: 14) else const CoinIcon(size: 14),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        '${isEnergy ? energy : coins}',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 12.5, fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
@@ -989,7 +1001,7 @@ class _BattlePassScreenState extends State<BattlePassScreen> with SingleTickerPr
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(7), color: const Color(0xFFFFD979)),
-                  child: const Text('אסוף', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF40170F), fontSize: 9.5, fontWeight: FontWeight.w900)),
+                  child: Text(loc.battlePassClaimButton, style: const TextStyle(color: Color(0xFF40170F), fontSize: 9.5, fontWeight: FontWeight.w900)),
                 )
               // 🆕 עוד לא הגעת לשלב הזה (לא עניין של פרימיום) - מציגים
               // כמה כוכבים חסרים במקום מנעול סתמי, ישר על הפרס עצמו

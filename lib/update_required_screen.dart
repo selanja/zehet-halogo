@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' show Platform;
 import 'app_background.dart'; // 🆕 עיצוב מחדש - אותו רקע גרדיאנט משותף כמו כל שאר האפליקציה
+import 'l10n/app_localizations.dart';
 
 class UpdateRequiredScreen extends StatelessWidget {
   final String message;
@@ -47,6 +48,7 @@ class UpdateRequiredScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return PopScope(
       canPop: false,
       child: Scaffold(
@@ -75,10 +77,9 @@ class UpdateRequiredScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 28),
-                    const Text(
-                      "יש גרסה חדשה",
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(
+                    Text(
+                      loc.updateRequiredTitle,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
@@ -88,7 +89,6 @@ class UpdateRequiredScreen extends StatelessWidget {
                     Text(
                       message,
                       textAlign: TextAlign.center,
-                      textDirection: TextDirection.rtl,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.65),
                         fontSize: 15,
@@ -110,10 +110,10 @@ class UpdateRequiredScreen extends StatelessWidget {
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
                             onTap: _openStore,
-                            child: const Center(
+                            child: Center(
                               child: Text(
-                                "עדכן עכשיו",
-                                style: TextStyle(color: Color(0xFF0C2A3D), fontSize: 17, fontWeight: FontWeight.w900),
+                                loc.updateRequiredUpdateNowButton,
+                                style: const TextStyle(color: Color(0xFF0C2A3D), fontSize: 17, fontWeight: FontWeight.w900),
                               ),
                             ),
                           ),
@@ -123,8 +123,7 @@ class UpdateRequiredScreen extends StatelessWidget {
                     if (currentVersion.isNotEmpty && minVersion.isNotEmpty) ...[
                       const SizedBox(height: 18),
                       Text(
-                        "גרסה $currentVersion · נדרשת $minVersion",
-                        textDirection: TextDirection.rtl,
+                        loc.updateRequiredVersionInfo(currentVersion, minVersion),
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12.5, fontWeight: FontWeight.w600),
                       ),
                     ],

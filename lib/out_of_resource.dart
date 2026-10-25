@@ -14,6 +14,7 @@ import 'notification_manager.dart';
 import 'player_sync.dart';
 import 'reward_popups.dart';
 import 'shop_screen.dart';
+import 'l10n/app_localizations.dart';
 
 class OutOfResource {
   OutOfResource._();
@@ -33,21 +34,23 @@ class OutOfResource {
     return remaining.isNegative ? null : remaining;
   }
 
-  static String _fmt(Duration d) {
-    if (d.inHours >= 1) return '${d.inHours}:${(d.inMinutes % 60).toString().padLeft(2, '0')} שעות';
-    return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')} דקות';
+  static String _fmt(BuildContext context, Duration d) {
+    final loc = AppLocalizations.of(context)!;
+    if (d.inHours >= 1) return loc.outOfResourceTimeHours('${d.inHours}:${(d.inMinutes % 60).toString().padLeft(2, '0')}');
+    return loc.outOfResourceTimeMinutes('${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}');
   }
 
   /// פרסומת תמורת מטבעות. [onDone] נקרא אחרי שהמטבעות נוספו בפועל.
   static Future<void> watchAdForCoins(BuildContext context, {VoidCallback? onDone}) async {
     final remaining = await coinsAdRemaining();
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context)!;
     if (remaining != null) {
-      AppNotification.show(context, 'אפשר לקבל מטבעות מפרסומת שוב בעוד ${_fmt(remaining)}', type: AppNotificationType.warning);
+      AppNotification.show(context, loc.outOfResourceAdCoinsCooldownMsg(_fmt(context, remaining)), type: AppNotificationType.warning);
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      AppNotification.show(context, 'אין פרסומת זמינה כרגע, נסה שוב עוד רגע', type: AppNotificationType.warning);
+      AppNotification.show(context, loc.outOfResourceNoAdAvailable, type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -63,7 +66,7 @@ class OutOfResource {
         context,
         rewardAmount: adCoinsReward,
         currentCoins: coins,
-        subtitle: 'חוזר שוב בעוד ${adCoinsCooldown.inHours} שעות',
+        subtitle: AppLocalizations.of(context)!.outOfResourceCoinsRewardSubtitle(adCoinsCooldown.inHours),
       );
       onDone?.call();
     });
@@ -73,12 +76,13 @@ class OutOfResource {
   static Future<void> watchAdForEnergy(BuildContext context, {VoidCallback? onDone}) async {
     final cooldown = await EnergyService.timeUntilNextAdEnergy();
     if (!context.mounted) return;
+    final loc = AppLocalizations.of(context)!;
     if (cooldown != null) {
-      AppNotification.show(context, 'אפשר לצפות בפרסומת נוספת בעוד ${cooldown.inMinutes}:${(cooldown.inSeconds % 60).toString().padLeft(2, '0')}', type: AppNotificationType.warning);
+      AppNotification.show(context, loc.outOfResourceAdEnergyCooldownMsg('${cooldown.inMinutes}:${(cooldown.inSeconds % 60).toString().padLeft(2, '0')}'), type: AppNotificationType.warning);
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      AppNotification.show(context, 'אין פרסומת זמינה כרגע, נסה שוב עוד רגע', type: AppNotificationType.warning);
+      AppNotification.show(context, loc.outOfResourceNoAdAvailable, type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
@@ -97,16 +101,26 @@ class OutOfResource {
     });
   }
 
-  static Future<void> openShop(BuildContext context, {bool energy = false}) {
-    return Navigator.push(context, MaterialPageRoute(builder: (_) => ShopScreen(scrollToEnergy: energy)));
+  static Future<void> openShop(BuildContext context, {bool energy = false, int? neededCoins}) {
+    return Navigator.push(context, MaterialPageRoute(builder: (_) => ShopScreen(scrollToEnergy: energy, highlightNeededCoins: neededCoins)));
   }
 
   /// שני כפתורים מוכנים למסכי "אין מספיק ...": פרסומת + חנות.
+  // 🩹 [neededCoins] - כמה מטבעות בדיוק חסרים (אם ידוע למסך הקורא) - כדי
+  // שבפתיחת החנות היא תגלול ישר ותדגיש את החבילה הקטנה ביותר שבאמת
+  // פותרת את המחסור (ShopScreen.highlightNeededCoins כבר קיים, רק לא
+  // היה מחובר מכאן - המשתמש היה מגיע ל"חנות כללית" בלי שום כיוון).
+  // 🆕 "המטרה שלנו זה שאנשים יקנו, תסמן בצהוב את הקנה מטבעות בחנות" -
+  // כפתור "קנה בחנות" הוא עכשיו הכפתור הראשי (מלא, זהוב), וכפתור הפרסומת
+  // הוא המשני (מתאר) - לפי בקשה מפורשת, כדי לדחוף רכישה אמיתית ולא רק
+  // תגמול חינמי. סדר ההצגה נשאר אותו דבר (פרסומת למעלה, חנות למטה).
   static List<Widget> offerButtons(
     BuildContext context, {
     required bool coins,
     required VoidCallback onGranted,
+    int? neededCoins,
   }) {
+    final loc = AppLocalizations.of(context)!;
     Widget filled(String label, VoidCallback onTap) => SizedBox(
           width: 260,
           child: ElevatedButton(
@@ -117,7 +131,7 @@ class OutOfResource {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: onTap,
-            child: Text(label, textDirection: TextDirection.rtl, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+            child: Text(label, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
           ),
         );
     Widget outlined(String label, VoidCallback onTap) => SizedBox(
@@ -130,21 +144,21 @@ class OutOfResource {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: onTap,
-            child: Text(label, textDirection: TextDirection.rtl, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+            child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
           ),
         );
     return [
       filled(
-        coins ? 'צפה בפרסומת (+$adCoinsReward מטבעות) 🎬' : 'צפה בפרסומת (+${EnergyService.adRewardAmount} אנרגיה) 🎬',
-        () => coins ? watchAdForCoins(context, onDone: onGranted) : watchAdForEnergy(context, onDone: onGranted),
+        coins ? loc.outOfResourceBuyCoinsButton : loc.outOfResourceBuyEnergyButton,
+        () async {
+          await openShop(context, energy: !coins, neededCoins: coins ? neededCoins : null);
+          onGranted(); // חוזרים מהחנות - בודקים שוב אם עכשיו יש מספיק
+        },
       ),
       const SizedBox(height: 10),
       outlined(
-        coins ? 'קנה מטבעות בחנות 🪙' : 'קנה אנרגיה בחנות ⚡',
-        () async {
-          await openShop(context, energy: !coins);
-          onGranted(); // חוזרים מהחנות - בודקים שוב אם עכשיו יש מספיק
-        },
+        coins ? loc.outOfResourceWatchAdCoins(adCoinsReward) : loc.outOfResourceWatchAdEnergy(EnergyService.adRewardAmount),
+        () => coins ? watchAdForCoins(context, onDone: onGranted) : watchAdForEnergy(context, onDone: onGranted),
       ),
     ];
   }

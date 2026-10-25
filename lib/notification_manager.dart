@@ -43,10 +43,25 @@ class NotificationManager {
   // לוחץ עליו במפורש בהגדרות.
   static bool notificationsEnabled = false;
 
+  // 🆕 תתי-דגלים לטאב "התראות" במסך ההגדרות (עיצוב מחדש) - מאפשרים
+  // כיבוי/הדלקה בנפרד לכל קטגוריית תזכורת מקומית, במקום רק מתג אחד
+  // גורף. ברירת מחדל true (לא false כמו notificationsEnabled הראשי) -
+  // אלה תת-קטגוריות של משתמש שכבר הסכים במפורש להתראות; ברירת המחדל
+  // הראשית (false) היא זו שנועדה לעמוד בדרישת אפל (ראו ההערה למעלה).
+  // חשוב: כל דגל כזה משנה משהו רק כש-notificationsEnabled הראשי גם true -
+  // ראו נקודות הקריאה המגודרות ב-energy_service.dart/main_menu_screen.dart/
+  // daily_challenge_screen.dart/tournament_service.dart/scheduled_tournament_service.dart.
+  static bool tournamentNotificationsEnabled = true;
+  static bool dailyNotificationsEnabled = true;
+  static bool energyNotificationsEnabled = true;
+
   static Future<void> loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       notificationsEnabled = prefs.getBool('notificationsEnabled') ?? false;
+      tournamentNotificationsEnabled = prefs.getBool('tournamentNotificationsEnabled') ?? true;
+      dailyNotificationsEnabled = prefs.getBool('dailyNotificationsEnabled') ?? true;
+      energyNotificationsEnabled = prefs.getBool('energyNotificationsEnabled') ?? true;
     } catch (_) {}
   }
 
@@ -79,6 +94,34 @@ class NotificationManager {
     } else {
       await cancelFreeCoinsReminder();
     }
+  }
+
+  /// שלושת התתי-מתגים הבאים (טורנירים/יומי/אנרגיה) הם פשוטים בכוונה -
+  /// רק set+persist, בלי בקשת הרשאת מערכת ובלי ביטול תזכורת מתוזמנת
+  /// קיימת (בניגוד ל-setNotificationsEnabled הראשי למעלה) - כי כיבוי
+  /// שלהם רק מונע תזמון *עתידי* מאותה קטגוריה, לא מבטל משהו שכבר רץ.
+  static Future<void> setTournamentNotificationsEnabled(bool value) async {
+    tournamentNotificationsEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('tournamentNotificationsEnabled', value);
+    } catch (_) {}
+  }
+
+  static Future<void> setDailyNotificationsEnabled(bool value) async {
+    dailyNotificationsEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('dailyNotificationsEnabled', value);
+    } catch (_) {}
+  }
+
+  static Future<void> setEnergyNotificationsEnabled(bool value) async {
+    energyNotificationsEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('energyNotificationsEnabled', value);
+    } catch (_) {}
   }
 
   /// מזהה קבוע להתראת בונוס המטבעות - כל תזמון חדש מבטל את הקודם,

@@ -24,6 +24,7 @@ import 'duel_service.dart';
 import 'duel_lobby_screen.dart';
 import 'missions_service.dart';
 import 'level_data.dart';
+import 'locale_controller.dart'; // 🆕 שפת האפליקציה (עברית/אנגלית) - קובעת איזה ans/keyboard מוצגים
 import 'app_background.dart';
 import 'audio_manager.dart';
 import 'player_sync.dart';
@@ -36,6 +37,7 @@ import 'not_enough_coins_dialog.dart'; // 🆕 "אין מספיק מטבעות" 
 import 'starter_pack_dialog.dart'; // 🆕 מציג מארז פתיחה ברגע חיכוך אם עדיין זכאי
 import 'achievements_service.dart';
 import 'active_match_service.dart'; // 🆕 "חזרה למשחק" אחרי שהאפליקציה נסגרה לגמרי
+import 'l10n/app_localizations.dart';
 
 class DuelRoomScreen extends StatefulWidget {
   final String matchId;
@@ -336,6 +338,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   // צורך בשום פעולה מהשחקן. נסגר אוטומטית ברגע ש-_goToRematch רץ (הוא
   // תמיד מנסה לסגור דיאלוג פתוח קודם - ראו למטה).
   void _showSeriesRoundResultDialog(DuelMatch match) {
+    final loc = AppLocalizations.of(context)!;
     final iWon = match.winnerId == widget.myDeviceId;
     final isDraw = match.winnerId == null;
     _settleCoinsAfterMatch(iWon: iWon, isDraw: isDraw);
@@ -397,7 +400,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                       color: const Color(0xFFF87171).withValues(alpha: 0.16),
                       border: Border.all(color: const Color(0xFFF87171).withValues(alpha: 0.4)),
                     ),
-                    child: Text('🏆 סיבוב ${match.seriesRound}/3 בסדרה', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFECACA), fontSize: 11.5, fontWeight: FontWeight.w800)),
+                    child: Text(loc.duelRoomSeriesRoundBadge(match.seriesRound), style: const TextStyle(color: Color(0xFFFECACA), fontSize: 11.5, fontWeight: FontWeight.w800)),
                   ),
                   if (!iWon) ...[
                     const SizedBox(height: 14),
@@ -415,12 +418,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                   if (iWon)
                     ShaderMask(
                       shaderCallback: (bounds) => const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFFB24D)]).createShader(bounds),
-                      child: const Text("ניצחת בסיבוב!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
+                      child: Text(loc.duelRoomRoundWinTitle, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
                     )
                   else
-                    Text(isDraw ? "תיקו בסיבוב" : "היריב ניצח בסיבוב", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                    Text(isDraw ? loc.duelRoomRoundDrawTitle : loc.duelRoomRoundLossTitle, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 4),
-                  Text('הסדרה: $myWins - $oppWins מול $oppName', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  Text(loc.duelRoomSeriesScoreLine(myWins, oppWins, oppName), style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 20),
                   // 🐛 תוקן: הוסרה כאן בכוונה תיבת "הפרס על הסיבוב" (מטבעות/XP)
                   // שהיתה קודם - לפי בקשה מפורשת, כי היא נראתה כאילו הסדרה
@@ -441,7 +444,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                     children: [
                       const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 2.4)),
                       const SizedBox(width: 10),
-                      Text('עוברים לסיבוב הבא...', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w800)),
+                      Text(loc.duelRoomMovingToNextRound, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w800)),
                     ],
                   ),
                 ],
@@ -599,6 +602,11 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       imagePath: base.imagePath,
       logoColor: base.logoColor,
       keyboard: overrideKeyboard ?? base.keyboard,
+      // 🆕 תיקון אדמין נוגע רק לעברית - אם הוא שינה את התשובה/המקלדת,
+      // ה-ansEn/keyboardEn המקוריים כבר לא תואמים לה, אז מפילים חזרה
+      // לעברית (null) במקום להציג תרגום אנגלי שלא תואם לתיקון.
+      ansEn: overrideAnswer == null ? base.ansEn : null,
+      keyboardEn: overrideKeyboard == null ? base.keyboardEn : null,
     );
   }
 
@@ -606,7 +614,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     if (_myProgress >= match.logoIds.length) return;
     final levelId = match.logoIds[_myProgress];
     final level = _levelWithOverride(levelId);
-    final answerLen = level?.answer.replaceAll(' ', '').length ?? 0;
+    final answerLen = level?.answerFor(localeController.isHebrew).replaceAll(' ', '').length ?? 0;
     _guessSlots = List<String?>.filled(answerLen, null);
     _typedOrder = [];
     _hintedPositions = {};
@@ -772,7 +780,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     if (match == null || level == null) return;
 
     final cleanGuess = _guessSlots.map((s) => s ?? '').join();
-    final cleanAnswer = level.answer.replaceAll(' ', '');
+    final cleanAnswer = level.answerFor(localeController.isHebrew).replaceAll(' ', '');
 
     if (cleanGuess != cleanAnswer) {
       // טעות - מרוקנים ומאפשרים ניסיון נוסף (בלי קנס, זה מצב מהיר).
@@ -813,8 +821,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
 
   void _showHintMenu() {
     if (_match == null || _myProgress >= _match!.totalQuestions) return;
+    final loc = AppLocalizations.of(context)!;
     if (!_hintsAllowed) {
-      AppNotification.show(context, "רמזים לא זמינים בהימור הזה - זמינים רק מ-100 מטבעות ומעלה", type: AppNotificationType.error);
+      AppNotification.show(context, loc.duelRoomHintsNotAvailable, type: AppNotificationType.error);
       return;
     }
     showModalBottomSheet(
@@ -833,12 +842,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
           children: [
             Container(width: 42, height: 4, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4))),
             const SizedBox(height: 16),
-            const Text("בחר רמז", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+            Text(loc.duelRoomChooseHintTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
             const SizedBox(height: 18),
             _HintOptionTile(
               icon: Icons.font_download_outlined,
-              title: "חשוף אות",
-              subtitle: "אות אחת נוספת מתגלה מיד",
+              title: loc.duelRoomRevealLetterTitle,
+              subtitle: loc.duelRoomRevealLetterSubtitle,
               price: DuelService.letterHintCostForStake(_stake),
               accent: const Color(0xFFFFB24D),
               onTap: () {
@@ -849,8 +858,8 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             const SizedBox(height: 12),
             _HintOptionTile(
               icon: Icons.abc_rounded,
-              title: "פתור את כל המילה",
-              subtitle: "כל האותיות מתגלות בבת אחת",
+              title: loc.duelRoomSolveWordTitle,
+              subtitle: loc.duelRoomSolveWordSubtitle,
               price: DuelService.wordHintCostForStake(_stake),
               accent: const Color(0xFF9333EA),
               onTap: () {
@@ -862,7 +871,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             Center(
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13, fontWeight: FontWeight.bold)),
+                child: Text(loc.duelLobbyCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -901,7 +910,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
     if (emptySlots.isEmpty) return;
 
     setState(() {
-      final answerNoSpaces = level.answer.replaceAll(' ', '');
+      final answerNoSpaces = level.answerFor(localeController.isHebrew).replaceAll(' ', '');
       final randomSlot = emptySlots[Random().nextInt(emptySlots.length)];
       final revealedLetter = answerNoSpaces[randomSlot];
       _guessSlots[randomSlot] = revealedLetter;
@@ -910,8 +919,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       _coins -= cost;
       // גם המקש המתאים במקלדת "נעלם" - כדי שהמקלדת תישאר עקבית עם מה
       // שכבר גלוי בתאים, בדיוק כמו במסך הרמות הרגיל.
-      for (int i = 0; i < level.keyboard.length; i++) {
-        if (level.keyboard[i] == revealedLetter && !_pressedKeyIndices.contains(i)) {
+      final keyboard = level.keyboardFor(localeController.isHebrew);
+      for (int i = 0; i < keyboard.length; i++) {
+        if (keyboard[i] == revealedLetter && !_pressedKeyIndices.contains(i)) {
           _pressedKeyIndices.add(i);
           _slotToKeyIndex[randomSlot] = i;
           break;
@@ -931,7 +941,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       return;
     }
     setState(() {
-      final answerNoSpaces = level.answer.replaceAll(' ', '');
+      final answerNoSpaces = level.answerFor(localeController.isHebrew).replaceAll(' ', '');
       for (int i = 0; i < answerNoSpaces.length; i++) {
         _guessSlots[i] = answerNoSpaces[i];
       }
@@ -940,11 +950,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
 
       _pressedKeyIndices.clear();
       _slotToKeyIndex.clear();
-      final usedIndices = List<bool>.filled(level.keyboard.length, false);
+      final keyboard = level.keyboardFor(localeController.isHebrew);
+      final usedIndices = List<bool>.filled(keyboard.length, false);
       for (int c = 0; c < answerNoSpaces.length; c++) {
         final letter = answerNoSpaces[c];
-        for (int i = 0; i < level.keyboard.length; i++) {
-          if (!usedIndices[i] && level.keyboard[i] == letter) {
+        for (int i = 0; i < keyboard.length; i++) {
+          if (!usedIndices[i] && keyboard[i] == letter) {
             usedIndices[i] = true;
             _pressedKeyIndices.add(i);
             _slotToKeyIndex[c] = i;
@@ -1023,6 +1034,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   static const int _seriesWinBonusXp = 30; // 🆕 בונוס XP על ניצחון הסדרה כולה (מעבר ל-50 XP שכל סיבוב כבר מזכה)
 
   void _showResultDialog(DuelMatch match) {
+    final loc = AppLocalizations.of(context)!;
     final iWon = match.winnerId == widget.myDeviceId;
     final isDraw = match.winnerId == null;
     final mySeriesWins = match.seriesWinsFor(widget.myDeviceId);
@@ -1132,8 +1144,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                     border: Border.all(color: const Color(0xFFFDA4AF).withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    match.seriesMode ? '🏆 סדרת דו־קרב · על $_stake מטבעות' : '⚔️ דו־קרב · על $_stake מטבעות',
-                    textDirection: TextDirection.rtl,
+                    match.seriesMode ? loc.duelRoomSeriesBadge(_stake) : loc.duelRoomDuelBadge(_stake),
                     style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 11.5, fontWeight: FontWeight.w800),
                   ),
                 ),
@@ -1162,16 +1173,14 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                 if (iWon)
                   ShaderMask(
                     shaderCallback: (bounds) => const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFFB24D)]).createShader(bounds),
-                    child: const Text(
-                      "ניצחת!",
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900),
+                    child: Text(
+                      loc.duelRoomWinTitle,
+                      style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900),
                     ),
                   )
                 else
                   Text(
-                    isDraw ? "תיקו!" : "היריב ניצח",
-                    textDirection: TextDirection.rtl,
+                    isDraw ? loc.duelRoomDrawTitle : loc.duelRoomLossTitle,
                     style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
                   ),
                 // 🆕 לפי בקשה מפורשת - מסך הסיום של סדרת דו-קרב היה נראה
@@ -1189,17 +1198,15 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                     ),
                     child: Text(
                       isDraw
-                          ? 'תיקו בסדרה · $mySeriesWins-$oppSeriesWins'
-                          : (iWon ? 'ניצחת את הסדרה $mySeriesWins-$oppSeriesWins' : 'הפסדת את הסדרה $mySeriesWins-$oppSeriesWins'),
-                      textDirection: TextDirection.rtl,
+                          ? loc.duelRoomSeriesDrawScore(mySeriesWins, oppSeriesWins)
+                          : (iWon ? loc.duelRoomSeriesWinScore(mySeriesWins, oppSeriesWins) : loc.duelRoomSeriesLossScore(mySeriesWins, oppSeriesWins)),
                       style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800),
                     ),
                   ),
                 ],
                 const SizedBox(height: 4),
                 Text(
-                  '$myFinalProgress מתוך ${match.totalQuestions} לוגואים · $elapsed דקות',
-                  textDirection: TextDirection.rtl,
+                  loc.duelRoomScoreTimeSummary(myFinalProgress, match.totalQuestions, elapsed),
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 20),
@@ -1246,7 +1253,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                   ),
                   child: Column(
                     children: [
-                      Text('הפרס שלך', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w800)),
+                      Text(loc.logoRacePrizeLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -1255,7 +1262,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                               value: '${coinDelta >= 0 ? '+' : ''}$coinDelta',
                               icon: Icons.monetization_on_rounded,
                               color: coinDelta >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFFF6B6B),
-                              label: 'מטבעות',
+                              label: loc.logoRacePrizeCoinsLabel,
                             ),
                           ),
                           Expanded(
@@ -1271,7 +1278,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                               value: '$myFinalProgress/${match.totalQuestions}',
                               icon: Icons.check_circle_rounded,
                               color: const Color(0xFF60A5FA),
-                              label: 'לוגואים',
+                              label: loc.duelLobbyStatLogos,
                             ),
                           ),
                         ],
@@ -1312,8 +1319,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                                 );
                               },
                         child: Text(
-                          rematchRequested ? 'ממתין ל-$oppName... ⏳' : 'שחק שוב מול $oppName 🔁',
-                          textDirection: TextDirection.rtl,
+                          rematchRequested ? loc.duelRoomWaitingForRematch(oppName) : loc.duelRoomRematchButton(oppName),
                           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                         ),
                       ),
@@ -1352,7 +1358,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                       child: Container(
                         alignment: Alignment.center,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: const Text('דו-קרב נוסף ⚔️', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900)),
+                        child: Text(loc.duelRoomPlayAgainButton, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900)),
                       ),
                     ),
                   ),
@@ -1370,11 +1376,11 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                         ),
                         onPressed: () {
                           final text = iWon
-                              ? 'ניצחתי בדו-קרב במשחק "זהה את הלוגו!" 🏆 $myFinalProgress/${match.totalQuestions} לוגואים ב-$elapsed דקות. בואו תנסו לנצח אותי! 🎮'
-                              : 'שיחקתי דו-קרב במשחק "זהה את הלוגו!" - בואו תתמודדו איתי! ⚔️';
+                              ? loc.duelRoomShareTextWin(myFinalProgress, match.totalQuestions, elapsed)
+                              : loc.duelRoomShareTextLose;
                           shareText(context, text);
                         },
-                        child: const Text('שיתוף', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                        child: Text(loc.logoRaceShareButton, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1392,7 +1398,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                           // 🆕 טריגר פרסומת "אחרי דו-קרב" - גם כשחוזרים ישר לתפריט.
                           AdsManager.onDuelFinished();
                         },
-                        child: const Text('חזרה לתפריט', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                        child: Text(loc.logoRaceBackToMenuButton, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                       ),
                     ),
                   ],
@@ -1474,7 +1480,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         const SizedBox(height: 4),
         Text(value, style: TextStyle(color: color, fontSize: 14.5, fontWeight: FontWeight.w900)),
         const SizedBox(height: 2),
-        Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w700)),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -1528,22 +1534,22 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF241a4f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("לצאת מהדו-קרב?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        title: Text(AppLocalizations.of(context)!.duelRoomExitConfirmTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
-          "אם תצא עכשיו היריב יוכרז מנצח ויקבל את כל הקופה ($_stake שהימרת + $_stake שלו) - המטבעות והאנרגיה שכבר שילמת לא יוחזרו.\n\n"
-          "${_myProgress < 2 ? "זו עזיבה מוקדמת - תקבל רק אזהרה" : "עזיבה בשלב הזה נחשבת פרישה"} (${DuelService.forfeitBanThreshold} אזהרות = חסימה זמנית מדו-קרב).",
-          textDirection: TextDirection.rtl,
+          "${AppLocalizations.of(context)!.duelRoomExitConfirmMessage(_stake, _stake)}\n\n"
+          "${_myProgress < 2 ? AppLocalizations.of(context)!.logoRaceExitEarlyWarning : AppLocalizations.of(context)!.logoRaceExitForfeitWarning} "
+          "${AppLocalizations.of(context)!.duelRoomExitBanThreshold(DuelService.forfeitBanThreshold)}",
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
         ),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text("להישאר", style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+            child: Text(AppLocalizations.of(context)!.logoRaceStayButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("צא בכל זאת", style: TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
+            child: Text(AppLocalizations.of(context)!.logoRaceLeaveAnywayButton, style: const TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -1623,12 +1629,11 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             children: [
               const SizedBox(width: 46, height: 46, child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 3)),
               const SizedBox(height: 20),
-              Text("ממתין לחיבור מחדש של $oppName", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+              Text(AppLocalizations.of(context)!.logoRaceWaitingReconnect(oppName), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
               Text(
-                remaining > 0 ? "אם לא יתחבר תוך $remaining שניות, זה ייחשב ניצחון טכני" : "קובעים ניצחון טכני...",
+                remaining > 0 ? AppLocalizations.of(context)!.logoRaceReconnectTimeoutWarning(remaining) : AppLocalizations.of(context)!.logoRaceDecidingTechnicalWin,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
               ),
             ],
@@ -1665,12 +1670,13 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   // נמצא!" מתאים רק לתחילת דו-קרב חדש (matchmaking אמיתי). בהמשך סדרת
   // דו-קרב (סיבוב 2/3) זה כבר אותו יריב בדיוק - מציגים כותרת ניטרלית.
   Widget _buildCountdown(DuelMatch match) {
+    final loc = AppLocalizations.of(context)!;
     final isSeriesContinuation = match.seriesMode && match.seriesRound > 1;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(isSeriesContinuation ? "מתכוננים לסיבוב הבא..." : "היריב נמצא!", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+          Text(isSeriesContinuation ? loc.duelRoomPreparingNextRound : loc.duelRoomOpponentFoundTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 24),
           // 🩹 בסיבוב המשך - בלי ספירה 3-2-1 (ראו _runCountdownThenStart),
           // רק מחוון טעינה קטן במקום מספר גדול שאין לו באמת מה לספור.
@@ -1678,7 +1684,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             const SizedBox(width: 40, height: 40, child: CircularProgressIndicator(color: Color(0xFFFFD86B), strokeWidth: 3.5))
           else
             Text(
-              _countdownValue > 0 ? '$_countdownValue' : 'קדימה!',
+              _countdownValue > 0 ? '$_countdownValue' : loc.duelRoomGoLabel,
               style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 72, fontWeight: FontWeight.w900),
             ),
         ],
@@ -1687,13 +1693,14 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   }
 
   Widget _buildGame(DuelMatch match) {
+    final loc = AppLocalizations.of(context)!;
     final level = _currentLevel;
     final oppName = widget.myDeviceId == match.player1Id ? match.player2Name : match.player1Name;
     // 🆕 הפס העליון מציג כמה תשובות *נכונות* יש לכל אחד (לא כמה לוגואים
     // "עברו") - כי זה מה שבאמת קובע מי מנצח עכשיו, לא מי מתקדם מהר יותר.
     final oppCorrect = match.opponentCorrectFor(widget.myDeviceId);
     final iAmWaiting = _myProgress >= match.totalQuestions && match.status != 'finished';
-    final isEnglish = level != null && RegExp(r'[a-zA-Z]').hasMatch(level.answer);
+    final isEnglish = level != null && RegExp(r'[a-zA-Z]').hasMatch(level.answerFor(localeController.isHebrew));
 
     return Column(
       children: [
@@ -1740,8 +1747,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                     boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Text(
-                    'לוגו ${_myProgress + 1} מתוך ${match.totalQuestions}',
-                    textDirection: TextDirection.rtl,
+                    loc.duelRoomLogoCounter(_myProgress + 1, match.totalQuestions),
                     style: const TextStyle(color: Color(0xFF2A1740), fontSize: 12, fontWeight: FontWeight.w900),
                   ),
                 ),
@@ -1759,12 +1765,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                       borderRadius: BorderRadius.circular(25),
                       color: const Color(0xFF0D9488).withValues(alpha: 0.92),
                     ),
-                    child: const Column(
+                    child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.check_circle_rounded, color: Colors.white, size: 46),
-                        SizedBox(height: 8),
-                        Text("תשובה נכונה!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 46),
+                        const SizedBox(height: 8),
+                        Text(loc.duelRoomCorrectAnswerBanner, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
                       ],
                     ),
                   ),
@@ -1783,12 +1789,12 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                       borderRadius: BorderRadius.circular(25),
                       color: const Color(0xFFB91C1C).withValues(alpha: 0.92),
                     ),
-                    child: const Column(
+                    child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.timer_off_rounded, color: Colors.white, size: 42),
-                        SizedBox(height: 8),
-                        Text("הזמן נגמר!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                        const Icon(Icons.timer_off_rounded, color: Colors.white, size: 42),
+                        const SizedBox(height: 8),
+                        Text(loc.duelRoomTimeUpBanner, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
                       ],
                     ),
                   ),
@@ -1828,9 +1834,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _ActionChip(icon: Icons.lightbulb_rounded, label: "רמז", color: _hintsAllowed ? const Color(0xFFFFD86B) : Colors.white.withValues(alpha: 0.22), onTap: _showHintMenu),
+              _ActionChip(icon: Icons.lightbulb_rounded, label: loc.duelRoomHintChipLabel, color: _hintsAllowed ? const Color(0xFFFFD86B) : Colors.white.withValues(alpha: 0.22), onTap: _showHintMenu),
               const SizedBox(width: 12),
-              _ActionChip(icon: Icons.backspace_rounded, label: "הסר אות", color: const Color(0xFFFB7185), onTap: _onBackspace),
+              _ActionChip(icon: Icons.backspace_rounded, label: loc.logoRaceRemoveLetterButton, color: const Color(0xFFFB7185), onTap: _onBackspace),
             ],
           ),
           const SizedBox(height: 14),
@@ -1883,9 +1889,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             ),
           ),
           const SizedBox(height: 22),
-          Text('סיימת את כל ${match?.totalQuestions ?? DuelService.questionsPerDuel} הלוגואים! 🎉', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          Text(AppLocalizations.of(context)!.duelRoomFinishedAllLogos(match?.totalQuestions ?? DuelService.questionsPerDuel), style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
-          Text("מחכים ש-$oppName יסיים גם...", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14)),
+          Text(AppLocalizations.of(context)!.duelRoomWaitingForOpponentToFinish(oppName), style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14)),
           const SizedBox(height: 26),
           SizedBox(
             width: 220,
@@ -1916,7 +1922,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                   children: [
                     const Text('⚔️', style: TextStyle(color: Color(0xFFFDA4AF), fontSize: 11)),
                     const SizedBox(width: 6),
-                    Text('דו־קרב · על $_stake מטבעות', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                    Text(AppLocalizations.of(context)!.duelRoomHeaderBadge(_stake), style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 12.5, fontWeight: FontWeight.w800)),
                   ],
                 ),
               ),
@@ -1952,15 +1958,13 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
         boxShadow: [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
       ),
       child: Row(
-        textDirection: TextDirection.rtl,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(Icons.flash_on_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              '$oppName ענה/תה נכון!',
-              textDirection: TextDirection.rtl,
+              AppLocalizations.of(context)!.duelRoomOpponentAnsweredBanner(oppName),
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
             ),
@@ -1984,8 +1988,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
           border: Border.all(color: const Color(0xFFF87171).withValues(alpha: 0.4)),
         ),
         child: Text(
-          'סדרה · סיבוב ${match.seriesRound}/3 · $myWins-$oppWins',
-          textDirection: TextDirection.rtl,
+          AppLocalizations.of(context)!.duelRoomSeriesRoundHeader(match.seriesRound, myWins, oppWins),
           style: const TextStyle(color: Color(0xFFFECACA), fontSize: 11.5, fontWeight: FontWeight.w900),
         ),
       ),
@@ -1995,6 +1998,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   Widget _buildProgressHeader(String oppName, int oppCorrect, int totalQuestions) {
     // 🆕 ה"מוביל" נקבע לפי תשובות נכונות (Correct), לא לפי כמה לוגואים
     // כל אחד כבר עבר (Progress) - כי זה מה שבאמת קובע מנצח עכשיו.
+    final loc = AppLocalizations.of(context)!;
     final myCorrect = _myCorrectCount.clamp(0, totalQuestions);
     final diff = myCorrect - oppCorrect;
     return Padding(
@@ -2014,10 +2018,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             const SizedBox(height: 8),
             Text(
               diff > 0
-                  ? 'אתה מוביל ב-${diff == 1 ? "תשובה נכונה אחת" : "$diff תשובות נכונות"}'
-                  : '$oppName מוביל ב-${-diff == 1 ? "תשובה נכונה אחת" : "${-diff} תשובות נכונות"}',
+                  ? loc.duelRoomYouLeadBy(diff == 1 ? loc.duelRoomCorrectAnswersSingular : loc.duelRoomCorrectAnswersPlural(diff))
+                  : loc.duelRoomOpponentLeadBy(oppName, -diff == 1 ? loc.duelRoomCorrectAnswersSingular : loc.duelRoomCorrectAnswersPlural(-diff)),
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: diff > 0 ? const Color(0xFF6EE7B7) : const Color(0xFFFDA4AF), fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 0.3),
             ),
           ],
@@ -2047,7 +2050,6 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   Widget _progressBarChip(String name, int progress, int totalQuestions, Color color, List<Color> ringColors) {
     final ratio = (progress / totalQuestions).clamp(0.0, 1.0);
     return Row(
-      textDirection: TextDirection.rtl,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _miniAvatar(name, ringColors),
@@ -2057,10 +2059,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   Expanded(
-                    child: Text(name, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    child: Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
                   ),
                   Text('$progress/$totalQuestions', style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w900)),
                 ],
@@ -2132,6 +2133,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
   // 🆕 גם המקלדת ברוחב דינמי (שתי שורות תמיד) + Directionality נכון,
   // אותו תיקון RTL/LTR שהוחל על תאי האות.
   Widget _buildKeyboard(LevelData level, bool isEnglish) {
+    final keyboard = level.keyboardFor(localeController.isHebrew);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: LayoutBuilder(
@@ -2139,7 +2141,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
           const double spacing = 7;
           const double maxKeyWidth = 42;
           const double minKeyWidth = 28;
-          final int totalKeys = level.keyboard.length;
+          final int totalKeys = keyboard.length;
           final int keysPerRow = (totalKeys / 2).ceil();
           final double idealWidth = (constraints.maxWidth - (keysPerRow - 1) * spacing) / keysPerRow;
           final double keyWidth = idealWidth.clamp(minKeyWidth, maxKeyWidth);
@@ -2162,7 +2164,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: isPressed ? null : () => _onKeyTap(level.keyboard[i], i),
+                    onTap: isPressed ? null : () => _onKeyTap(keyboard[i], i),
                     child: Container(
                       width: keyWidth,
                       height: keyHeight,
@@ -2172,7 +2174,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> with TickerProviderStat
                         border: Border.all(color: isPressed ? Colors.transparent : Colors.white.withValues(alpha: 0.18)),
                       ),
                       child: Text(
-                        isPressed ? '' : level.keyboard[i],
+                        isPressed ? '' : keyboard[i],
                         style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800),
                       ),
                     ),
@@ -2275,12 +2277,11 @@ class _ActionChip extends StatelessWidget {
             gradient: LinearGradient(colors: [color.withValues(alpha: 0.18), color.withValues(alpha: 0.05)]),
           ),
           child: Row(
-            textDirection: TextDirection.rtl,
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, color: color, size: 17),
               const SizedBox(width: 6),
-              Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w800)),
+              Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w800)),
             ],
           ),
         ),
@@ -2315,7 +2316,6 @@ class _HintOptionTile extends StatelessWidget {
             gradient: LinearGradient(colors: [accent.withValues(alpha: 0.18), accent.withValues(alpha: 0.04)]),
           ),
           child: Row(
-            textDirection: TextDirection.rtl,
             children: [
               Container(
                 width: 42,
@@ -2326,12 +2326,11 @@ class _HintOptionTile extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                    Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 2),
-                    Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11, fontWeight: FontWeight.w500)),
+                    Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11, fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),

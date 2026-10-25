@@ -22,8 +22,8 @@ import 'app_notification.dart';
 import 'friend_challenge_screen.dart';
 import 'friend_service.dart';
 import 'referral_service.dart';
-import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון קבוע - חסר היה במסך הזה בלבד
 import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
+import 'l10n/app_localizations.dart';
 
 class FriendsScreen extends StatefulWidget {
   final String username;
@@ -129,10 +129,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
       if (ok) _pendingRequests.removeWhere((r) => r.id == request.id);
     });
     if (ok && accept) {
-      AppNotification.show(context, "אתם חברים עכשיו!", type: AppNotificationType.success);
+      AppNotification.show(context, AppLocalizations.of(context)!.friendsNowFriendsMessage, type: AppNotificationType.success);
       _loadFriends();
     } else if (!ok) {
-      AppNotification.show(context, "משהו השתבש - נסה שוב", type: AppNotificationType.error);
+      AppNotification.show(context, AppLocalizations.of(context)!.friendChallengeGenericError, type: AppNotificationType.error);
     }
   }
 
@@ -146,22 +146,22 @@ class _FriendsScreenState extends State<FriendsScreen> {
   String get _inviteText {
     final code = _myCode;
     final link = code != null ? ReferralService.shareLink(code) : _androidStoreLink;
-    return "בואו לשחק איתי במשחק 🎮 \"זהה את הלוגו!\" - מי מכיר הכי הרבה לוגואים? 🔥\n\n"
-        "$link\n\n"
-        "שנינו נקבל ${ReferralService.bonusCoins} מטבעות במתנה ברגע שתתקינו ✨";
+    return AppLocalizations.of(context)!.friendsInviteText(link, ReferralService.bonusCoins);
   }
 
   Future<void> _inviteToGame() async {
     HapticFeedback.lightImpact();
+    final loc = AppLocalizations.of(context)!;
+    final inviteText = _inviteText;
     try {
       // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
       // (נקודת העיגון של ה-popover ב-iOS, ראו share_helper.dart להסבר המלא).
       final box = context.findRenderObject() as RenderBox?;
-      await Share.share(_inviteText, subject: "זהה את הלוגו!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
+      await Share.share(inviteText, subject: loc.appLoadingTitle, sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
       if (!mounted) return;
-      Clipboard.setData(ClipboardData(text: _inviteText));
-      AppNotification.show(context, "לא נמצאה אפליקציית שיתוף - ההודעה הועתקה, אפשר להדביק ולשלוח");
+      Clipboard.setData(ClipboardData(text: inviteText));
+      AppNotification.show(context, loc.friendsShareFallbackCopiedWithPaste);
     }
   }
 
@@ -172,17 +172,15 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final code = _myCode;
     if (code == null) return;
     HapticFeedback.lightImpact();
-    final text = "בוא נהיה חברים ב\"זהה את הלוגו!\" 🎮\n"
-        "הקוד שלי: $code\n"
-        "(פותחים את האפליקציה -> חברים -> \"יש לי קוד\" ומזינים אותו)\n\n"
-        "עוד לא הורדת? 📱 אייפון: $_iosStoreLink\n🤖 אנדרואיד/גלקסי: $_androidStoreLink";
+    final loc = AppLocalizations.of(context)!;
+    final text = loc.friendsShareCodeText(code, _iosStoreLink, _androidStoreLink);
     try {
       final box = context.findRenderObject() as RenderBox?;
-      await Share.share(text, subject: "בוא נהיה חברים!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
+      await Share.share(text, subject: loc.friendsShareCodeSubject, sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
       if (!mounted) return;
       Clipboard.setData(ClipboardData(text: text));
-      AppNotification.show(context, "לא נמצאה אפליקציית שיתוף - ההודעה הועתקה");
+      AppNotification.show(context, loc.friendsShareFallbackCopied);
     }
   }
 
@@ -191,13 +189,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
     if (code == null) return;
     Clipboard.setData(ClipboardData(text: code));
     HapticFeedback.lightImpact();
-    AppNotification.show(context, "הקוד הועתק!", type: AppNotificationType.success);
+    AppNotification.show(context, AppLocalizations.of(context)!.friendsCodeCopiedMessage, type: AppNotificationType.success);
   }
 
   Future<void> _submitAddFriend() async {
+    final loc = AppLocalizations.of(context)!;
     final code = _addCodeController.text.trim();
     if (code.length != FriendService.codeLength) {
-      setState(() => _addFriendError = "קוד חייב להיות בן ${FriendService.codeLength} תווים");
+      setState(() => _addFriendError = loc.friendsCodeLengthError(FriendService.codeLength));
       return;
     }
     setState(() {
@@ -211,25 +210,25 @@ class _FriendsScreenState extends State<FriendsScreen> {
       case AddFriendResult.requestSent:
       case AddFriendResult.success: // תאימות היסטורית - לא אמור להיזרק בפועל יותר
         _addCodeController.clear();
-        AppNotification.show(context, "בקשת חברות נשלחה! נחכה שהוא יאשר", type: AppNotificationType.success);
+        AppNotification.show(context, loc.friendsRequestSentMessage, type: AppNotificationType.success);
         break;
       case AddFriendResult.alreadyRequested:
-        setState(() => _addFriendError = "כבר שלחת לו בקשה - ממתין לאישור");
+        setState(() => _addFriendError = loc.friendsAlreadyRequestedError);
         break;
       case AddFriendResult.alreadyFriends:
-        setState(() => _addFriendError = "כבר חברים איתו");
+        setState(() => _addFriendError = loc.friendsAlreadyFriendsError);
         break;
       case AddFriendResult.ownCode:
-        setState(() => _addFriendError = "זה הקוד שלך - שלח אותו לחבר, לא להזין אותו כאן");
+        setState(() => _addFriendError = loc.friendsOwnCodeError);
         break;
       case AddFriendResult.notFound:
-        setState(() => _addFriendError = "לא נמצא קוד כזה - ודא שהקלדת נכון");
+        setState(() => _addFriendError = loc.friendsCodeNotFoundError);
         break;
       case AddFriendResult.invalidCode:
-        setState(() => _addFriendError = "קוד לא תקין");
+        setState(() => _addFriendError = loc.friendsInvalidCodeError);
         break;
       case AddFriendResult.error:
-        setState(() => _addFriendError = "משהו השתבש - נסה שוב מאוחר יותר");
+        setState(() => _addFriendError = loc.friendsGenericErrorLater);
         break;
     }
   }
@@ -249,6 +248,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     // 🆕 "בכל המסכים צריך להיות למטה את המניו, גם במסך של החברים" - המסך
     // הזה היה היחיד שנבנה בלי AppBottomNav (Scaffold+SafeArea רגיל, לא
     // Stack). עוטפים עכשיו בדיוק כמו shop_screen.dart/missions_screen.dart:
@@ -271,7 +271,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                       backgroundColor: const Color(0xFF241a4f),
                       child: SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 130),
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                         child: Column(
                           children: [
                             const SizedBox(height: 10),
@@ -317,14 +317,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
           ),
-          const AppBottomNav(current: AppTab.friends),
           if (_showExplainer)
             buildFirstVisitOverlay(
-              title: 'מסך החברים',
-              points: const [
-                ExplainerPoint('🔑', 'קוד אישי לשיתוף', 'שתפו את הקוד שלכם עם חברים כדי שיוכלו להוסיף אתכם.'),
-                ExplainerPoint('🟢', 'מי מחובר עכשיו', 'נקודה ירוקה ליד חבר מראה שהוא כרגע באפליקציה.'),
-                ExplainerPoint('⚔️', 'הזמנה למשחק', 'לחצו על "הזמן למשחק" ליד כל חבר כדי להזמין אותו לדו-קרב ישיר.'),
+              context: context,
+              title: loc.friendsExplainerTitle,
+              points: [
+                ExplainerPoint('🔑', loc.friendsExplainerCodeTitle, loc.friendsExplainerCodeBody),
+                ExplainerPoint('🟢', loc.friendsExplainerOnlineTitle, loc.friendsExplainerOnlineBody),
+                ExplainerPoint('⚔️', loc.friendsExplainerInviteTitle, loc.friendsExplainerInviteBody),
               ],
               onDismiss: () {
                 FirstVisitExplainer.markSeen('friends');
@@ -342,7 +342,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.12))),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text("או", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5, fontWeight: FontWeight.w700)),
+          child: Text(AppLocalizations.of(context)!.logoLevelOrDivider, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5, fontWeight: FontWeight.w700)),
         ),
         Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.12))),
       ],
@@ -366,12 +366,11 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              "חברים",
+              AppLocalizations.of(context)!.friendsTopBarTitle,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
             ),
           ),
           const SizedBox(width: 38),
@@ -394,16 +393,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
           child: const Icon(Icons.groups_rounded, color: Color(0xFF0B3B2E), size: 38),
         ),
         const SizedBox(height: 14),
-        const Text(
-          "שחק עם חברים",
-          textDirection: TextDirection.rtl,
-          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+        Text(
+          AppLocalizations.of(context)!.friendsHeroTitle,
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 6),
         Text(
-          "הוסף חברים לפי קוד, תראה מי מחובר, והזמן אותם ישר למשחק",
+          AppLocalizations.of(context)!.friendsHeroSubtitle,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
         ),
       ],
@@ -412,6 +409,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   // 🆕 "הקוד שלך" - המזהה האישי לשיתוף, כדי שחברים יוכלו להוסיף אותך.
   Widget _buildMyCodeCard() {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -427,11 +425,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
       child: Column(
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               const Icon(Icons.badge_rounded, color: Color(0xFF7DD3FC), size: 20),
               const SizedBox(width: 8),
-              const Text("הקוד שלך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+              Text(loc.friendsMyCodeTitle, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 6),
@@ -440,7 +437,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
           // משתמש חדש - לכן אין כאן פרס, בשונה מ"הזמן למשחק" למטה שכן נותן
           // מטבעות כי הוא מביא התקנה חדשה). עכשיו מבהירים את זה בממשק במקום
           // להשאיר את זה עמום.
-          const Text("לחיבור עם חבר שכבר משחק - בלי פרס. להזמנת חבר חדש ומטבעות, גללו למטה 👇", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white54, fontSize: 11.5, fontWeight: FontWeight.w600)),
+          Text(loc.friendsMyCodeHint, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 11.5, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           if (_loadingCode)
             const Padding(
@@ -454,7 +451,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ),
           const SizedBox(height: 14),
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               Material(
                 color: Colors.white.withValues(alpha: 0.08),
@@ -480,7 +476,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                       borderRadius: BorderRadius.circular(14),
                       gradient: const LinearGradient(colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)]),
                     ),
-                    child: const Text("שתף קוד", style: TextStyle(color: Color(0xFF0C2A3D), fontSize: 15, fontWeight: FontWeight.w900)),
+                    child: Text(loc.friendsShareCodeButton, style: const TextStyle(color: Color(0xFF0C2A3D), fontSize: 15, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
@@ -493,6 +489,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   // 🆕 הוספת חבר לפי קוד שקיבלת ממנו.
   Widget _buildAddFriendCard() {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -504,10 +501,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text("יש לך קוד של חבר?", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800)),
+          Text(loc.friendsAddFriendPrompt, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               Expanded(
                 child: TextField(
@@ -541,14 +537,14 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   ),
                   child: _addingFriend
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: Color(0xFF0B3B2E)))
-                      : const Text("הוסף", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                      : Text(loc.friendsAddButton, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
                 ),
               ),
             ],
           ),
           if (_addFriendError != null) ...[
             const SizedBox(height: 8),
-            Text(_addFriendError!, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 12.5, fontWeight: FontWeight.w700)),
+            Text(_addFriendError!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 12.5, fontWeight: FontWeight.w700)),
           ],
         ],
       ),
@@ -560,13 +556,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
   // שם השולח + כפתורי אישור (✓ ירוק, יוצר חברות הדדית) ודחייה (✕ אדום,
   // רק מוחק את הבקשה).
   Widget _buildPendingRequestsSection() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          textDirection: TextDirection.rtl,
           children: [
-            const Text("בקשות חברות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+            Text(loc.friendsPendingRequestsTitle, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -587,7 +583,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
               color: Colors.white.withValues(alpha: 0.05),
             ),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 CircleAvatar(
                   radius: 18,
@@ -601,7 +596,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 Expanded(
                   child: Text(
                     request.name,
-                    textDirection: TextDirection.rtl,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
                   ),
@@ -646,13 +640,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   // 🆕 "החברים שלי" - שם + נקודת "מחובר"/"לא מחובר" + כפתור "הזמן למשחק".
   Widget _buildFriendsListSection() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          textDirection: TextDirection.rtl,
           children: [
-            const Text("החברים שלי", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+            Text(loc.friendsMyFriendsTitle, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             if (_friends.isNotEmpty) ...[
               const SizedBox(width: 8),
               Text("(${_friends.length})", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13)),
@@ -671,9 +665,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), color: Colors.white.withValues(alpha: 0.04)),
             child: Text(
-              "עדיין אין לך חברים כאן - שתף את הקוד שלך למעלה כדי להתחיל",
+              loc.friendsEmptyListMessage,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12.5),
             ),
           )
@@ -691,12 +684,12 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Widget _friendRow(FriendInfo friend) {
+    final loc = AppLocalizations.of(context)!;
     final letter = friend.name.trim().isNotEmpty ? friend.name.trim().substring(0, 1).toUpperCase() : '?';
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.white.withValues(alpha: 0.05)),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Stack(
             clipBehavior: Clip.none,
@@ -728,10 +721,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(friend.name, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                Text(friend.name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                 Text(
-                  friend.online ? "מחובר" : "לא מחובר",
-                  textDirection: TextDirection.rtl,
+                  friend.online ? loc.friendsOnlineStatus : loc.friendsOfflineStatus,
                   style: TextStyle(color: friend.online ? const Color(0xFF6EE7B7) : Colors.white.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700),
                 ),
               ],
@@ -751,8 +743,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 child: Text(
-                  friend.online ? "הזמן למשחק" : "לא מחובר",
-                  textDirection: TextDirection.rtl,
+                  friend.online ? loc.friendsInviteButtonLabel : loc.friendsOfflineStatus,
                   style: TextStyle(color: friend.online ? const Color(0xFFFDA4AF) : Colors.white.withValues(alpha: 0.3), fontSize: 12, fontWeight: FontWeight.w800),
                 ),
               ),
@@ -774,26 +765,26 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Future<void> _confirmRemoveFriend(FriendInfo friend) async {
+    final loc = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF241a4f),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("להסיר מהחברים?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        title: Text(loc.friendsRemoveConfirmTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
-          "${friend.name} יוסר מרשימת החברים שלך, ואתה תוסר מהרשימה שלו. אפשר להתחבר שוב בעתיד עם קוד חדש.",
-          textDirection: TextDirection.rtl,
+          loc.friendsRemoveConfirmBody(friend.name),
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
         ),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+            child: Text(loc.duelLobbyCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("הסר", style: TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
+            child: Text(loc.friendsRemoveButton, style: const TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -803,9 +794,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
     if (!mounted) return;
     if (ok) {
       setState(() => _friends.removeWhere((f) => f.id == friend.id));
-      AppNotification.show(context, "${friend.name} הוסר/ה מהחברים");
+      AppNotification.show(context, loc.friendsRemovedMessage(friend.name));
     } else {
-      AppNotification.show(context, "משהו השתבש - נסה שוב", type: AppNotificationType.error);
+      AppNotification.show(context, loc.friendChallengeGenericError, type: AppNotificationType.error);
     }
   }
 
@@ -814,8 +805,9 @@ class _FriendsScreenState extends State<FriendsScreen> {
   // כלכלי לראות התקדמות יחסית לחברים - מבוסס על נתונים שכבר קיימים
   // (xp מסונכרן ל-Firestore ממילא לצורך טבלת השיאים הראשית).
   Widget _buildFriendsLeaderboard() {
+    final loc = AppLocalizations.of(context)!;
     final rows = <({String name, int xp, bool isMe})>[
-      (name: widget.username.isNotEmpty ? widget.username : 'אתה', xp: _myXp, isMe: true),
+      (name: widget.username.isNotEmpty ? widget.username : loc.duelLobbyYouLabel, xp: _myXp, isMe: true),
       for (final f in _friends) (name: f.name, xp: f.xp, isMe: false),
     ]..sort((a, b) => b.xp.compareTo(a.xp));
 
@@ -837,11 +829,10 @@ class _FriendsScreenState extends State<FriendsScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               const Icon(Icons.emoji_events_rounded, color: Color(0xFFFFD86B), size: 20),
               const SizedBox(width: 8),
-              const Text("מי מוביל בין החברים שלך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+              Text(loc.friendsLeaderboardTitle, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 12),
@@ -854,7 +845,6 @@ class _FriendsScreenState extends State<FriendsScreen> {
                 color: rows[i].isMe ? const Color(0xFFFFD86B).withValues(alpha: 0.12) : Colors.transparent,
               ),
               child: Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   SizedBox(
                     width: 22,
@@ -867,8 +857,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      rows[i].isMe ? '${rows[i].name} (אתה)' : rows[i].name,
-                      textDirection: TextDirection.rtl,
+                      rows[i].isMe ? loc.friendsLeaderboardYouRow(rows[i].name) : rows[i].name,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: rows[i].isMe ? FontWeight.w900 : FontWeight.w700),
                     ),
@@ -884,6 +873,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Widget _buildInviteCard() {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -899,18 +889,16 @@ class _FriendsScreenState extends State<FriendsScreen> {
       child: Column(
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFFA7F3D0), size: 20),
               const SizedBox(width: 8),
-              const Text("הזמנה למשחק", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+              Text(loc.friendsInviteCardTitle, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            "שלח לחברים קישור להורדת האפליקציה - וואטסאפ, מסרונים או כל אפליקציה אחרת. שניכם תקבלו ${ReferralService.bonusCoins} מטבעות אוטומטית כשהם יתקינו!",
+            loc.friendsInviteCardBody(ReferralService.bonusCoins),
             textAlign: TextAlign.center,
-            textDirection: TextDirection.rtl,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5),
           ),
           const SizedBox(height: 16),
@@ -932,7 +920,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-                child: const Text("שלח הזמנה", style: TextStyle(color: Color(0xFF0B3B2E), fontSize: 15.5, fontWeight: FontWeight.w900)),
+                child: Text(loc.friendsSendInviteButton, style: const TextStyle(color: Color(0xFF0B3B2E), fontSize: 15.5, fontWeight: FontWeight.w900)),
               ),
             ),
           ),

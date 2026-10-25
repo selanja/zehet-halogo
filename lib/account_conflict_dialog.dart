@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart';
 import 'app_icons.dart';
+import 'l10n/app_localizations.dart';
 
 /// מציג את הדיאלוג ומחזיר true אם המשתמש בחר (בכל אחת מהאפשרויות) ו-
 /// ההתחברות הושלמה בפועל, false אם ביטל.
@@ -64,6 +65,7 @@ class _AccountConflictDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20),
@@ -87,34 +89,34 @@ class _AccountConflictDialog extends StatelessWidget {
               child: const Icon(Icons.person_search_rounded, color: Color(0xFF40170F), size: 30),
             ),
             const SizedBox(height: 14),
-            const Text(
-              "מצאנו לך חשבון קיים",
+            Text(
+              loc.accountConflictTitle,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
+              style: const TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 6),
             Text(
-              "לחשבון הזה כבר יש התקדמות שמורה ממכשיר אחר. לאיזו התקדמות תרצה להתחבר?",
+              loc.accountConflictMessage,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13),
             ),
             const SizedBox(height: 18),
             _progressCard(
-              title: "ההתקדמות השמורה בחשבון",
+              title: loc.accountConflictCloudProgressTitle,
               coins: cloudCoins,
               xp: cloudXp,
               maxLevel: cloudMaxLevel,
               accent: const Color(0xFFFFD86B),
+              loc: loc,
             ),
             const SizedBox(height: 10),
             _progressCard(
-              title: "ההתקדמות הנוכחית במכשיר הזה",
+              title: loc.accountConflictLocalProgressTitle,
               coins: localCoins,
               xp: localXp,
               maxLevel: localMaxLevel,
               accent: const Color(0xFF7DD3FC),
+              loc: loc,
             ),
             const SizedBox(height: 18),
             SizedBox(
@@ -127,7 +129,7 @@ class _AccountConflictDialog extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text("התחבר עם ההתקדמות השמורה", textDirection: TextDirection.rtl, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                child: Text(loc.accountConflictUseCloudButton, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
               ),
             ),
             const SizedBox(height: 10),
@@ -141,20 +143,19 @@ class _AccountConflictDialog extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text("השאר את ההתקדמות הנוכחית שלי", textDirection: TextDirection.rtl, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                child: Text(loc.accountConflictUseLocalButton, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              "שים לב: האפשרות שלא תבחר תימחק ולא תהיה ניתנת לשחזור.",
+              loc.accountConflictWarning,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 10.5),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
-              child: const Text("ביטול", style: TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
+              child: Text(loc.accountConflictCancelButton, style: const TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -162,7 +163,7 @@ class _AccountConflictDialog extends StatelessWidget {
     );
   }
 
-  Widget _progressCard({required String title, required int coins, required int xp, required int maxLevel, required Color accent}) {
+  Widget _progressCard({required String title, required int coins, required int xp, required int maxLevel, required Color accent, required AppLocalizations loc}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -174,14 +175,14 @@ class _AccountConflictDialog extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(title, textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: accent, fontSize: 11.5, fontWeight: FontWeight.w900)),
+          Text(title, textAlign: TextAlign.center, style: TextStyle(color: accent, fontSize: 11.5, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _statChip(icon: const CoinIcon(size: 15), label: "$coins"),
               _statChip(icon: const Icon(Icons.star_rounded, color: Color(0xFFFFD86B), size: 16), label: "$xp XP"),
-              _statChip(icon: const Icon(Icons.flag_rounded, color: Color(0xFF7DD3FC), size: 16), label: "רמה $maxLevel"),
+              _statChip(icon: const Icon(Icons.flag_rounded, color: Color(0xFF7DD3FC), size: 16), label: loc.accountConflictLevelLabel(maxLevel)),
             ],
           ),
         ],

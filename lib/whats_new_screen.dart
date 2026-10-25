@@ -12,6 +12,7 @@
 // השוואה לגרסה הנוכחית) נמצאת ב-main_menu_screen.dart - הקובץ הזה הוא
 // רק התצוגה עצמה, לא מחליט מתי להופיע.
 import 'package:flutter/material.dart';
+import 'l10n/app_localizations.dart';
 
 class WhatsNewScreen extends StatefulWidget {
   final String version;
@@ -62,44 +63,44 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
 
   Animation<double> _fadeIn(double start, double end) => CurvedAnimation(parent: _entrance, curve: Interval(start, end, curve: Curves.easeOut));
 
-  List<_FeatureData> get _features => const [
+  List<_FeatureData> _features(AppLocalizations loc) => [
         _FeatureData(
           icon: '🏆',
-          title: 'סדרת דו-קרב',
-          subtitle: 'דו-קרב חדש: הטוב מ-3! אותו יריב, עד 3 סיבובים, ובונוס מטבעות שמן לניצחון בסדרה',
-          iconGradient: [Color(0xFFFFE08A), Color(0xFFFF8A3C)],
-          glow: Color(0xFFFF8A3C),
+          title: loc.whatsNewDuelSeriesTitle,
+          subtitle: loc.whatsNewDuelSeriesSubtitle,
+          iconGradient: const [Color(0xFFFFE08A), Color(0xFFFF8A3C)],
+          glow: const Color(0xFFFF8A3C),
           featured: true,
         ),
         _FeatureData(
           icon: '🗺️',
-          title: 'נוספו רמות חדשות',
-          subtitle: 'עוד שלבים ועוד לוגואים לזהות, מחכים לכם במסך השלבים',
-          iconGradient: [Color(0xFF7DD3FC), Color(0xFF0EA5E9)],
-          glow: Color(0xFF0EA5E9),
+          title: loc.whatsNewNewLevelsTitle,
+          subtitle: loc.whatsNewNewLevelsSubtitle,
+          iconGradient: const [Color(0xFF7DD3FC), Color(0xFF0EA5E9)],
+          glow: const Color(0xFF0EA5E9),
         ),
         _FeatureData(
           icon: '⭐',
-          title: 'רמות קושי 1-5',
-          subtitle: 'כל עולם מקבל דירוג קושי — וככל שההימור בדו-קרב גבוה יותר, כך גם רמת הלוגואים',
-          iconGradient: [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
-          glow: Color(0xFF7C3AED),
-          trailing: _DifficultyBars(),
+          title: loc.whatsNewDifficultyTitle,
+          subtitle: loc.whatsNewDifficultySubtitle,
+          iconGradient: const [Color(0xFFD8B4FE), Color(0xFF7C3AED)],
+          glow: const Color(0xFF7C3AED),
+          trailing: const _DifficultyBars(),
         ),
         _FeatureData(
           icon: '🎁',
-          title: 'בונוס הזמנת חברים גדול יותר',
-          subtitle: 'עכשיו מקבלים 75 מטבעות (במקום 30) על כל חבר שמצטרף דרך הקוד שלכם',
-          iconGradient: [Color(0xFF6EE7B7), Color(0xFF16A46F)],
-          glow: Color(0xFF16A46F),
+          title: loc.whatsNewReferralBonusTitle,
+          subtitle: loc.whatsNewReferralBonusSubtitle,
+          iconGradient: const [Color(0xFF6EE7B7), Color(0xFF16A46F)],
+          glow: const Color(0xFF16A46F),
         ),
       ];
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
+    final loc = AppLocalizations.of(context)!;
+    final features = _features(loc);
+    return Scaffold(
         backgroundColor: const Color(0xFF120B2C),
         body: Stack(
           fit: StackFit.expand,
@@ -125,9 +126,9 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
                     children: [
                       _buildHeader(),
                       const SizedBox(height: 26),
-                      for (int i = 0; i < _features.length; i++) ...[
+                      for (int i = 0; i < features.length; i++) ...[
                         if (i > 0) const SizedBox(height: 12),
-                        _buildFeatureCard(_features[i], index: i),
+                        _buildFeatureCard(features[i], index: i),
                       ],
                     ],
                   ),
@@ -137,7 +138,6 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -170,6 +170,7 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
   }
 
   Widget _buildHeader() {
+    final loc = AppLocalizations.of(context)!;
     final fade = _fadeIn(0.0, 0.25);
     return AnimatedBuilder(
       animation: fade,
@@ -186,21 +187,22 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
               border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.45)),
               color: const Color(0xFFFFD86B).withValues(alpha: 0.13),
             ),
-            child: Text('✨ גרסה ${widget.version}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: Color(0xFFFFD86B))),
+            child: Text(loc.whatsNewVersionBadge(widget.version), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5, color: Color(0xFFFFD86B))),
           ),
           const SizedBox(height: 16),
           ShaderMask(
             shaderCallback: (r) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFFFF6D8), Color(0xFFFFD86B), Color(0xFFFF8A3C)]).createShader(r),
-            child: const Text('עדכנו בשבילכם!', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 32, height: 1.1, color: Colors.white)),
+            child: Text(loc.whatsNewHeaderTitle, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 32, height: 1.1, color: Colors.white)),
           ),
           const SizedBox(height: 8),
-          Text('מה חדש בגרסה ${widget.version}?', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5, color: Colors.white.withValues(alpha: 0.68))),
+          Text(loc.whatsNewHeaderSubtitle(widget.version), style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5, color: Colors.white.withValues(alpha: 0.68))),
         ],
       ),
     );
   }
 
   Widget _buildFeatureCard(_FeatureData f, {required int index}) {
+    final loc = AppLocalizations.of(context)!;
     final start = 0.3 + index * 0.08;
     final end = (start + 0.35).clamp(0.0, 1.0);
     final slide = _fadeIn(start, end);
@@ -252,7 +254,7 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), gradient: const LinearGradient(colors: [Color(0xFFFFD86B), Color(0xFFFF8A3C)])),
-                child: const Text('חדש', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF2A1740))),
+                child: Text(loc.whatsNewNewBadge, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, color: Color(0xFF2A1740))),
               ),
             ),
           Padding(
@@ -280,9 +282,9 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(f.title, textDirection: TextDirection.rtl, style: TextStyle(fontWeight: FontWeight.w900, fontSize: f.featured ? 18 : 16, color: Colors.white)),
+                      Text(f.title, style: TextStyle(fontWeight: FontWeight.w900, fontSize: f.featured ? 18 : 16, color: Colors.white)),
                       const SizedBox(height: 5),
-                      Text(f.subtitle, textDirection: TextDirection.rtl, style: TextStyle(fontWeight: FontWeight.w500, fontSize: f.featured ? 13.5 : 13, height: 1.5, color: Colors.white.withValues(alpha: f.featured ? 0.82 : 0.72))),
+                      Text(f.subtitle, style: TextStyle(fontWeight: FontWeight.w500, fontSize: f.featured ? 13.5 : 13, height: 1.5, color: Colors.white.withValues(alpha: f.featured ? 0.82 : 0.72))),
                       if (f.trailing != null) ...[const SizedBox(height: 9), f.trailing!],
                     ],
                   ),
@@ -305,6 +307,8 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
   }
 
   Widget _buildBottomButton() {
+    final loc = AppLocalizations.of(context)!;
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
     final fade = _fadeIn(0.75, 1.0);
     return Positioned(
       left: 0,
@@ -341,12 +345,12 @@ class _WhatsNewScreenState extends State<WhatsNewScreen> with TickerProviderStat
                 ],
               ),
               alignment: Alignment.center,
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('בואו נתחיל', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF2A1740))),
-                  SizedBox(width: 8),
-                  Text('←', style: TextStyle(fontSize: 16, color: Color(0xFF2A1740))),
+                  Text(loc.whatsNewGetStartedButton, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF2A1740))),
+                  const SizedBox(width: 8),
+                  Text(isRtl ? '←' : '→', style: const TextStyle(fontSize: 16, color: Color(0xFF2A1740))),
                 ],
               ),
             ),

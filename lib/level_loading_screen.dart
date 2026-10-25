@@ -7,6 +7,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'logo_level_screen.dart';
+import 'l10n/app_localizations.dart';
 
 class LevelLoadingScreen extends StatefulWidget {
   final int puzzleId;
@@ -26,7 +27,7 @@ class LevelLoadingScreen extends StatefulWidget {
 
 class _LevelLoadingScreenState extends State<LevelLoadingScreen> with SingleTickerProviderStateMixin {
   late final AnimationController _spinController;
-  late final String _tip;
+  late final int _tipIndex;
   // 🛠️ תוקן באג קריטי: קודם המסך הזה היה עושה pushReplacement למסך
   // החידה (LogoLevelScreen) - כלומר פותח route חדש לגמרי במקומו. זה
   // "שבר" את שרשרת ה-Future של ה-Navigator.push המקורי שממנו
@@ -39,20 +40,22 @@ class _LevelLoadingScreenState extends State<LevelLoadingScreen> with SingleTick
   // מסך השלבים לחידה, וה-.then() המקורי מתעורר בדיוק כשלוחצים "חזרה" מהחידה.
   bool _showOverlay = true;
 
-  // 💡 מאגר טיפים קצרים על מנגנוני המשחק - נבחר אחד אקראי בכל פעם שהמסך נטען
-  static const List<String> _tips = [
-    "רצף של 5 תשובות נכונות מכפיל את ה-XP שתקבלו בשלב הבא",
-    "נגמרו המטבעות? אפשר לצפות בפרסומת ולקבל רמז אות אחת בחינם",
-    "פתרון עצמאי (בלי רמזים) מזכה תמיד ביותר XP מפתרון עם רמז",
-    "במצב אתגר רנדומלי הרצף נשמר גם כשיוצאים - הוא מתאפס רק אם טועים במילה",
-    "כל רמז-אות שמשתמשים בו מוריד נקודת XP אחת מהפרס על פתרון השלב",
-    "אפשר להזמין חברים למשחק ולהתחרות יחד על המקום הראשון בטבלה הארצית",
-  ];
+  // 💡 מספר הטיפים הקצרים על מנגנוני המשחק - נבחר אחד אקראי בכל פעם שהמסך נטען
+  static const int _tipCount = 6;
+
+  List<String> _tips(AppLocalizations loc) => [
+        loc.levelLoadingTip1,
+        loc.levelLoadingTip2,
+        loc.levelLoadingTip3,
+        loc.levelLoadingTip4,
+        loc.levelLoadingTip5,
+        loc.levelLoadingTip6,
+      ];
 
   @override
   void initState() {
     super.initState();
-    _tip = _tips[Random().nextInt(_tips.length)];
+    _tipIndex = Random().nextInt(_tipCount);
     _spinController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1300))..repeat();
     // ⏱️ טעינה "מדומה" קצרה - מספיקה כדי שהמעבר לא יורגש כ"קפיצה" פתאומית,
     // אבל קצרה מספיק שלא תעצבן שחקן שממהר לשחק. בזמן הזה החידה כבר נבנית
@@ -71,6 +74,8 @@ class _LevelLoadingScreenState extends State<LevelLoadingScreen> with SingleTick
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    final tip = _tips(loc)[_tipIndex];
     return Stack(
       children: [
         // 🧩 מסך החידה עצמו - נבנה תמיד, גם בזמן שהטעינה עדיין מוצגת מעליו.
@@ -149,9 +154,9 @@ class _LevelLoadingScreenState extends State<LevelLoadingScreen> with SingleTick
                               ],
                             ),
                             const SizedBox(height: 26),
-                            const Text("מכינים את השלב…", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                            Text(loc.levelLoadingTitle, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
                             const SizedBox(height: 5),
-                            Text(widget.categoryLabel, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500)),
+                            Text(widget.categoryLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500)),
                             const SizedBox(height: 26),
                             // כרטיס "ידעת?" עם טיפ אקראי
                             Container(
@@ -164,9 +169,9 @@ class _LevelLoadingScreenState extends State<LevelLoadingScreen> with SingleTick
                               ),
                               child: Column(
                                 children: [
-                                  const Text("ידעת?", style: TextStyle(color: Color(0xFFFFD86B), fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
+                                  Text(loc.levelLoadingDidYouKnow, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
                                   const SizedBox(height: 5),
-                                  Text(_tip, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.62), fontSize: 12.5, fontWeight: FontWeight.w500, height: 1.4)),
+                                  Text(tip, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.62), fontSize: 12.5, fontWeight: FontWeight.w500, height: 1.4)),
                                 ],
                               ),
                             ),

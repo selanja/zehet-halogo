@@ -39,6 +39,11 @@ class AchievementsService {
     AchievementDef('days_7', 'קבועים', 'שחקו ב-7 ימים שונים', 'daysPlayed', 7, 80, '🗓️'),
     AchievementDef('days_30', 'נאמנים', 'שחקו ב-30 ימים שונים', 'daysPlayed', 30, 250, '💎'),
     AchievementDef('league_gold', 'ליגת הזהב', 'הגיעו לליגת זהב', 'leagueTier', 2, 150, '🥇'),
+    AchievementDef('tafzoret_1', 'צייד תפזורת', 'סיימו עולם אחד בתפזורת', 'tafzoretWorldsCompleted', 1, 30, '🧩'),
+    AchievementDef('tafzoret_5', 'מאסטר תפזורת', 'סיימו 5 עולמות בתפזורת', 'tafzoretWorldsCompleted', 5, 100, '🗂️'),
+    AchievementDef('tafzoret_15', 'אלוף התפזורת', 'סיימו 15 עולמות בתפזורת', 'tafzoretWorldsCompleted', 15, 300, '🏅'),
+    AchievementDef('tournament_1', 'אלוף היום', 'סיימו במקום הראשון בטורניר יומי', 'tournamentWins', 1, 50, '🏆'),
+    AchievementDef('tournament_5', 'אלוף סדרתי', 'סיימו במקום הראשון ב-5 טורנירים יומיים', 'tournamentWins', 5, 150, '👑'),
   ];
 
   static const String _claimedKey = 'achClaimed';

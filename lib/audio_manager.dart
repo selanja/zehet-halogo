@@ -389,10 +389,52 @@ class AudioManager {
   static Future<void> startBackgroundMusic() async {
     if (!soundEnabled) return;
     if (_musicStarted) return;
+    // 🐛 תוקן: באג אמיתי שמנע מהמוזיקה להתנגן בכלל בחלק מהריצות - בניגוד
+    // להערה אצל _restartInFlight (שחושבת שהמנעול כבר מכסה "כל ניסיון
+    // הפעלה-מחדש"), הוא בפועל *לא* כיסה את הקריאה הראשונה הזו. ב-
+    // main_menu_screen.dart.initState, startBackgroundMusic() ו-
+    // ensureMusicPlaying() נקראות ברצף מיידי (בלי await ביניהן) מאותו
+    // postFrameCallback. כש-ensureMusicPlaying רצה, _musicPlayer.state
+    // עדיין "stopped" (ה-play() למטה עוד לא הספיק לרוץ אפילו צעד אחד -
+    // עדיין מחכים ל-loadSettings/_ensureGlobalConfig הא-סינכרוניים) - אז
+    // ensureMusicPlaying "חושבת" שהמוזיקה נתקעה ומפעילה ניסיון הפעלה-מחדש
+    // *משלה* במקביל (seek+resume/play חדש על אותו _musicPlayer) - בדיוק
+    // התקלה שה-lock הזה נועד למנוע, רק שהצד השני של המרוץ (הקריאה
+    // הראשונה כאן) מעולם לא הצטרף אליו. התוצאה: שני play() מתחרים על
+    // אותו MediaPlayer, ולפעמים המוזיקה פשוט לא יוצאת מזה מתנגנת בכלל.
+    // התיקון: גם הקריאה הראשונה נועלת את אותו מנעול, *סינכרונית* (לפני
+    // כל await), כדי ש-ensureMusicPlaying שרץ מיד אחריה יראה אותו כבר
+    // נעול ויוותר בלי להתערב.
+    if (_restartInFlight) return;
     _musicStarted = true;
+    _restartInFlight = true;
     try {
       await loadSettings();
       await _ensureGlobalConfig();
+      // 🐛 תוקן: "מוזיקה כפולה/צורחת/תקועה" (נמשכה גם אחרי תיקון מרוץ
+      // התזמון וגם אחרי המרה ל-MP3) - _ensureGlobalConfig למעלה קובע
+      // הקשר אודיו *גלובלי* אחד לכל הנגנים (כולל המוזיקה), עם
+      // contentType: sonification. לפי התיעוד הרשמי של audioplayers,
+      // sonification מיועד ל"צליל שמלווה פעולת משתמש כמו ביפ או קליק...
+      // בעיקר צלילים קצרים וסינתטיים" - בדיוק הפוך ממוזיקת רקע רציפה
+      // בלופ! Android עשוי להפעיל שרשרת עיבוד אודיו (אפקטים/דחיסה)
+      // שמיועדת לצלילי UI קצרים על זרם מוזיקה רציף - זה יכול ליצור בדיוק
+      // את סוג התקלות שתוארו (עיוות/הכפלה נתפסת/"תקיעות"). לנגן המוזיקה
+      // הספציפי הזה (בניגוד לנגני האפקטים הקצרים, ששם sonification כן
+      // מתאים) - הקשר אודיו משלו עם contentType: music/usage: media, בדיוק
+      // כמו ברירת המחדל התקנית של החבילה עצמה (AudioContextAndroid()).
+      await _musicPlayer.setAudioContext(AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: false,
+          stayAwake: false,
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.none,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.ambient,
+        ),
+      ));
       // 🩹 תוקן: ReleaseMode.stop (לא loop!) + לופ ידני דרך onPlayerComplete
       // למטה - ראו ההסבר המלא מעל למה זה הכרחי (תקלת "קפיאה" ב-~10 שניות).
       await _musicPlayer.setReleaseMode(ReleaseMode.stop);
@@ -416,10 +458,29 @@ class AudioManager {
           _restartInFlight = false;
         }
       });
-      await _musicPlayer.play(AssetSource('audio/bg_music.ogg'));
+      // 🐛 תוקן: "מוזיקה כפולה וצורחת" - גם עם הנעילה הסינכרונית מעל, עדיין
+      // יכול להיות שהמוזיקה כבר מתנגנת בפועל ברמת הפלטפורמה כש-
+      // startBackgroundMusic נקראת שוב (למשל אם ensureMusicPlaying רצה
+      // ממש ברגע שה-state הפנימי של audioplayers עדיין "stopped" זמנית,
+      // לפני שהתעדכן בפועל ל-"playing", אחרי ש-play() כבר הספיק להתחיל -
+      // פער תזמון שהנעילה למעלה לא תמיד תופסת). בלי stop() מפורש כאן,
+      // play() חדש על נגן שכבר מנגן יכול "לשכב" מעל השכבה הקיימת במקום
+      // להחליף אותה - שני עותקים של אותו שיר מתנגנים יחד, לא מסונכרנים,
+      // נשמע בדיוק כמו "כפול וצורח". stop() לפני play() מבטיח שאף פעם לא
+      // יהיו שתי שכבות בו-זמנית, גם אם עדיין יש מרוץ תזמון כלשהו.
+      await _musicPlayer.stop();
+      // 🐛 תוקן: "מוזיקה כפולה/צורחת/תקועה" שהמשיכה להישמע גם אחרי תיקון
+      // מרוץ התזמון למעלה - bg_music.ogg היה קובץ ה-OGG/Vorbis *היחיד*
+      // בכל תיקיית האודיו (כל שאר הקבצים, כולל אפקטים שתמיד נשמעו תקין,
+      // הם WAV/MP3) - חשד סביר לבעיות פענוח ספציפיות ל-Vorbis בחלק
+      // מהמכשירים/אמולטורים (תקלה ידועה-ish, לא אחידה בין כל מכשירי
+      // Android). הומר ל-MP3 (אותו פורמט שכבר מוכח כעובד נקי בפרויקט הזה).
+      await _musicPlayer.play(AssetSource('audio/bg_music.mp3'));
     } catch (e) {
       _musicStarted = false;
       debugPrint('שגיאת מוזיקת רקע: $e');
+    } finally {
+      _restartInFlight = false;
     }
   }
 
@@ -474,19 +535,18 @@ class AudioManager {
         return;
       }
       if (state == PlayerState.stopped || state == PlayerState.completed) {
-        // ראו הסבר ליד _restartInFlight - אם הלופ הידני של onPlayerComplete
-        // כבר באמצע הפעלה-מחדש (מצב "completed" הרגעי הזה בדיוק הוא מה
-        // שהוא נועד לתפוס) - לא מפעילים כאן ניסיון שני עליו במקביל.
+        // ראו הסבר ליד _restartInFlight - אם יש כבר ניסיון הפעלה/הפעלה-
+        // מחדש באמצע (בין אם מהלופ הידני של onPlayerComplete, מהקריאה
+        // הראשונית ב-initState, או מקריאה מקבילה אחרת ל-ensureMusicPlaying
+        // עצמה) - לא מפעילים כאן ניסיון נוסף עליו במקביל. 🩹 המנעול עצמו
+        // (הגדרה ושחרור) עבר להיות אחריותה הבלעדית של startBackgroundMusic
+        // - נעילה כפולה כאן הייתה הופכת את הקריאה שלה למטה לפעולה ריקה
+        // (רואה את המנעול כבר נעול ע"י עצמה ומחזירה מיד בלי להתחיל כלום).
         if (_restartInFlight) return;
         // המוזיקה נעצרה/הסתיימה לגמרי - מתחילים מחדש מאפס
         debugPrint('AudioManager.ensureMusicPlaying: music was ${state.name}, restarting');
-        _restartInFlight = true;
-        try {
-          _musicStarted = false;
-          await startBackgroundMusic();
-        } finally {
-          _restartInFlight = false;
-        }
+        _musicStarted = false;
+        await startBackgroundMusic();
       }
     } catch (e) {
       debugPrint('שגיאת ensureMusicPlaying: $e');

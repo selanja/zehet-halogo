@@ -48,4 +48,28 @@ class AnalyticsService {
       debugPrint('שגיאת Analytics logCompletedRegistration: $e');
     }
   }
+
+  /// אירוע מימוש קוד קופון - בעיקר כדי לעקוב אחרי קודים שמופצים בערוצים
+  /// חיצוניים (למשל קוד "TIKTOK" בביו של הפרופיל בטיקטוק): מאפשר לראות
+  /// ב-Firebase Analytics כמה משתמשים הגיעו דרך כל קוד, בלי לחפור ידנית
+  /// באוסף couponRedemptions ב-Firestore (ראו coupon_service.dart).
+  static Future<void> logPromoCodeRedeemed(String code) async {
+    try {
+      await _analytics.logEvent(name: 'promo_code_redeemed', parameters: {'code': code});
+    } catch (e) {
+      debugPrint('שגיאת Analytics logPromoCodeRedeemed: $e');
+    }
+  }
+
+  /// אירוע התקנה שנקלטה דרך קישור הזמנה אישי (ראו referral_service.dart) -
+  /// מאפשר לראות ב-Firebase Analytics כמה התקנות הגיעו דרך כל קוד הזמנה
+  /// ספציפי (כולל קודים שמופצים בערוצים חיצוניים כמו אינסטגרם/טיקטוק,
+  /// לא רק הזמנות בין חברים בתוך האפליקציה).
+  static Future<void> logReferralClaimed(String code) async {
+    try {
+      await _analytics.logEvent(name: 'referral_claimed', parameters: {'code': code});
+    } catch (e) {
+      debugPrint('שגיאת Analytics logReferralClaimed: $e');
+    }
+  }
 }

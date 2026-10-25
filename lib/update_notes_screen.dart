@@ -13,6 +13,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'app_background.dart';
+import 'l10n/app_localizations.dart';
 
 class UpdateNotesScreen extends StatefulWidget {
   const UpdateNotesScreen({super.key});
@@ -46,7 +47,7 @@ class _UpdateNotesScreenState extends State<UpdateNotesScreen> {
       }).toList();
       if (mounted) setState(() { _notes = notes; _loading = false; });
     } catch (e) {
-      if (mounted) setState(() { _error = 'לא הצלחנו לטעון את העדכונים - נסה שוב מאוחר יותר'; _loading = false; });
+      if (mounted) setState(() { _error = AppLocalizations.of(context)!.updateNotesLoadError; _loading = false; });
     }
   }
 
@@ -81,12 +82,11 @@ class _UpdateNotesScreenState extends State<UpdateNotesScreen> {
               child: const Padding(padding: EdgeInsets.all(9), child: Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20)),
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              "מה חדש במשחק",
+              AppLocalizations.of(context)!.updateNotesTitle,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
             ),
           ),
           const SizedBox(width: 38),
@@ -101,7 +101,7 @@ class _UpdateNotesScreenState extends State<UpdateNotesScreen> {
     }
     if (_error != null) {
       return Center(
-        child: Text(_error!, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14)),
+        child: Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14)),
       );
     }
     if (_notes.isEmpty) {
@@ -109,9 +109,8 @@ class _UpdateNotesScreenState extends State<UpdateNotesScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 30),
           child: Text(
-            "אין עדיין הערות עדכון - חזרו לבדוק בקרוב",
+            AppLocalizations.of(context)!.updateNotesEmptyMessage,
             textAlign: TextAlign.center,
-            textDirection: TextDirection.rtl,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
           ),
         ),
@@ -138,10 +137,9 @@ class _UpdateNotesScreenState extends State<UpdateNotesScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               Expanded(
-                child: Text(note.title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+                child: Text(note.title, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
               ),
               if (note.publishedAt != null)
                 Text(_formatDate(note.publishedAt!), style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700)),
@@ -149,7 +147,7 @@ class _UpdateNotesScreenState extends State<UpdateNotesScreen> {
           ),
           if (note.body.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(note.body, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 13.5, height: 1.5)),
+            Text(note.body, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 13.5, height: 1.5)),
           ],
         ],
       ),

@@ -24,13 +24,26 @@ class AppNotification {
     AppNotificationType type = AppNotificationType.info,
     Color? color,
     Duration duration = const Duration(seconds: 3),
+    // 🆕 כשניתן - ההתראה הופכת ל"קליקבילית" (למשל ניווט למסך אחר), בלי
+    // לדרוש כפתור נפרד: לחיצה סוגרת את ההתראה *וגם* מפעילה את הפעולה.
+    // ראו promo_service.dart - התראה שאפשר להתעלם ממנה (נעלמת לבד) במקום
+    // דיאלוג חוסם עם כפתורים, פחות "נודניקית".
+    VoidCallback? onTap,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
     _dismiss();
 
     final entry = OverlayEntry(
-      builder: (_) => _AppNotificationBanner(message: message, type: type, color: color, onTap: _dismiss),
+      builder: (_) => _AppNotificationBanner(
+        message: message,
+        type: type,
+        color: color,
+        onTap: () {
+          _dismiss();
+          onTap?.call();
+        },
+      ),
     );
     _currentEntry = entry;
     overlay.insert(entry);
@@ -129,7 +142,6 @@ class _AppNotificationBannerState extends State<_AppNotificationBanner> with Sin
                   boxShadow: [BoxShadow(color: bg.withValues(alpha: 0.55), blurRadius: 24, offset: const Offset(0, 10))],
                 ),
                 child: Row(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(icon, color: Colors.white, size: 22),
@@ -137,7 +149,6 @@ class _AppNotificationBannerState extends State<_AppNotificationBanner> with Sin
                     Expanded(
                       child: Text(
                         widget.message,
-                        textDirection: TextDirection.rtl,
                         style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800, height: 1.3),
                       ),
                     ),

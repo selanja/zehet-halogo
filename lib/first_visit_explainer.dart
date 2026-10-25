@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'audio_manager.dart';
+import 'l10n/app_localizations.dart';
 
 class FirstVisitExplainer {
   FirstVisitExplainer._();
@@ -58,11 +59,13 @@ class ExplainerPoint {
 /// כרטיסיית הסבר מלאה-מסך (הדהוי כהה + כרטיס לבן ממורכז) - מוסיפים
 /// כ-child אחרון בתוך ה-Stack הראשי של כל מסך (אחרי AppBottomNav).
 Widget buildFirstVisitOverlay({
+  required BuildContext context,
   required String title,
   required List<ExplainerPoint> points,
   required VoidCallback onDismiss,
-  String buttonLabel = 'הבנתי!',
+  String? buttonLabel,
 }) {
+  buttonLabel ??= AppLocalizations.of(context)!.explainerGotItButton;
   return Positioned.fill(
     child: Stack(
       children: [
@@ -86,7 +89,7 @@ Widget buildFirstVisitOverlay({
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(title, textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                  Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 16),
                   for (int i = 0; i < points.length; i++) ...[
                     _explainerRow(points[i]),
@@ -121,7 +124,6 @@ Widget buildFirstVisitOverlay({
 
 Widget _explainerRow(ExplainerPoint p) {
   return Row(
-    textDirection: TextDirection.rtl,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(p.emoji, style: const TextStyle(fontSize: 22)),
@@ -130,9 +132,9 @@ Widget _explainerRow(ExplainerPoint p) {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(p.title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
+            Text(p.title, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
             const SizedBox(height: 2),
-            Text(p.desc, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w600, height: 1.3)),
+            Text(p.desc, style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w600, height: 1.3)),
           ],
         ),
       ),

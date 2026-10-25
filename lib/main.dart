@@ -20,6 +20,7 @@ import 'duel_service.dart'; // 🆕 declineInvite - מודיעים למזמין 
 import 'logo_race_service.dart'; // 🆕 הזמנות חברים נכנסות עכשיו יכולות להיות גם למרוץ, לא רק לדו-קרב
 import 'energy_service.dart'; // 🆕 דיאלוג "הזמנה מחבר" מציג כמה אנרגיה יש למשתמש
 import 'notification_manager.dart';
+import 'game_settings.dart'; // 🆕 העדפות משחק קטנות (למשל "אישור לפני קניית רמז") - טאב "משחק" בהגדרות
 import 'notification_service.dart'; // 🆕 התראות מקומיות: אנרגיה מלאה, משימות חדשות, חזרה למשחק
 import 'push_notification_service.dart'; // 🆕 Push (FCM) - שידורים ידניים/אוטומטיים מהשרת
 import 'meta_events_service.dart'; // 🆕 מעקב פרסומות Meta (פייסבוק/אינסטגרם)
@@ -34,6 +35,9 @@ import 'logo_race_screen.dart';
 import 'device_id.dart';
 import 'app_loading_screen.dart'; // 🆕 מסך הטעינה החדש בזמן _checking (ראו AppRootGate)
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_localizations.dart';
+import 'locale_controller.dart'; // 🆕 שפת האפליקציה (עברית/אנגלית) - ראו LocaleController
 
 // 🍎 App Tracking Transparency (ATT) - חובה של אפל: כל אפליקציה שמשתמשת
 // ב-IDFA לצורך פרסומות ממוקדות (וזה בדיוק מה ש-Google Mobile Ads/AdMob
@@ -171,6 +175,7 @@ void main() async {
   // מטבעות!" יפה (לא רק לזכות בשקט) צריך BuildContext/Navigator שעדיין
   // לא קיים כאן, לפני runApp().
   await NotificationManager.init(); // 🔔 התראות מקומיות (תזכורת בונוס מטבעות)
+  await GameSettings.loadSettings(); // 🆕 העדפות משחק קטנות (אישור לפני קניית רמז וכו')
   // 🆕 היו קיימים כבר בקוד (energy_service.dart קורא להם) אבל בלי
   // האתחול הזה הם היו no-op שקט לגמרי - שום התראת "אנרגיה מלאה" או
   // "חזרה למשחק" לא באמת נשלחה עד עכשיו. עטופים ב-try/catch כמו כל
@@ -204,15 +209,82 @@ void main() async {
   ScreenshotGuardService.onScreenshotTaken = () {
     final ctx = rootNavigatorKey.currentContext;
     if (ctx == null) return;
-    AppNotification.show(ctx, 'שים לב: צילומי מסך מהמשחק אסורים לשיתוף מחוץ לאפליקציה', type: AppNotificationType.warning, duration: const Duration(seconds: 4));
+    AppNotification.show(ctx, AppLocalizations.of(ctx)!.mainScreenshotWarning, type: AppNotificationType.warning, duration: const Duration(seconds: 4));
   };
   AudioManager.warmUpClick(); // כדי שגם הלחיצה הראשונה תהיה מיידית
-  runApp(MaterialApp(
-    navigatorKey: rootNavigatorKey,
-    debugShowCheckedModeBanner: false,
-    home: const AppLifecycleManager(child: AppRootGate()),
-  ));
+  await localeController.init(); // 🆕 טוען את שפת האפליקציה (שמורה, או שפת המכשיר בריצה ראשונה) לפני runApp
+  runApp(const AppRoot());
   WidgetsBinding.instance.addPostFrameCallback((_) => _initTrackingAndAds());
+}
+
+// 🆕 עטיפה דקה מעל MaterialApp כדי שהחלפת שפה ב-LocaleController (ראו
+// locale_controller.dart) תפעיל רינדור מחדש של כל האפליקציה - MaterialApp
+// עצמו היה עובר קודם ל-runApp ישירות, בלי שום State שיכול להגיב לשינוי שפה.
+class AppRoot extends StatefulWidget {
+  const AppRoot({super.key});
+
+  @override
+  State<AppRoot> createState() => _AppRootState();
+}
+
+class _AppRootState extends State<AppRoot> {
+  @override
+  void initState() {
+    super.initState();
+    localeController.addListener(_onLocaleChanged);
+  }
+
+  @override
+  void dispose() {
+    localeController.removeListener(_onLocaleChanged);
+    super.dispose();
+  }
+
+  void _onLocaleChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      navigatorKey: rootNavigatorKey,
+      debugShowCheckedModeBanner: false,
+      locale: localeController.locale,
+      supportedLocales: LocaleController.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      // 🆕 תמיכה בטאבלטים/אייפדים: כל המסכים עוצבו למידות טלפון (רוב
+      // הקוד מניח ~380-430dp רוחב, כולל חישובי מיקום מוחלטים לפי
+      // MediaQuery.of(context).size.width, לא רק LayoutBuilder יחסי).
+      // במקום לעצב מחדש כל מסך, "ממסגרים" את כל האפליקציה לרוחב טלפון
+      // קבוע וממורכזים אותה על מסכים רחבים (טאבלט/אייפד/דסקטופ) - בדיוק
+      // כמו שרוב האפליקציות הפופולריות בסגנון טלפון מתנהגות באייפד.
+      // ה-MediaQuery המדווח כלפי פנים גם מתוקן לאותו רוחב מצומצם, כך
+      // שחישובי מיקום מוחלטים (למשל Positioned לפי size.width/2) ימשיכו
+      // להיות נכונים בתוך המסגרת, ולא יניחו את הרוחב המלא והשגוי של הטאבלט.
+      builder: (context, child) {
+        if (child == null) return const SizedBox.shrink();
+        final mq = MediaQuery.of(context);
+        const double phoneMaxWidth = 520;
+        if (mq.size.width <= phoneMaxWidth) return child;
+        return Container(
+          color: const Color(0xFF0B0818),
+          alignment: Alignment.center,
+          child: SizedBox(
+            width: phoneMaxWidth,
+            height: mq.size.height,
+            child: MediaQuery(
+              data: mq.copyWith(size: Size(phoneMaxWidth, mq.size.height)),
+              child: ClipRect(child: child),
+            ),
+          ),
+        );
+      },
+      home: const AppLifecycleManager(child: AppRootGate()),
+    );
+  }
 }
 
 // 🆕 מפתח ניווט גלובלי - כדי שאפשר יהיה להציג SnackBar/דיאלוג (למשל
@@ -242,11 +314,22 @@ class _AppRootGateState extends State<AppRootGate> {
   // מתעדכנים כאן, בכל שלב בפועל של _runCheck, לא מספרים מומצאים. ראו
   // ההערה המלאה ב-app_loading_screen.dart למה זה תוקן ככה.
   final ValueNotifier<double> _loadProgress = ValueNotifier(0.05);
-  final ValueNotifier<String> _loadStatus = ValueNotifier('בודקים גרסה...');
+  final ValueNotifier<String> _loadStatus = ValueNotifier('');
+  bool _startedCheck = false; // 🐛 ראו didChangeDependencies - מונע הרצה כפולה
 
+  // 🐛 תוקן: AppLocalizations.of(context) נקרא פעם קודם בתוך initState()
+  // (ישירות, ועוד פעם בעקיפין כברירת ה-await הראשונה של _runCheck, שנקראה
+  // גם היא מ-initState) - זה קרס עם "dependOnInheritedWidgetOfExactType...
+  // was called before _AppRootGateState.initState() completed", כי בשלב
+  // initState() ה-Localizations (InheritedWidget) עדיין לא זמין ל-context
+  // הזה. didChangeDependencies() נקרא תמיד מיד אחרי initState(), ברגע שבו
+  // ה-InheritedWidgets כבר זמינים - בדיוק הזמן הנכון לקריאה הראשונה הזו.
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_startedCheck) return;
+    _startedCheck = true;
+    _loadStatus.value = AppLocalizations.of(context)!.mainCheckingVersion;
     _runCheck();
   }
 
@@ -275,18 +358,19 @@ class _AppRootGateState extends State<AppRootGate> {
   }
 
   Future<void> _runCheck() async {
-    await _pacedProgress(0.12, 'מתחברים לשרת...');
+    final loc = AppLocalizations.of(context)!;
+    await _pacedProgress(0.12, loc.mainConnectingToServer);
     final result = await UpdateChecker.checkForRequiredUpdate();
-    await _pacedProgress(0.5, 'בודקים גרסה...');
+    await _pacedProgress(0.5, loc.mainCheckingVersion);
     // 🆕 בודקים "חזרה למשחק" רק אם אין חסימת גרסה - אין טעם להכניס שחקן
     // ישר לתוך דו-קרב/מרוץ שהוא ממילא ייחסם תוך שנייה על ידי UpdateRequiredScreen.
     if (result == null) {
-      _loadStatus.value = 'בודקים משחק פעיל...';
+      _loadStatus.value = loc.mainCheckingActiveGame;
       await _checkResumeMatch();
     }
-    await _pacedProgress(0.9, 'כמעט מוכנים...');
+    await _pacedProgress(0.9, loc.mainAlmostReady);
     _loadProgress.value = 1.0;
-    _loadStatus.value = 'מוכנים';
+    _loadStatus.value = loc.mainReady;
     await Future.delayed(_minStepGap);
     if (!mounted) return;
     setState(() {
@@ -403,9 +487,11 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
   Future<void> _checkReferralAndShowPopup() async {
     final result = await ReferralService.checkForReferral();
     if (result == null || !mounted) return;
+    final subtitle = AppLocalizations.of(context)!.mainReferralDownloadedSubtitle(result.referrerName);
     final prefs = await SharedPreferences.getInstance();
     final currentCoins = prefs.getInt('coins') ?? 15;
-    _showBonusPopup(rewardAmount: result.coins, currentCoins: currentCoins, subtitle: 'כי הורדת את המשחק דרך ההזמנה של ${result.referrerName}! 🎉');
+    if (!mounted) return;
+    _showBonusPopup(rewardAmount: result.coins, currentCoins: currentCoins, subtitle: subtitle);
   }
 
   void _onReferralBonusReceived() {
@@ -413,7 +499,7 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
     if (amount == null || amount <= 0) return;
     SharedPreferences.getInstance().then((prefs) {
       if (!mounted) return;
-      _showBonusPopup(rewardAmount: amount, currentCoins: prefs.getInt('coins') ?? 15, subtitle: 'חבר הצטרף למשחק דרך ההזמנה שלך! 🎉');
+      _showBonusPopup(rewardAmount: amount, currentCoins: prefs.getInt('coins') ?? 15, subtitle: AppLocalizations.of(context)!.mainReferralFriendJoinedSubtitle);
     });
   }
 
@@ -482,7 +568,7 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager> with WidgetsB
       return;
     }
     final fromId = (invite['fromId'] as String?) ?? '';
-    final fromName = (invite['fromName'] as String?) ?? 'חבר';
+    final fromName = (invite['fromName'] as String?) ?? AppLocalizations.of(ctx)!.friendChallengeFriendFallback;
     // 🆕 "אתגר חבר" עכשיו תומך גם במרוץ - ההזמנה הנכנסת חייבת לדעת לאיזה
     // מוד היא שייכת (ראו FriendService.notifyFriendOfInvite), כי הקוד
     // חי באוסף Firestore שונה לגמרי לכל מוד. ברירת מחדל true (דו-קרב)
@@ -726,6 +812,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     final questions = widget.isDuel ? DuelService.questionsForStake(widget.stake) : LogoRaceService.stagesForStake(widget.stake);
     final prize = widget.stake * 2;
     final total = (widget.isDuel ? DuelService.inviteExpiry : LogoRaceService.inviteExpiry).inSeconds;
@@ -733,13 +820,13 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
     final min = _remaining.inMinutes;
     final sec = _remaining.inSeconds % 60;
 
-    String h2hText = widget.isDuel ? "עדיין לא שיחקתם דו-קרב אחד נגד השני" : "מוזמן למרוץ לוגואים 1 על 1";
+    String h2hText = widget.isDuel ? loc.mainNoHeadToHeadYet : loc.mainInvitedToRace;
     if (widget.isDuel && _h2h != null) {
       final mine = _h2h!['mine'] ?? 0;
       final theirs = _h2h!['theirs'] ?? 0;
       if (mine > 0 || theirs > 0) {
-        final side = mine == theirs ? "תיקו" : (mine > theirs ? "לטובתך" : "לטובתו");
-        h2hText = "מאזן ביניכם: $mine — $theirs $side";
+        final side = mine == theirs ? loc.mainTie : (mine > theirs ? loc.mainInYourFavor : loc.mainInTheirFavor);
+        h2hText = loc.mainHeadToHeadBalance(mine, theirs, side);
       }
     }
 
@@ -762,7 +849,6 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
               children: [
                 IntrinsicHeight(
                   child: Row(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(child: _avatarCol(letter: widget.fromName.trim().isNotEmpty ? widget.fromName.trim().substring(0, 1) : '?', name: widget.fromName, glow: true)),
@@ -776,24 +862,24 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                           child: Text('VS', style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 14, fontWeight: FontWeight.w900)),
                         ),
                       ),
-                      Expanded(child: _avatarCol(letter: 'א', name: 'אתה', glow: false)),
+                      Expanded(child: _avatarCol(letter: loc.duelLobbyYouLabel.isNotEmpty ? loc.duelLobbyYouLabel.substring(0, 1) : '?', name: loc.duelLobbyYouLabel, glow: false)),
                     ],
                   ),
                 ),
                 const SizedBox(height: 14),
-                Text("${widget.fromName} מזמין אותך!", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+                Text(loc.mainInviteFromName(widget.fromName), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 5),
-                Text(h2hText, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(h2hText, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 16),
                 Row(
                   children: [
                     // 🩹 הוסר אימוג'י המטבע (🪙) מהתוויות - בפונט של חלק מהמכשירים
                     // (בעיקר סמסונג/אנדרואיד ישן) הוא לא נתמך ומוצג כריבוע ריק.
-                    _statCell(value: '${widget.stake}', label: 'הימור', bg: const Color(0xFFFFC64B)),
+                    _statCell(value: '${widget.stake}', label: loc.duelLobbyStatStake, bg: const Color(0xFFFFC64B)),
                     const SizedBox(width: 8),
-                    _statCell(value: '$questions', label: 'לוגואים', bg: const Color(0xFF60A5FA)),
+                    _statCell(value: '$questions', label: loc.duelLobbyStatLogos, bg: const Color(0xFF60A5FA)),
                     const SizedBox(width: 8),
-                    _statCell(value: '$prize', label: 'למנצח', bg: const Color(0xFF34D399)),
+                    _statCell(value: '$prize', label: loc.duelLobbyStatWinner, bg: const Color(0xFF34D399)),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -801,7 +887,6 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                   padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), color: Colors.black.withValues(alpha: 0.24)),
                   child: Row(
-                    textDirection: TextDirection.rtl,
                     children: [
                       const Text('⏳', style: TextStyle(fontSize: 13)),
                       const SizedBox(width: 9),
@@ -837,10 +922,10 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                       ),
                       child: Column(
                         children: [
-                          Text(widget.isDuel ? "מקבל את האתגר ⚔" : "מקבל את האתגר 🏁", textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900)),
+                          Text(widget.isDuel ? loc.mainAcceptDuelChallenge : loc.mainAcceptRaceChallenge, style: const TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900)),
                           const SizedBox(height: 2),
                           Text(
-                            _loadedEnergy ? "עולה ${EnergyService.duelCost} ⚡ · יש לך $_energy" : "עולה ${EnergyService.duelCost} ⚡",
+                            _loadedEnergy ? loc.mainAcceptCostWithEnergy(EnergyService.duelCost, _energy) : loc.mainAcceptCost(EnergyService.duelCost),
                             style: TextStyle(color: const Color(0xFF40170F).withValues(alpha: 0.62), fontSize: 10.5, fontWeight: FontWeight.w900),
                           ),
                         ],
@@ -860,7 +945,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                           onTap: widget.onLater,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 13),
-                            child: Text("אחר כך", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                            child: Text(loc.accountLinkLaterButton, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
                           ),
                         ),
                       ),
@@ -875,7 +960,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                           onTap: widget.onDecline,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 13),
-                            child: Text("דחה", textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 14, fontWeight: FontWeight.w900)),
+                            child: Text(loc.mainDeclineButton, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 14, fontWeight: FontWeight.w900)),
                           ),
                         ),
                       ),
@@ -897,7 +982,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
                   gradient: const LinearGradient(colors: [Color(0xFFF43F5E), Color(0xFFBE123C)]),
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 6))],
                 ),
-                child: const Text('⚔ הזמנה לדו־קרב', style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
+                child: Text(loc.mainInviteBadge, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
               ),
             ),
           ),
@@ -947,7 +1032,6 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
         const SizedBox(height: 7),
         Text(
           name,
-          textDirection: TextDirection.rtl,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: glow ? const Color(0xFFFDA4AF) : const Color(0xFFFFD979), fontSize: 15, fontWeight: FontWeight.w900),
@@ -965,7 +1049,7 @@ class _IncomingInviteDialogState extends State<_IncomingInviteDialog> {
           children: [
             Text(value, style: TextStyle(color: bg, fontSize: 16, fontWeight: FontWeight.w900)),
             const SizedBox(height: 3),
-            Text(label, textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 9.5, fontWeight: FontWeight.w700)),
+            Text(label, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 9.5, fontWeight: FontWeight.w700)),
           ],
         ),
       ),

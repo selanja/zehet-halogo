@@ -38,6 +38,16 @@ class NotificationService {
   // 🆕 תזכורת "תזכיר לי מחר" - נלחצת ידנית ע"י השחקן במסך האתגר היומי
   // אחרי שסיים/ניצל את הניסיון של היום (ראו daily_challenge_screen.dart).
   static const int _dailyChallengeReminderNotificationId = 1030;
+  // 🆕 "הטורניר של אתמול הסתיים" - מתוזמנת 24 שעות אחרי ששיחקו בטורניר
+  // היומי, ומבוטלת אם הם כבר ראו את התוצאה באפליקציה לפני שההתראה נורתה
+  // (ראו tournament_service.dart). טווח 3000+ חדש ונפרד - ראו ההערה
+  // המתועדת ב-notification_manager.dart על התנגשות שכבר קרתה בעבר בין
+  // שתי המחלקות האלה כששתיהן השתמשו באותו מספר.
+  static const int _tournamentEndedNotificationId = 3001;
+  // 🆕 "הטורניר המתוזמן מתחיל" - נרשמת רק אם השחקן לחץ מפורשות "הירשמו
+  // מראש" (ראו ScheduledTournamentService.preRegisterForNext), לא
+  // אוטומטית כמו רוב שאר התזכורות בקובץ הזה.
+  static const int _scheduledTournamentStartNotificationId = 3002;
 
   /// לקרוא פעם אחת בהפעלת האפליקציה (ב-main.dart, לפני runApp או מיד
   /// אחריו). מבקש הרשאת התראות (חובה מ-Android 13+ ו-iOS).
@@ -171,7 +181,7 @@ class NotificationService {
     {'title': 'הליגה השבועית שלך מתקדמת', 'body': 'שחקנים אחרים כבר משחקים היום - אל תישאר מאחור בדירוג'},
     {'title': 'האתגר היומי מחכה', 'body': 'כמה לוגואים תזהה היום? יש רק הזדמנות אחת ליום'},
     {'title': 'אל תפסיד את הרצף שלך', 'body': 'כניסה קצרה היום שומרת על רצף הימי הכניסה שלך חי'},
-    {'title': 'הבאטל פאס שלך מתקדם', 'body': 'עוד כמה נקודות ואתה עולה רמה - משחק אחד קצר מספיק'},
+    {'title': 'הלוגו פאס שלך מתקדם', 'body': 'עוד כמה נקודות ואתה עולה רמה - משחק אחד קצר מספיק'},
   ];
 
   // 🆕 מתזמן תזכורת יומית אחת (לא יותר - ראו ההערה למעלה) לשעה 9 בבוקר
@@ -233,5 +243,84 @@ class NotificationService {
     } catch (_) {
       // לא קריטי - לא מפילים את האפליקציה בגלל תזכורת שלא הצליחה להתתזמן.
     }
+  }
+
+  static const AndroidNotificationDetails _tournamentEndedAndroidDetails = AndroidNotificationDetails(
+    'tournament_ended_channel',
+    'הטורניר היומי',
+    channelDescription: 'תזכורת שהטורניר היומי שהשתתפת בו הסתיים - בוא לראות איך הלכת',
+    importance: Importance.defaultImportance,
+    priority: Priority.defaultPriority,
+  );
+
+  // 🆕 נקרא מ-TournamentService.submitDayResult, אבל רק ביום האחרון של
+  // האתגר הרב-יומי (ראו day >= tournamentEventDays שם) - מתוזמנת ל-24
+  // שעות קדימה (בדיוק כשהתוצאה הסופית של האתגר כבר אמורה להיות זמינה).
+  // מבטלת ומחליפה כל תזכורת קודמת מהסוג הזה (אותו דפוס בדיוק כמו
+  // scheduleDailyChallengeReminder למעלה).
+  static Future<void> scheduleTournamentEndedReminder() async {
+    if (!_initialized) return;
+    await _plugin.cancel(_tournamentEndedNotificationId);
+    final scheduledDate = tz.TZDateTime.now(tz.local).add(const Duration(hours: 24));
+    try {
+      await _plugin.zonedSchedule(
+        _tournamentEndedNotificationId,
+        'האתגר הסתיים',
+        'בוא לבדוק איך הלכת ולתפוס את הפרס שמחכה לך',
+        scheduledDate,
+        const NotificationDetails(android: _tournamentEndedAndroidDetails, iOS: DarwinNotificationDetails()),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (_) {
+      // לא קריטי - לא מפילים את האפליקציה בגלל תזכורת שלא הצליחה להתתזמן.
+    }
+  }
+
+  // 🆕 נקרא מ-TournamentService.checkAndClaimPendingPrize ברגע שהתוצאה
+  // כבר הוצגה בפועל בתוך האפליקציה (דרך החלונית) - אין טעם בתזכורת על
+  // משהו שהשחקן כבר ראה.
+  static Future<void> cancelTournamentEndedReminder() async {
+    if (!_initialized) return;
+    await _plugin.cancel(_tournamentEndedNotificationId);
+  }
+
+  static const AndroidNotificationDetails _scheduledTournamentStartAndroidDetails = AndroidNotificationDetails(
+    'scheduled_tournament_channel',
+    'טורניר מתוזמן',
+    channelDescription: 'תזכורת שהטורניר המתוזמן שנרשמתם אליו מתחיל',
+    importance: Importance.high,
+    priority: Priority.high,
+  );
+
+  // 🆕 נקרא כשהשחקן לוחץ "הירשמו מראש וקבלו תזכורת" במסך הטורניר המתוזמן
+  // (ScheduledTournamentService.preRegisterForNext) - מתוזמנת בדיוק לרגע
+  // startTime (לא כמה דקות לפני - "יקבלו התראות עליו", הכי פשוט ומדויק).
+  // startTime יכול להיות עד כ-24 שעות קדימה (אם נרשמים יום לפני).
+  static Future<void> scheduleScheduledTournamentStartReminder(DateTime startTime) async {
+    if (!_initialized) return;
+    await _plugin.cancel(_scheduledTournamentStartNotificationId);
+    if (!startTime.isAfter(DateTime.now())) return;
+    final scheduledDate = tz.TZDateTime.from(startTime, tz.local);
+    try {
+      await _plugin.zonedSchedule(
+        _scheduledTournamentStartNotificationId,
+        'הטורניר המתוזמן מתחיל עכשיו! 🏆',
+        'יש לכם שעה שלמה לענות - בואו תתפסו מקום בטבלה',
+        scheduledDate,
+        const NotificationDetails(android: _scheduledTournamentStartAndroidDetails, iOS: DarwinNotificationDetails()),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (_) {
+      // לא קריטי - לא מפילים את האפליקציה בגלל תזכורת שלא הצליחה להתתזמן.
+    }
+  }
+
+  // 🆕 נקרא אם השחקן מבטל את ההרשמה-מראש, או אוטומטית אחרי שהוא כבר
+  // הצטרף/שיחק בחלון (אין טעם בתזכורת למשהו שכבר קרה).
+  static Future<void> cancelScheduledTournamentStartReminder() async {
+    if (!_initialized) return;
+    await _plugin.cancel(_scheduledTournamentStartNotificationId);
   }
 }

@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'share_helper.dart'; // 🐛 שיתוף עם sharePositionOrigin - תוקן כשל שיתוף ב-iOS
 import 'app_background.dart';
 import 'level_data.dart';
+import 'locale_controller.dart'; // 🆕 שפת האפליקציה (עברית/אנגלית) - קובעת איזה ans/keyboard מוצגים
 import 'device_id.dart';
 import 'audio_manager.dart';
 import 'achievements_service.dart';
@@ -34,6 +35,7 @@ import 'starter_pack_dialog.dart'; // 🆕 מציג מארז פתיחה ברגע
 import 'duel_service.dart' show DuelService; // 🆕 מוניטין/אזהרות/חסימה משותפים עם הדו-קרב - ראו _maybeForfeitDisconnectedOpponent
 import 'out_of_resource.dart'; // 🆕 "נגמר משהו" - פרסומת/חנות
 import 'active_match_service.dart'; // 🆕 "חזרה למשחק" אחרי שהאפליקציה נסגרה לגמרי
+import 'l10n/app_localizations.dart';
 
 class LogoRaceScreen extends StatefulWidget {
   final String username;
@@ -57,13 +59,13 @@ enum _Phase { connecting, noEnergy, noCoins, error, selectingStake, searching, n
 
 // 🆕 טיפים קצרים שמתחלפים בזמן החיפוש - אותו רעיון בדיוק כמו
 // _searchingTips ב-duel_lobby_screen.dart, מותאם למרוץ.
-const List<String> _raceSearchingTips = [
-  "טיפ: הלוגו מתחיל מכוסה כמעט לגמרי - ככל שהעיגול נפתח יותר, קל יותר לנחש",
-  "טיפ: מי שמקליד ראשון את התשובה המלאה הנכונה - זוכה בסיבוב",
-  "טיפ: אפשר לראות בזמן אמת גם את הניחושים השגויים של היריב בצ'אט",
-  "טיפ: המנצח לוקח את כל קופת המטבעות של שני השחקנים",
-  "טיפ: ככל שרמת ההימור גבוהה יותר - יש יותר לוגואים במרוץ",
-];
+List<String> _raceSearchingTips(AppLocalizations loc) => [
+      loc.logoRaceSearchingTip1,
+      loc.logoRaceSearchingTip2,
+      loc.logoRaceSearchingTip3,
+      loc.logoRaceSearchingTip4,
+      loc.logoRaceSearchingTip5,
+    ];
 
 class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStateMixin {
   _Phase _phase = _Phase.connecting;
@@ -155,7 +157,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     final speed = 1.35 - _botSkill * 0.85;
     final ms = ((4 + _botRandom.nextDouble() * 14) * speed * 1000).round();
     final botId = race.opponentIdFor(_myDeviceId);
-    final answer = level.answer;
+    final answer = level.answerFor(localeController.isHebrew);
     bool stillOpen() {
       final r = _race;
       return mounted && r != null && r.status == 'playing' && r.currentStage == stage && !r.stageWinner.containsKey(stage.toString());
@@ -379,7 +381,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     _tipTimer?.cancel();
     _tipTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted) return;
-      setState(() => _tipIndex = (_tipIndex + 1) % _raceSearchingTips.length);
+      setState(() => _tipIndex = (_tipIndex + 1) % _raceSearchingTips(AppLocalizations.of(context)!).length);
     });
   }
 
@@ -519,7 +521,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
 
   void _resetGuessForStage(LogoRaceMatch race) {
     final level = _levelForStage(race, race.currentStage);
-    final answerLen = level?.answer.replaceAll(' ', '').length ?? 0;
+    final answerLen = level?.answerFor(localeController.isHebrew).replaceAll(' ', '').length ?? 0;
     setState(() {
       _guessSlots = List<String?>.filled(answerLen, null);
       _typedOrder = [];
@@ -602,14 +604,15 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     final level = _levelForStage(race, race.currentStage);
     if (level == null) return;
     final guess = _guessSlots.map((s) => s ?? '').join();
-    final isCorrect = guess.replaceAll(' ', '') == level.answer.replaceAll(' ', '');
+    final activeAnswer = level.answerFor(localeController.isHebrew);
+    final isCorrect = guess.replaceAll(' ', '') == activeAnswer.replaceAll(' ', '');
 
     await LogoRaceService.sendGuess(
       raceId: _raceId!,
       stage: race.currentStage,
       deviceId: _myDeviceId,
       text: guess,
-      correctAnswer: level.answer,
+      correctAnswer: activeAnswer,
     );
     if (!mounted) return;
 
@@ -699,22 +702,22 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF0C2A3D),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("לצאת מהמרוץ?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        title: Text(AppLocalizations.of(context)!.logoRaceExitConfirmTitle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         content: Text(
-          "אם תצא עכשיו היריב יוכרז מנצח ויקבל את כל הקופה ($stake שהימרת + $stake שלו) - המטבעות שכבר שילמת לא יוחזרו.\n\n"
-          "${(_race?.currentStage ?? 0) < 2 ? "זו עזיבה מוקדמת - תקבל רק אזהרה" : "עזיבה בשלב הזה נחשבת פרישה"} (${DuelService.forfeitBanThreshold} אזהרות = חסימה זמנית).",
-          textDirection: TextDirection.rtl,
+          "${AppLocalizations.of(context)!.logoRaceExitConfirmMessage(stake, stake)}\n\n"
+          "${(_race?.currentStage ?? 0) < 2 ? AppLocalizations.of(context)!.logoRaceExitEarlyWarning : AppLocalizations.of(context)!.logoRaceExitForfeitWarning} "
+          "${AppLocalizations.of(context)!.logoRaceExitBanThreshold(DuelService.forfeitBanThreshold)}",
           style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13.5),
         ),
         actionsAlignment: MainAxisAlignment.spaceBetween,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text("להישאר", style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+            child: Text(AppLocalizations.of(context)!.logoRaceStayButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("צא בכל זאת", style: TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
+            child: Text(AppLocalizations.of(context)!.logoRaceLeaveAnywayButton, style: const TextStyle(color: Color(0xFFFF6B6B), fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -767,10 +770,18 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               children: [
                 switch (_phase) {
                   _Phase.connecting => const Center(child: CircularProgressIndicator(color: Color(0xFF7DD3FC))),
-                  _Phase.noEnergy => _buildMessageScreen(icon: Icons.bolt_rounded, title: 'אין מספיק אנרגיה', subtitle: 'למרוץ נדרשות ${EnergyService.duelCost} אנרגיות מתוך ${EnergyService.maxEnergy}. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.', offerCoins: false),
-                  _Phase.noCoins => _buildMessageScreen(icon: Icons.monetization_on_rounded, title: 'אין מספיק מטבעות', subtitle: 'דמי כניסה למרוץ: החל מ-${LogoRaceService.stakeOptions.first} מטבעות (יש לך $_coins). המנצח לוקח את כל הקופה!', offerCoins: true),
-                  _Phase.error => _buildMessageScreen(icon: Icons.wifi_off_rounded, title: 'לא הצלחנו להתחבר', subtitle: 'בדוק את החיבור לאינטרנט ונסה שוב'),
-                  _Phase.noOpponent => _buildMessageScreen(icon: Icons.person_search_rounded, title: 'אין כרגע יריב זמין', subtitle: 'האנרגיה הוחזרה אליך - נסה שוב עוד רגע'),
+                  _Phase.noEnergy => _buildMessageScreen(
+                      icon: Icons.bolt_rounded,
+                      title: AppLocalizations.of(context)!.logoRaceNotEnoughEnergyTitle,
+                      subtitle: AppLocalizations.of(context)!.logoRaceNotEnoughEnergyMessage(EnergyService.duelCost, EnergyService.maxEnergy, EnergyService.regenMinutes),
+                      offerCoins: false),
+                  _Phase.noCoins => _buildMessageScreen(
+                      icon: Icons.monetization_on_rounded,
+                      title: AppLocalizations.of(context)!.duelLobbyNotEnoughCoinsTitle,
+                      subtitle: AppLocalizations.of(context)!.logoRaceNotEnoughCoinsMessage(LogoRaceService.stakeOptions.first, _coins),
+                      offerCoins: true),
+                  _Phase.error => _buildMessageScreen(icon: Icons.wifi_off_rounded, title: AppLocalizations.of(context)!.logoRaceConnectErrorTitle, subtitle: AppLocalizations.of(context)!.logoRaceConnectErrorMessage),
+                  _Phase.noOpponent => _buildMessageScreen(icon: Icons.person_search_rounded, title: AppLocalizations.of(context)!.logoRaceNoOpponentTitle, subtitle: AppLocalizations.of(context)!.logoRaceNoOpponentMessage),
                   // 🆕 בורר ההימור עצמו כבר לא מוצג כאן inline - הוא נפתח
                   // כ-bottom sheet מעל המסך (ראו _openStakeSheet). מה שנשאר
                   // גלוי כאן ברקע (מטושטש/מוכהה על ידי ה-barrier של הגליון)
@@ -814,12 +825,11 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
             children: [
               const SizedBox(width: 46, height: 46, child: CircularProgressIndicator(color: Color(0xFF7DD3FC), strokeWidth: 3)),
               const SizedBox(height: 20),
-              Text("ממתין לחיבור מחדש של $oppName", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+              Text(AppLocalizations.of(context)!.logoRaceWaitingReconnect(oppName), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
               Text(
-                remaining > 0 ? "אם לא יתחבר תוך $remaining שניות, זה ייחשב ניצחון טכני" : "קובעים ניצחון טכני...",
+                remaining > 0 ? AppLocalizations.of(context)!.logoRaceReconnectTimeoutWarning(remaining) : AppLocalizations.of(context)!.logoRaceDecidingTechnicalWin,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
               ),
             ],
@@ -829,23 +839,24 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
     );
   }
 
-  (String, String) get _topBarTexts {
+  (String, String) _topBarTexts(AppLocalizations loc) {
     switch (_phase) {
       case _Phase.searching:
         final stake = _selectedStake;
-        final sub = stake == null ? '' : 'מרוץ על $stake מטבעות · ${LogoRaceService.stagesForStake(stake)} לוגואים';
-        return ('מחפש יריב', sub);
+        final sub = stake == null ? '' : loc.logoRaceBarSubtitleSearching(stake, LogoRaceService.stagesForStake(stake));
+        return (loc.duelLobbyBarTitleSearching, sub);
       case _Phase.selectingStake:
-        return ('מרוץ לוגואים 🏁', 'בחר על מה משחקים');
+        return (loc.logoRaceBarTitleDefault, loc.duelLobbyBarSubtitleChoosing);
       case _Phase.finished:
-        return ('תוצאות המרוץ 🏁', '');
+        return (loc.logoRaceBarTitleResults, '');
       default:
-        return ('מרוץ לוגואים 🏁', '');
+        return (loc.logoRaceBarTitleDefault, '');
     }
   }
 
   Widget _buildTopBar() {
-    final (title, subtitle) = _topBarTexts;
+    final loc = AppLocalizations.of(context)!;
+    final (title, subtitle) = _topBarTexts(loc);
     final showBadge = _phase == _Phase.selectingStake || _phase == _Phase.searching;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
@@ -877,10 +888,10 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
           Expanded(
             child: Column(
               children: [
-                Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+                Text(title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
                 if (subtitle.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11, fontWeight: FontWeight.w500)),
+                  Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 11, fontWeight: FontWeight.w500)),
                 ],
               ],
             ),
@@ -904,9 +915,9 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                 children: [
                   Icon(icon, color: const Color(0xFFFB7185), size: 64),
                   const SizedBox(height: 18),
-                  Text(title, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                  Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
-                  Text(subtitle, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
+                  Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13.5)),
                   const SizedBox(height: 26),
                   // 🆕 "נגמר משהו" - אפשר לקבל בפרסומת או לקנות בחנות, ואז לנסות שוב
                   if (offerCoins != null) ...[
@@ -920,7 +931,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF38BDF8), foregroundColor: const Color(0xFF0B2233), padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('חזרה', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                    child: Text(AppLocalizations.of(context)!.duelLobbyBackButton, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
                   ),
                 ],
               ),
@@ -971,6 +982,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   // בפועל של המסך קורה ב-_openStakeSheet אחרי שהגליון נסגר, אם לא נבחרה
   // רמת הימור.
   Widget _buildStakeSheet(BuildContext sheetContext) {
+    final loc = AppLocalizations.of(context)!;
     return SafeArea(
       top: false,
       child: Container(
@@ -994,17 +1006,15 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                "על מה משחקים?",
+              Text(
+                loc.duelLobbyStakeSheetTitle,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900),
+                style: const TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               Text(
-                "ההימור נלקח משני השחקנים",
+                loc.logoRaceStakeSheetSubtitle,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 22),
@@ -1020,14 +1030,12 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   color: Colors.white.withValues(alpha: 0.05),
                 ),
                 child: Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     const Text('🎯', style: TextStyle(fontSize: 15)),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "כל לוגו מוסתר כמעט לגמרי - מי שמנחש נכון ראשון בצ'אט זוכה בסיבוב.",
-                        textDirection: TextDirection.rtl,
+                        loc.logoRaceInfoRow,
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11.5, fontWeight: FontWeight.w500),
                       ),
                     ),
@@ -1038,7 +1046,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               Center(
                 child: TextButton(
                   onPressed: () => Navigator.pop(sheetContext),
-                  child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  child: Text(loc.duelLobbyCancelButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
               ),
               const SizedBox(height: 10),
@@ -1050,10 +1058,11 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   }
 
   Widget _stakeOption(int stake, BuildContext sheetContext) {
+    final loc = AppLocalizations.of(context)!;
     final canAfford = _coins >= stake;
     final logos = LogoRaceService.stagesForStake(stake);
     final prize = stake * 2;
-    final subtitle = '$logos לוגואים · המנצח לוקח $prize';
+    final subtitle = loc.duelLobbyStakeSubtitle(logos, prize);
     final bool isPopular = stake == 50;
     final Color accent = isPopular ? const Color(0xFFFFD86B) : const Color(0xFF38BDF8);
     final Color accentDark = isPopular ? const Color(0xFFFF9A3C) : const Color(0xFF0284C7);
@@ -1097,7 +1106,6 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   gradient: LinearGradient(colors: [accent.withValues(alpha: 0.18), accent.withValues(alpha: 0.03)], begin: Alignment.centerLeft, end: Alignment.centerRight),
                 ),
                 child: Row(
-                  textDirection: TextDirection.rtl,
                   children: [
                     Container(
                       width: 48,
@@ -1109,12 +1117,11 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                     const SizedBox(width: 13),
                     Expanded(
                       child: Column(
-                        textDirection: TextDirection.rtl,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('$stake מטבעות', textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, maxLines: 1, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                          Text(loc.duelLobbyStakeCoinsLabel(stake), overflow: TextOverflow.ellipsis, maxLines: 1, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
                           const SizedBox(height: 3),
-                          Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w500)),
+                          Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w500)),
                         ],
                       ),
                     ),
@@ -1122,7 +1129,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
                       decoration: BoxDecoration(gradient: LinearGradient(colors: [accent, accentDark]), borderRadius: BorderRadius.circular(14)),
-                      child: const Text('שחק', style: TextStyle(color: Color(0xFF0B2233), fontSize: 13.5, fontWeight: FontWeight.w900)),
+                      child: Text(loc.logoRacePlayButton, style: const TextStyle(color: Color(0xFF0B2233), fontSize: 13.5, fontWeight: FontWeight.w900)),
                     ),
                   ],
                 ),
@@ -1140,7 +1147,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   gradient: const LinearGradient(colors: [Color(0xFFFB7185), Color(0xFFE11D74)]),
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 14, offset: const Offset(0, 6))],
                 ),
-                child: const Text('הכי פופולרי', style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
+                child: Text(loc.duelLobbyMostPopularBadge, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900)),
               ),
             ),
         ],
@@ -1190,6 +1197,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   }
 
   Widget _buildSearching() {
+    final loc = AppLocalizations.of(context)!;
     final elapsedText = '0:${_elapsedSeconds.toString().padLeft(2, '0')}';
     final stake = _selectedStake;
     return SingleChildScrollView(
@@ -1218,12 +1226,12 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                             children: [
                               _avatarCircle(widget.username, size: 66),
                               const SizedBox(height: 10),
-                              Text(widget.username, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 15, fontWeight: FontWeight.w900)),
+                              Text(widget.username, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 15, fontWeight: FontWeight.w900)),
                               const SizedBox(height: 9),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: const Color(0xFF34D399).withValues(alpha: 0.18), border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.45))),
-                                child: const Text('מוכן ✓', style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 10.5, fontWeight: FontWeight.w900)),
+                                child: Text(loc.duelLobbyReadyLabel, style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 10.5, fontWeight: FontWeight.w900)),
                               ),
                             ],
                           ),
@@ -1256,12 +1264,12 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                             children: [
                               _spinningOpponentAvatar(),
                               const SizedBox(height: 10),
-                              Text('מחפש…', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 15, fontWeight: FontWeight.w900)),
+                              Text(loc.duelLobbySearchingLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 15, fontWeight: FontWeight.w900)),
                               const SizedBox(height: 9),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.white.withValues(alpha: 0.07), border: Border.all(color: Colors.white.withValues(alpha: 0.14))),
-                                child: Text('מתחבר…', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w900)),
+                                child: Text(loc.duelLobbyConnectingLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w900)),
                               ),
                             ],
                           ),
@@ -1303,7 +1311,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 14),
-                Text('מחפש יריב… $elapsedText', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                Text(loc.duelLobbySearchingElapsed(elapsedText), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 16),
                 SizedBox(
                   height: 34,
@@ -1313,9 +1321,8 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                       key: ValueKey(_tipIndex),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Text(
-                        _raceSearchingTips[_tipIndex],
+                        _raceSearchingTips(loc)[_tipIndex % _raceSearchingTips(loc).length],
                         textAlign: TextAlign.center,
-                        textDirection: TextDirection.rtl,
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500),
                       ),
                     ),
@@ -1329,7 +1336,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                     _leaveIfNeeded();
                     Navigator.pop(context);
                   },
-                  child: const Text('ביטול', style: TextStyle(color: Color(0xFFFB7185), fontSize: 14, fontWeight: FontWeight.w800)),
+                  child: Text(loc.duelLobbyCancelButton, style: const TextStyle(color: Color(0xFFFB7185), fontSize: 14, fontWeight: FontWeight.w800)),
                 ),
                 const SizedBox(height: 10),
               ],
@@ -1341,6 +1348,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   }
 
   Widget _buildRaceConditionsGrid(int stake) {
+    final loc = AppLocalizations.of(context)!;
     final logos = LogoRaceService.stagesForStake(stake);
     final prize = stake * 2;
     Widget stat(String value, String label, Color color, Color bg) => Expanded(
@@ -1351,7 +1359,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               children: [
                 Text(value, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
-                Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
+                Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -1366,21 +1374,20 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
       child: Column(
         children: [
           Row(
-            textDirection: TextDirection.rtl,
-            children: const [
-              Text('🏁', style: TextStyle(fontSize: 13)),
-              SizedBox(width: 8),
-              Text('תנאי המרוץ', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
+            children: [
+              const Text('🏁', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 8),
+              Text(loc.logoRaceConditionsTitle, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              stat('$stake', 'הימור', const Color(0xFFFFE7A8), const Color(0xFFFFD86B)),
+              stat('$stake', loc.duelLobbyStatStake, const Color(0xFFFFE7A8), const Color(0xFFFFD86B)),
               const SizedBox(width: 9),
-              stat('$logos', 'לוגואים', const Color(0xFFBFDBFE), const Color(0xFF60A5FA)),
+              stat('$logos', loc.duelLobbyStatLogos, const Color(0xFFBFDBFE), const Color(0xFF60A5FA)),
               const SizedBox(width: 9),
-              stat('$prize', 'למנצח', const Color(0xFFA7F3D0), const Color(0xFF34D399)),
+              stat('$prize', loc.duelLobbyStatWinner, const Color(0xFFA7F3D0), const Color(0xFF34D399)),
             ],
           ),
         ],
@@ -1401,6 +1408,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         ],
       );
     }
+    final loc = AppLocalizations.of(context)!;
     final oppName = race.opponentNameFor(_myDeviceId);
     const blueInner = [Color(0xFF7DD3FC), Color(0xFF38BDF8)];
     const blueGlow = Color(0xFF38BDF8);
@@ -1419,7 +1427,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  foundOpponentBadge(),
+                  foundOpponentBadge(context),
                   const SizedBox(height: 22),
                   IntrinsicHeight(
                     child: Row(
@@ -1427,8 +1435,9 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                       children: [
                         Expanded(
                           child: foundPlayerCard(
+                            context: context,
                             name: widget.username,
-                            label: "אתה",
+                            label: loc.duelLobbyYouLabel,
                             borderColor: const Color(0xFF7DD3FC),
                             nameColor: const Color(0xFF7DD3FC),
                             innerColors: blueInner,
@@ -1439,8 +1448,9 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                         foundVsDivider(),
                         Expanded(
                           child: foundPlayerCard(
+                            context: context,
                             name: oppName,
-                            label: "היריב",
+                            label: loc.duelLobbyOpponentLabel,
                             borderColor: Colors.white,
                             nameColor: Colors.white,
                             innerColors: const [Color(0xFF0C2A3D), Color(0xFF0C2A3D)],
@@ -1453,7 +1463,8 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   ),
                   const SizedBox(height: 14),
                   gameTermsCard(
-                    title: "תנאי המרוץ",
+                    context: context,
+                    title: loc.logoRaceConditionsTitle,
                     emoji: "🏁",
                     accent: const Color(0xFF7DD3FC),
                     stake: race.stake,
@@ -1461,12 +1472,12 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                     winnerReward: race.stake * 2,
                   ),
                   const SizedBox(height: 28),
-                  Text("המרוץ מתחיל בעוד", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15, fontWeight: FontWeight.w800)),
+                  Text(loc.logoRaceStartingIn, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 15, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 14),
                   readyCountdownRing(
                     value: _countdownLeft,
                     color: const Color(0xFF7DD3FC),
-                    label: _countdownLeft > 0 ? null : 'צאו!',
+                    label: _countdownLeft > 0 ? null : loc.logoRaceGoLabel,
                   ),
                   const SizedBox(height: 20),
                 ],
@@ -1479,6 +1490,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   }
 
   Widget _buildPlaying() {
+    final loc = AppLocalizations.of(context)!;
     final race = _race;
     if (race == null) return const Center(child: CircularProgressIndicator(color: Color(0xFF7DD3FC)));
     final level = _levelForStage(race, race.currentStage);
@@ -1502,12 +1514,11 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
-            textDirection: TextDirection.rtl,
             children: [
-              Expanded(child: Text('אתה: $myScore', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900))),
-              Text('לוגו ${race.currentStage + 1}/${race.totalStages}', style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w700)),
+              Expanded(child: Text(loc.logoRaceYouScoreLabel(myScore), style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900))),
+              Text(loc.logoRaceLogoCounter(race.currentStage + 1, race.totalStages), style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w700)),
               Expanded(
-                child: Text('$oppName: $oppScore', textAlign: TextAlign.left, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
+                child: Text(loc.logoRaceOpponentScoreLabel(oppName, oppScore), textAlign: TextAlign.left, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
               ),
             ],
           ),
@@ -1562,7 +1573,12 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
               children: race.messagesForStage(race.currentStage).map((m) {
                 final mine = m.senderId == _myDeviceId;
                 final level2 = _levelForStage(race, m.stage);
-                final correct = level2 != null && m.text.replaceAll(' ', '') == level2.answer.replaceAll(' ', '');
+                // 🆕 ההודעה יכולה להגיע משחקן עם שפה אחרת (עברית/אנגלית) -
+                // משווים נגד שתי השפות האפשריות, לא רק נגד השפה של הצופה.
+                final msgNoSpace = m.text.replaceAll(' ', '');
+                final correct = level2 != null &&
+                    (msgNoSpace == level2.answer.replaceAll(' ', '') ||
+                        msgNoSpace == (level2.ansEn ?? level2.answer).replaceAll(' ', ''));
                 return Align(
                   alignment: mine ? Alignment.centerLeft : Alignment.centerRight,
                   child: Container(
@@ -1604,7 +1620,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
             child: TextButton.icon(
               onPressed: _onBackspace,
               icon: const Icon(Icons.backspace_rounded, color: Color(0xFFFB7185), size: 16),
-              label: const Text('הסר אות', style: TextStyle(color: Color(0xFFFB7185), fontSize: 12.5, fontWeight: FontWeight.w800)),
+              label: Text(loc.logoRaceRemoveLetterButton, style: const TextStyle(color: Color(0xFFFB7185), fontSize: 12.5, fontWeight: FontWeight.w800)),
             ),
           ),
         ],
@@ -1616,10 +1632,11 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   // הקריאה ב-_buildPlaying). ירוק אם ניצחת את הסיבוב, אדום-אפרסק אם
   // היריב ניצח (עם שמו במפורש), אפור-נייטרלי אם נגמר הזמן בלי ניחוש.
   Widget _buildRoundResultBanner(String roundWinnerId, String oppName) {
+    final loc = AppLocalizations.of(context)!;
     final bool none = roundWinnerId == 'none';
     final bool won = !none && roundWinnerId == _myDeviceId;
     final Color color = none ? const Color(0xFF64748B) : (won ? const Color(0xFF16A34A) : const Color(0xFFFB7185));
-    final String text = none ? 'הזמן נגמר - אף אחד לא ניחש' : (won ? 'ניחשת נכון! עובר ללוגו הבא...' : '$oppName ניחש/ה נכון! עובר ללוגו הבא...');
+    final String text = none ? loc.logoRaceRoundNoneGuessed : (won ? loc.logoRaceRoundYouWon : loc.logoRaceRoundOpponentWon(oppName));
     final IconData icon = none ? Icons.timer_off_rounded : (won ? Icons.check_circle_rounded : Icons.flash_on_rounded);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -1630,7 +1647,6 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5),
       ),
       child: Row(
-        textDirection: TextDirection.rtl,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, color: color, size: 19),
@@ -1638,7 +1654,6 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
           Flexible(
             child: Text(
               text,
-              textDirection: TextDirection.rtl,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
             ),
@@ -1649,7 +1664,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   }
 
   Widget _buildGuessSlots(LevelData level) {
-    final isEnglish = RegExp(r'[a-zA-Z]').hasMatch(level.answer);
+    final isEnglish = RegExp(r'[a-zA-Z]').hasMatch(level.answerFor(localeController.isHebrew));
     final totalLetters = _guessSlots.length;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1698,7 +1713,8 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   }
 
   Widget _buildKeyboard(LevelData level) {
-    final isEnglish = RegExp(r'[a-zA-Z]').hasMatch(level.answer);
+    final isEnglish = RegExp(r'[a-zA-Z]').hasMatch(level.answerFor(localeController.isHebrew));
+    final keyboard = level.keyboardFor(localeController.isHebrew);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: LayoutBuilder(
@@ -1706,7 +1722,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
           const double spacing = 6;
           const double maxKeyWidth = 36;
           const double minKeyWidth = 24;
-          final int totalKeys = level.keyboard.length;
+          final int totalKeys = keyboard.length;
           final int keysPerRow = (totalKeys / 2).ceil();
           final double idealWidth = (constraints.maxWidth - (keysPerRow - 1) * spacing) / keysPerRow;
           final double keyWidth = idealWidth.clamp(minKeyWidth, maxKeyWidth);
@@ -1726,13 +1742,13 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   borderRadius: BorderRadius.circular(11),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(11),
-                    onTap: isPressed ? null : () => _onKeyTap(level.keyboard[i], i),
+                    onTap: isPressed ? null : () => _onKeyTap(keyboard[i], i),
                     child: Container(
                       width: keyWidth,
                       height: keyHeight,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), border: Border.all(color: isPressed ? Colors.transparent : Colors.white.withValues(alpha: 0.18))),
-                      child: Text(isPressed ? '' : level.keyboard[i], style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
+                      child: Text(isPressed ? '' : keyboard[i], style: TextStyle(color: Colors.white, fontSize: fontSize, fontWeight: FontWeight.w800)),
                     ),
                   ),
                 );
@@ -1753,6 +1769,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
   // התוויות של המרוץ (ניקוד סיבובים במקום תשובות נכונות, בלי "שחק שוב
   // מול אותו יריב" כי למרוץ אין תמיכת rematch בשרת - ראה logo_race_service.dart).
   void _showRaceResultDialog(LogoRaceMatch race) {
+    final loc = AppLocalizations.of(context)!;
     final myScore = race.scoreFor(_myDeviceId);
     final oppId = race.opponentIdFor(_myDeviceId);
     final oppScore = race.scoreFor(oppId);
@@ -1804,7 +1821,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                       color: const Color(0xFFFB7185).withValues(alpha: 0.16),
                       border: Border.all(color: const Color(0xFFFDA4AF).withValues(alpha: 0.4)),
                     ),
-                    child: Text('🏁 מרוץ · על $stake מטבעות', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 11.5, fontWeight: FontWeight.w800)),
+                    child: Text(loc.logoRaceResultBadge(stake), style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 11.5, fontWeight: FontWeight.w800)),
                   ),
                   if (!iWon) ...[
                     const SizedBox(height: 14),
@@ -1828,16 +1845,14 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   if (iWon)
                     ShaderMask(
                       shaderCallback: (bounds) => const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFFB24D)]).createShader(bounds),
-                      child: const Text(
-                        "ניצחת!",
-                        textDirection: TextDirection.rtl,
-                        style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900),
+                      child: Text(
+                        loc.logoRaceWinTitle,
+                        style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900),
                       ),
                     )
                   else
                     Text(
-                      isDraw ? "תיקו!" : "היריב ניצח",
-                      textDirection: TextDirection.rtl,
+                      isDraw ? loc.logoRaceDrawTitle : loc.logoRaceLossTitle,
                       style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
                     ),
                   const SizedBox(height: 4),
@@ -1845,8 +1860,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                   // זה מוצג ניקוד הסיבובים, שהוא המקבילה הישירה של "כמה
                   // תשובות נכונות" בדו-קרב.
                   Text(
-                    '$myScore מתוך ${race.totalStages} לוגואים',
-                    textDirection: TextDirection.rtl,
+                    loc.logoRaceScoreSummary(myScore, race.totalStages),
                     style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 20),
@@ -1893,7 +1907,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                     ),
                     child: Column(
                       children: [
-                        Text('הפרס שלך', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w800)),
+                        Text(loc.logoRacePrizeLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w800)),
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -1902,7 +1916,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                                 value: '${coinDelta >= 0 ? '+' : ''}$coinDelta',
                                 icon: Icons.monetization_on_rounded,
                                 color: coinDelta >= 0 ? const Color(0xFF4ADE80) : const Color(0xFFFF6B6B),
-                                label: 'מטבעות',
+                                label: loc.logoRacePrizeCoinsLabel,
                               ),
                             ),
                             Expanded(
@@ -1918,7 +1932,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                                 value: '$myScore/${race.totalStages}',
                                 icon: Icons.check_circle_rounded,
                                 color: const Color(0xFF60A5FA),
-                                label: 'לוגואים',
+                                label: loc.duelLobbyStatLogos,
                               ),
                             ),
                           ],
@@ -1962,7 +1976,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                         child: Container(
                           alignment: Alignment.center,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          child: const Text('מרוץ נוסף 🏁', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900)),
+                          child: Text(loc.logoRacePlayAgainButton, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900)),
                         ),
                       ),
                     ),
@@ -1980,11 +1994,11 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                           ),
                           onPressed: () {
                             final text = iWon
-                                ? 'ניצחתי במרוץ לוגואים במשחק "זהה את הלוגו!" 🏁 $myScore/${race.totalStages} לוגואים. בואו תנסו לנצח אותי! 🎮'
-                                : 'שיחקתי מרוץ לוגואים במשחק "זהה את הלוגו!" - בואו תתמודדו איתי! 🏁';
+                                ? loc.logoRaceShareTextWin(myScore, race.totalStages)
+                                : loc.logoRaceShareTextLose;
                             shareText(context, text);
                           },
-                          child: const Text('שיתוף', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                          child: Text(loc.logoRaceShareButton, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -2001,7 +2015,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
                             Navigator.pop(context);
                             AdsManager.onDuelFinished(); // פרסומת "אחרי משחק 1 על 1" - ראו ads_manager.dart
                           },
-                          child: const Text('חזרה לתפריט', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                          child: Text(loc.logoRaceBackToMenuButton, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     ],
@@ -2083,7 +2097,7 @@ class _LogoRaceScreenState extends State<LogoRaceScreen> with TickerProviderStat
         const SizedBox(height: 4),
         Text(value, style: TextStyle(color: color, fontSize: 14.5, fontWeight: FontWeight.w900)),
         const SizedBox(height: 2),
-        Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w700)),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w700)),
       ],
     );
   }

@@ -5,6 +5,7 @@ import 'app_background.dart';
 import 'app_notification.dart';
 import 'audio_manager.dart';
 import 'main_menu_screen.dart';
+import 'l10n/app_localizations.dart';
 
 class AchievementsScreen extends StatefulWidget {
   const AchievementsScreen({super.key});
@@ -46,7 +47,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
     if (!mounted) return;
     if (coins != null) {
       MainMenuScreen.onReturnedHome?.call();
-      AppNotification.show(context, 'קיבלת $coins מטבעות על "${a.title}"', type: AppNotificationType.success);
+      AppNotification.show(context, AppLocalizations.of(context)!.achievementsClaimedMessage(coins, a.title), type: AppNotificationType.success);
     }
     await _load();
   }
@@ -54,12 +55,11 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
   @override
   Widget build(BuildContext context) {
     final earned = AchievementsService.all.where((a) => (_progress[a.id] ?? 0) >= a.goal).length;
+    final loc = AppLocalizations.of(context)!;
     return Scaffold(
       body: AppBackground(
         child: SafeArea(
-          child: Directionality(
-            textDirection: TextDirection.rtl,
-            child: Column(
+          child: Column(
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
@@ -67,7 +67,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                     children: [
                       IconButton(icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
                       const SizedBox(width: 4),
-                      const Text('הישגים ומדליות', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                      Text(loc.achievementsTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                     ],
                   ),
                 ),
@@ -88,9 +88,9 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('$earned מתוך ${AchievementsService.all.length} מדליות', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                              Text(loc.achievementsEarnedCount(earned, AchievementsService.all.length), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
                               const SizedBox(height: 2),
-                              Text('כל הישג נותן מטבעות. ההתקדמות שלכם נספרת מכאן, לא משנה כמה XP יש לאחרים.', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+                              Text(loc.achievementsDescription, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
                             ],
                           ),
                         ),
@@ -110,7 +110,6 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                 ),
               ],
             ),
-          ),
         ),
       ),
     );

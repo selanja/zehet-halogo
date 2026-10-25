@@ -22,6 +22,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'app_icons.dart';
 import 'battle_pass_service.dart';
+import 'boost_service.dart'; // 🆕 BoostType - פרס בוסט בשלב 12 בנתיב הפרימיום
+import 'l10n/app_localizations.dart';
 
 /// 🆕 מציג פופאפ מלא-מסך "פרס נאסף!" אחרי תביעת שלב בבאטל פאס.
 ///
@@ -41,6 +43,7 @@ Future<void> showBattlePassRewardPopup(
   required bool premium,
   required int coins,
   required int energy,
+  BoostType? boost,
   required int currentPoints,
   int? nextTier,
   VoidCallback? onClaimNext,
@@ -59,6 +62,7 @@ Future<void> showBattlePassRewardPopup(
       premium: premium,
       coins: coins,
       energy: energy,
+      boost: boost,
       currentPoints: currentPoints,
       nextTier: nextTier,
       onClaimNext: onClaimNext,
@@ -75,6 +79,7 @@ class _BattlePassRewardPopup extends StatefulWidget {
   final bool premium;
   final int coins;
   final int energy;
+  final BoostType? boost;
   final int currentPoints;
   final int? nextTier;
   final VoidCallback? onClaimNext;
@@ -85,6 +90,7 @@ class _BattlePassRewardPopup extends StatefulWidget {
     required this.premium,
     required this.coins,
     required this.energy,
+    this.boost,
     required this.currentPoints,
     required this.nextTier,
     required this.onClaimNext,
@@ -118,8 +124,9 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     final tiers = BattlePassService.tiers;
-    final pathLabel = widget.premium ? 'נתיב פרימיום' : 'נתיב חינם';
+    final pathLabel = widget.premium ? loc.battlePassPopupPremiumPathLabel : loc.battlePassPopupFreePathLabel;
     final isEnergy = widget.energy > 0 && widget.coins <= 0;
     final bothRewards = widget.coins > 0 && widget.energy > 0;
 
@@ -145,15 +152,18 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
       final def = tiers.firstWhere((t) => t.tier == widget.nextTier);
       final nCoins = widget.premium ? def.premiumCoins : def.freeCoins;
       final nEnergy = widget.premium ? def.premiumEnergy : def.freeEnergy;
-      final parts = <String>[];
-      if (nCoins > 0) parts.add('$nCoins מטבעות');
-      if (nEnergy > 0) parts.add('$nEnergy אנרגיה');
-      nextTierDesc = parts.join(' + ');
+      final nBoost = widget.premium ? def.premiumBoost : null;
+      if (nBoost != null) {
+        nextTierDesc = loc.battlePassBoostRewardTitle(BoostService.duration.inMinutes);
+      } else {
+        final parts = <String>[];
+        if (nCoins > 0) parts.add(loc.battlePassPopupCoinsAmount(nCoins));
+        if (nEnergy > 0) parts.add(loc.battlePassPopupEnergyAmount(nEnergy));
+        nextTierDesc = parts.join(' + ');
+      }
     }
 
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Material(
+    return Material(
         color: Colors.transparent,
         child: Stack(
           children: [
@@ -191,8 +201,7 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'באטל פאס · דרגה ${widget.tier}',
-                          textDirection: TextDirection.rtl,
+                          loc.battlePassPopupHeaderLabel(widget.tier),
                           style: TextStyle(color: const Color(0xFFFFD979).withValues(alpha: 0.8), fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1),
                         ),
                         const SizedBox(height: 14),
@@ -218,7 +227,7 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
                                   end: Alignment.bottomCenter,
                                   colors: [Color(0xFFFFF6D8), Color(0xFFF2793B)],
                                 ).createShader(bounds),
-                                child: const Text('פרס נאסף!', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.1)),
+                                child: Text(loc.battlePassPopupRewardClaimedTitle, style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.1)),
                               ),
                               const SizedBox(height: 16),
                               _buildRewardSummaryPill(pathLabel: pathLabel, tiersCount: tiers.length),
@@ -237,7 +246,7 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
                               const SizedBox(height: 12),
                               TextButton(
                                 onPressed: () => Navigator.of(context).pop(),
-                                child: Text('חזרה לפאס', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.32), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                                child: Text(loc.battlePassPopupBackToPassButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.32), fontSize: 12.5, fontWeight: FontWeight.w700)),
                               ),
                             ],
                           ),
@@ -250,7 +259,6 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -304,9 +312,11 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
                       boxShadow: [BoxShadow(color: glowColor.withValues(alpha: 0.55), blurRadius: 28, spreadRadius: 2)],
                     ),
                     alignment: Alignment.center,
-                    child: bothRewards
-                        ? const Row(mainAxisSize: MainAxisSize.min, children: [CoinIcon(size: 22), SizedBox(width: 4), EnergyIcon(size: 22)])
-                        : (isEnergy ? const EnergyIcon(size: 30) : const CoinIcon(size: 30)),
+                    child: widget.boost != null
+                        ? const Icon(Icons.bolt_rounded, color: Colors.white, size: 36)
+                        : (bothRewards
+                            ? const Row(mainAxisSize: MainAxisSize.min, children: [CoinIcon(size: 22), SizedBox(width: 4), EnergyIcon(size: 22)])
+                            : (isEnergy ? const EnergyIcon(size: 30) : const CoinIcon(size: 30))),
                   ),
                 ),
               ),
@@ -339,11 +349,13 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
   // באותו נתיב; אין לנו דאטה כזו בפועל, אז במקום זה מוצג "דרגה $tier
   // מתוך סה"כ $tiersCount" שהוא מספר אמיתי וקיים).
   Widget _buildRewardSummaryPill({required String pathLabel, required int tiersCount}) {
+    final loc = AppLocalizations.of(context)!;
     final isEnergy = widget.energy > 0 && widget.coins <= 0;
+    final isBoost = widget.boost != null;
     final parts = <String>[];
-    if (widget.coins > 0) parts.add('${widget.coins} מטבעות');
-    if (widget.energy > 0) parts.add('${widget.energy} אנרגיה');
-    final title = parts.join(' + ');
+    if (widget.coins > 0) parts.add(loc.battlePassPopupCoinsAmount(widget.coins));
+    if (widget.energy > 0) parts.add(loc.battlePassPopupEnergyAmount(widget.energy));
+    final title = isBoost ? loc.battlePassBoostRewardTitle(BoostService.duration.inMinutes) : parts.join(' + ');
     final accent = isEnergy ? const Color(0xFF7DD3FC) : const Color(0xFFFFD86B);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
@@ -353,7 +365,6 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
         border: Border.all(color: (isEnergy ? const Color(0xFF7DD3FC) : const Color(0xFFFFD86B)).withValues(alpha: 0.4)),
       ),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Container(
             width: 42,
@@ -365,16 +376,16 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
                   : const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFF2793B)]),
             ),
             alignment: Alignment.center,
-            child: bothRewardsIcon(isEnergy),
+            child: isBoost ? const Icon(Icons.bolt_rounded, color: Colors.white, size: 22) : bothRewardsIcon(isEnergy),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w900)),
+                Text(title, style: const TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
-                Text('$pathLabel · דרגה ${widget.tier}', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
+                Text(loc.battlePassPopupPathTierLabel(pathLabel, widget.tier), style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -397,16 +408,16 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
   // הנקודות האמיתיות בעונה - אם כל הדרגות כבר נפתחו, מוצג פס מלא
   // עם כיתוב "כל הדרגות נפתחו!".
   Widget _buildProgressBlock({required BattlePassTier? upcomingTier, required double barRatio}) {
-    final label = upcomingTier == null ? 'כל הדרגות נפתחו!' : 'התקדמות לדרגה ${upcomingTier.tier}';
-    final valueLabel = upcomingTier == null ? '⭐ מקסימום' : '⭐ ${(barRatio * 100).round()}%';
+    final loc = AppLocalizations.of(context)!;
+    final label = upcomingTier == null ? loc.battlePassPopupAllTiersUnlocked : loc.battlePassPopupProgressToTier(upcomingTier.tier);
+    final valueLabel = upcomingTier == null ? loc.battlePassPopupMaxStars : loc.battlePassPopupPercentStars((barRatio * 100).round());
     return Column(
       children: [
         Row(
-          textDirection: TextDirection.rtl,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w900)),
-            Text(valueLabel, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFFD979), fontSize: 10.5, fontWeight: FontWeight.w900)),
+            Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10.5, fontWeight: FontWeight.w900)),
+            Text(valueLabel, style: const TextStyle(color: Color(0xFFFFD979), fontSize: 10.5, fontWeight: FontWeight.w900)),
           ],
         ),
         const SizedBox(height: 8),
@@ -439,15 +450,26 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
   // 🆕 "כמה היית יכול לקבל בדרגה הזו עם פרימיום" - מוצג אחרי איסוף מהנתיב
   // החינמי. לחיצה על הכרטיס פותחת שאלה "לשדרג לפרימיום?" (במסך הקורא).
   Widget _buildPremiumTeaser() {
+    final loc = AppLocalizations.of(context)!;
     final def = BattlePassService.tiers.firstWhere((t) => t.tier == widget.tier);
     final freeCoins = def.freeCoins;
     final pCoins = def.premiumCoins, pEnergy = def.premiumEnergy;
-    final parts = <String>[];
-    if (pCoins > 0) parts.add('$pCoins מטבעות');
-    if (pEnergy > 0) parts.add('$pEnergy אנרגיה');
-    if (parts.isEmpty) return const SizedBox.shrink();
-    final extraCoins = pCoins - freeCoins;
-    final extraNote = extraCoins > 0 ? ' · פי ${(pCoins / (freeCoins > 0 ? freeCoins : 1)).toStringAsFixed(1)} ממה שקיבלת' : '';
+    final pBoost = def.premiumBoost;
+    final String title;
+    String extraNote = '';
+    if (pBoost != null) {
+      // 🆕 פרס בוסט בנתיב הפרימיום (ראו boost_service.dart) - אין "פי X"
+      // משמעותי כאן כמו במטבעות, אז בלי extraNote.
+      title = loc.battlePassBoostRewardTitle(BoostService.duration.inMinutes);
+    } else {
+      final parts = <String>[];
+      if (pCoins > 0) parts.add(loc.battlePassPopupCoinsAmount(pCoins));
+      if (pEnergy > 0) parts.add(loc.battlePassPopupEnergyAmount(pEnergy));
+      if (parts.isEmpty) return const SizedBox.shrink();
+      title = parts.join(' + ');
+      final extraCoins = pCoins - freeCoins;
+      extraNote = extraCoins > 0 ? loc.battlePassPopupPremiumMultiplier((pCoins / (freeCoins > 0 ? freeCoins : 1)).toStringAsFixed(1)) : '';
+    }
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: widget.onUpgradeTap,
@@ -459,7 +481,6 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
           border: Border.all(color: const Color(0xFFFFD979).withValues(alpha: 0.55)),
         ),
         child: Row(
-          textDirection: TextDirection.rtl,
           children: [
             const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD979), size: 30),
             const SizedBox(width: 10),
@@ -467,9 +488,9 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('עם פרימיום היית מקבל בדרגה הזו', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFFFE9A8), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                  Text(loc.battlePassPopupPremiumTeaserTitle, style: const TextStyle(color: Color(0xFFFFE9A8), fontSize: 12.5, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 2),
-                  Text('${parts.join(' + ')}$extraNote', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                  Text('$title$extraNote', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
                 ],
               ),
             ),
@@ -483,6 +504,7 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
   // 🆕 כרטיס "דרגה X נפתחה" - מוצג רק אם כבר יש דרגה נוספת שנפתחה
   // (מספיק נקודות) באותו נתיב ועדיין לא נתבעה.
   Widget _buildNextTierCard(String desc) {
+    final loc = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: BoxDecoration(
@@ -491,7 +513,6 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
         border: Border.all(color: const Color(0xFFD8B4FE).withValues(alpha: 0.45), style: BorderStyle.solid),
       ),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Container(
             width: 38,
@@ -508,9 +529,9 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('דרגה ${widget.nextTier} נפתחה', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFE9D5FF), fontSize: 14.5, fontWeight: FontWeight.w900)),
+                Text(loc.battlePassPopupTierUnlockedTitle(widget.nextTier!), style: const TextStyle(color: Color(0xFFE9D5FF), fontSize: 14.5, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
-                Text(desc, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
+                Text(desc, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -523,6 +544,7 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
   // 🆕 כפתור תחתון: "אסוף את דרגה X" אם יש עוד שלב פתוח לתביעה מיידית,
   // אחרת "סגור" (סתם סוגר את הפופאפ).
   Widget _buildBottomButton() {
+    final loc = AppLocalizations.of(context)!;
     final hasNext = widget.nextTier != null && widget.onClaimNext != null;
     return SizedBox(
       width: double.infinity,
@@ -546,8 +568,7 @@ class _BattlePassRewardPopupState extends State<_BattlePassRewardPopup> with Sin
             ),
             child: Center(
               child: Text(
-                hasNext ? 'אסוף את דרגה ${widget.nextTier}' : 'סגור',
-                textDirection: TextDirection.rtl,
+                hasNext ? loc.battlePassPopupClaimTierButton(widget.nextTier!) : loc.logoLevelCloseButton,
                 style: const TextStyle(color: Color(0xFF40170F), fontSize: 17, fontWeight: FontWeight.w900),
               ),
             ),

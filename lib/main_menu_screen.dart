@@ -5,21 +5,33 @@
 // רצף), כפתור CTA בגרדיאנט זהב, וכרטיסי ניווט זכוכיתיים.
 // ⚠️ בלי "דילוג שלב" בשום מקום - הפיצ'ר הזה לא קיים באפליקציה שלנו.
 import 'dart:async';
+import 'dart:ui'; // 🆕 ImageFilter.blur - אפקט הזכוכית של סרגל הניווט התחתון החדש (Home v7)
 import 'achievements_service.dart';
 import 'achievements_screen.dart'; // 🆕 לחיצה על "X/Y מדליות" בבועת הפרופיל פותחת את מסך ההישגים
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'levels_screen.dart';
+import 'tafzoret_worlds_screen.dart';
+import 'tafzoret_data.dart'; // 🆕 tafzoretWorlds.length - מספר עולמות אמיתי לכרטיס "תפזורת" בגיליון המודים
+import 'tournament_lobby_screen.dart';
+import 'tournament_service.dart'; // 🆕 checkAndClaimPendingPrize - תוצאת הטורניר היומי, נבדקת גם בכניסה הכללית לאפליקציה
+import 'tournament_result_popup.dart'; // 🆕 הפופאפ המושקע "זכית!/הוחזר לך" - ראו _maybeShowTournamentResult
+import 'scheduled_tournament_screen.dart'; // 🆕 "טורניר מתוזמן" - פורמט שני, בנוסף לטורניר היומי
+import 'scheduled_tournament_service.dart'; // 🆕 checkAndClaimPendingPrize - אותה בדיקה גם לטורניר המתוזמן
+import 'social_follow_popup.dart'; // 🆕 "עקבו אחרינו וקבלו מטבעות" - ראו _maybeShowSocialFollowPrompt
 import 'level_loading_screen.dart';
 import 'first_visit_explainer.dart'; // 🆕 FirstVisitExplainer.hasRealProgress - שחקן ותיק לא מקבל הדרכה
 import 'audio_manager.dart';
 import 'leaderboard.dart';
+import 'leaderboard_screen.dart'; // 🆕 כפתור "טבלה" בסרגל התחתון החדש של מסך הבית
+import 'shop_screen.dart'; // 🆕 כפתור "חנות" בסרגל התחתון החדש של מסך הבית
 import 'device_id.dart';
 import 'package:package_info_plus/package_info_plus.dart'; // 🆕 גרסה נוכחית - למסך "מה חדש" (ראו _checkWhatsNew)
 import 'whats_new_screen.dart';
 import 'package:share_plus/share_plus.dart';
 import 'missions_service.dart';
+import 'missions_screen.dart'; // 🆕 כפתור "משימות" בשורה העליונה של מסך הבית - Home v7
 import 'level_data.dart'; // 🆕 levelsCounts/gameLevels גלובליים - לחישוב התקדמות שלבים בכרטיס הבית
 import 'energy_service.dart'; // 🆕 אנרגיה לדו-קרב - עכשיו מוצגת גם במסך הבית
 import 'ads_manager.dart'; // 🆕 פרסומת מתוגמלת - לכרטיס בונוס המטבעות ולאתגר היומי
@@ -30,21 +42,26 @@ import 'meta_events_service.dart'; // 🆕 מעקב "הרשמה הושלמה" ל
 import 'analytics_service.dart'; // 📊 אותו מעקב ל-Firebase Analytics/Google Ads
 import 'push_notification_service.dart'; // 🐛 שומר את ה-FCM token בפעם הראשונה שיש שם אמיתי
 import 'daily_challenge_screen.dart'; // 🆕 קיצור דרך ישיר לאתגר היומי מהמסך הראשי
-import 'app_bottom_nav.dart'; // 🆕 סרגל ניווט תחתון משותף - מופיע עכשיו בכל המסכים הראשיים
 import 'starter_pack_service.dart'; // 🆕 מארז פתיחה - זכאות/וריאנט
 import 'starter_pack_dialog.dart'; // 🆕 מארז פתיחה - דיאלוג ההצעה
 import 'login_streak_service.dart'; // 🆕 רצף כניסה יומי - בונוס על כניסה יום אחרי יום
 import 'battle_pass_service.dart'; // 🆕 באטל פאס עונתי - נקודות/שלבים/פרסים
 import 'battle_pass_screen.dart'; // 🆕 באטל פאס עונתי - מסך הפרטים המלא
 import 'settings_screen.dart'; // 🆕 הגדרות - עברו לאייקון גלגל-שיניים בבית (הוצא מסרגל הניווט התחתון)
+import 'app_bottom_nav.dart'; // 🆕 מניו תחתון משותף - מוצג גם בגיליון "בחרו מוד" (ראו _buildModesSheetV7), לפי בקשה מפורשת
 import 'account_link_prompt.dart'; // 🆕 דיאלוג "שמור את ההתקדמות שלך" - הצעה לקשר חשבון Google/Apple
 import 'account_service.dart'; // 🆕 מסך "ברוכים הבאים" עכשיו מציע גם Google ולא רק שם+אורח - ראה _buildWelcomeChoiceScreen
 import 'account_conflict_dialog.dart'; // 🆕 דיאלוג "מצאנו לך חשבון קיים" - ראה _handleGoogleWelcomeSignIn
 import 'logo_race_screen.dart'; // 🆕 "מרוץ לוגואים" - מצב אונליין חדש, 1 על 1, מי שמנחש ראשון בכל לוגו מנצח
 import 'play_vs_person_mode_screen.dart'; // 🆕 מסך רכזת "שחק מול אחרים" - בחירת מוד (דו-קרב/מירוץ), עוצב לפי מסך "04 · בחירת מוד"
 import 'presence_service.dart'; // 🆕 "כמה אנשים משחקים עכשיו" - נקודה ירוקה+מספר על כרטיסי דו-קרב/מרוץ
+import 'friend_service.dart'; // 🆕 כרטיסון "מחוברים" במסך הבית - עיצוב מחדש Home v7
+import 'friends_screen.dart'; // 🆕 כפתור "חברים" בסרגל התחתון החדש של מסך הבית
+import 'duel_lobby_screen.dart'; // 🆕 "דו-קרב"/"סדרת דו-קרב" - נגישים עכשיו ישירות מגיליון המודים
 import 'player_sync.dart'; // 🩹 סנכרון לענן אחרי בונוס פרסומת - בלי זה שחקן שמקושר לחשבון Google/Apple לא רואה עדכון במכשיר אחר
+import 'iap_manager.dart'; // 🆕 IapManager.tournamentBonusActive/Remaining - כרטיס "מבצע בחנות" האמיתי בגיליון "קורה עכשיו" (Home v7, וריאנט 1b)
 import 'app_notification.dart';
+import 'l10n/app_localizations.dart';
 
 class MainMenuScreen extends StatefulWidget {
   const MainMenuScreen({super.key});
@@ -90,15 +107,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // showHomeTour מופעל ישר.
   // יש כפתור "דלג" בכל שלב (ראו _buildHomeTourOverlayV5) - לפי בקשה מפורשת.
   bool showHomeTour = false;
+  // 🆕 אנימציית לחיצה (כיווץ קל) לכפתור "שחק" המרכזי - לפי בקשה מפורשת
+  // ("תעשה אנימציה שלוחצים").
+  bool _playButtonPressed = false;
   int _tourStep = 0;
-  static const int _tourStepCount = 3;
-  // 🩹 לפי בקשה מפורשת: "ההסבר מכסה את מה שהוא מסביר עליו" - עכשיו כל
-  // שלב בסיור "ממוקד" ממש על הרכיב האמיתי במסך (חור מואר בתוך הדהוי כהה,
-  // לא כרטיסיה שצפה במקום קבוע שעלולה לשבת בדיוק מעל מה שמוסבר). כל
-  // GlobalKey מצביע על הרכיב האמיתי שמודגש בשלב המתאים - ראו _buildHomeTourOverlayV5.
-  final GlobalKey _tourCtaKey = GlobalKey();
-  final GlobalKey _tourRandomCardKey = GlobalKey();
-  final GlobalKey _tourVsOthersCardKey = GlobalKey();
+  // 🩹 תוקן לפי בקשה מפורשת: "זה אומר לו ללחוץ על השחק ואז זה לא אומר
+  // לו ללחוץ על השלבים" - הסיור חזר לשני שלבים: (0) כפתור "שחק" המרכזי
+  // כאן במסך הבית, (1) כרטיס "שלבים" בתוך גיליון המודים שנפתח ממנו
+  // (ראו _buildModesSheetV7/_tourLevelsCardKey) - כדי שהשחקן לא "ייתקע"
+  // בגיליון בלי שום הנחיה על מה ללחוץ בפועל כדי להתחיל לשחק.
+  static const int _tourStepCount = 2;
+  final GlobalKey _tourPlayButtonKey = GlobalKey();
+  final GlobalKey _tourLevelsCardKey = GlobalKey();
   // 🆕 לפי דיווח מפורש: "לא היה הסבר ראשוני שקודם אומר ברוכים הבאים
   // לאפליקציה... היא המדריך" - הסיור קפץ ישר לספוטלייט הראשון בלי שום
   // "ברוכים הבאים, הנה סיור קצר" כללי קודם. כרטיסיה ממורכזת אחת, לא
@@ -115,10 +135,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // בדיוק שנמצאים בשימוש ב-logo_level_screen.dart / shop_screen.dart).
   int coins = 15;
   int xp = 0;
-  int _medalsEarned = 0; // 🆕 מדליות שהושגו - מוצג במקום XP בכרטיס הפרופיל (ראו AchievementsService)
+  int _medalsEarned =
+      0; // 🆕 מדליות שהושגו - מוצג במקום XP בכרטיס הפרופיל (ראו AchievementsService)
   int streak = 0;
   int maxLevel = 1;
-  int _missionsUnclaimed = 0; // 🆕 כמה פרסים ממתינים לאיסוף במסך המשימות - לתג על הכרטיס
+  int _missionsUnclaimed =
+      0; // 🆕 כמה פרסים ממתינים לאיסוף במסך המשימות - לתג על הכרטיס
 
   // 🆕 אנרגיה לדו-קרב - עכשיו מוצגת ישירות במסך הבית (בעבר רק בלובי הדו-קרב).
   int _energy = EnergyService.maxEnergy;
@@ -152,9 +174,40 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // פעמית בכניסה למסך ואז כל _presenceRefreshInterval כל עוד המסך פתוח.
   int? _duelPlayersNow;
   int? _racePlayersNow;
-  int? _superdualPlayersNow; // 🆕 מוד presence נפרד ל"סדרת דו-קרב" - ראו duel_lobby_screen.dart
+  int?
+  _superdualPlayersNow; // 🆕 מוד presence נפרד ל"סדרת דו-קרב" - ראו duel_lobby_screen.dart
   Timer? _presenceTimer;
   static const Duration _presenceRefreshInterval = Duration(seconds: 30);
+
+  // 🆕 עיצוב מחדש "Home v7" - באנר הטורניר היומי במסך הבית: קופה/משתתפים
+  // אמיתיים (אותם חישובים בדיוק כמו tournament_lobby_screen.dart -
+  // currentPoolEstimate + fetchLeaderboard), בלי מצב "הצטרפתם/שיחקתם" -
+  // זו רק "ויטרינה" שמובילה למסך הטורניר המלא, לא כפתור הרשמה ישיר.
+  List<TournamentEntry> _tournamentTop = [];
+
+  // 🆕 כל החברים (לא רק מחוברים) - לתא "חברים" בתלתן של מסך הבית
+  // (friend_service.dart, אותו מקור נתונים בדיוק כמו friends_screen.dart).
+  List<FriendInfo> _friends = [];
+
+  // 🆕 "בונוס פעיל!" בתא "חנות" בתלתן - חלון הבונוס האמיתי של פי 1.25
+  // מטבעות אחרי ניצחון בטורניר (IapManager.activateTournamentBonus), לא
+  // הנחה כללית מזויפת שתמיד פעילה כמו במוקאפ.
+  bool _tournamentBonusActive = false;
+  // 🆕 "אותו דבר עם הטורנירים" - תג זהוב על אריח הטורנירים כשהצטרפתם
+  // לאתגר אבל עדיין לא שיחקתם את השלב של היום, כדי שלא תשכחו לחזור
+  // (אותו עיקרון בדיוק כמו תג ההנחה בחנות - "יש כאן משהו שמחכה לך").
+  bool _tournamentActionAvailable = false;
+
+  // 🆕 עיצוב מחדש "Home v10" - רצף הכניסה היומי האמיתי (LoginStreakService,
+  // אותו מקור בדיוק כמו _showLoginStreakDialog/_showDailyGiftsDialog) -
+  // מוצג עכשיו ליד השם בשורה העליונה ("🔥 X"), לא רק בתוך הדיאלוג.
+  int _loginStreakDays = 0;
+
+  // 🆕 כמה מהמשימות היומיות הפעילות כבר הושלמו (לא רק "מוכנות לאיסוף" -
+  // ראו _missionsUnclaimed) - "{completed}/{total}" בתת-הכותרת של תא
+  // "משימות" בתלתן, במקום פס התקדמות גנרי בלי שום מספר/הקשר.
+  int _missionsCompletedCount = 0;
+  int _missionsTotalCount = 0;
 
   @override
   void initState() {
@@ -192,17 +245,103 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       // (גם אם הוא לא בהכרח המסך העליון כרגע) - כדי שבכל פעם שחוזרים
       // אליו המוזיקה כבר "מתוקנת" גם אם onReturnedHome לא נקרא בפועל.
       AudioManager.ensureMusicPlaying();
+      // 🆕 "מתאפס בעוד" בבאנר הטורניר - מחושב מול השעון האמיתי בכל
+      // טיק (לא נספר למטה בפני עצמו), אותו עיקרון כמו tournament_lobby_screen.dart.
+      if (mounted) setState(() {});
     });
     MainMenuScreen.onReturnedHome = () => _refreshStats();
     // 🆕 בכל פתיחה/כניסה למסך הבית - מתזמנים מחדש את תזכורת "משימות
     // חדשות + אתגר יומי מחכה" קדימה לאיפוס הבא (חצות). ככה שחקן פעיל
     // תמיד מקבל אותה רק אחרי שהוא נעדר לפחות יום אחד, בדיוק כמו תזכורות
     // "חזרה למשחק" ב-main.dart.
-    NotificationService.scheduleDailyResetReminder();
+    // 🆕 מגודר לפי מתג "תזכורות יומיות" בטאב ההתראות - ראו notification_manager.dart.
+    if (NotificationManager.notificationsEnabled && NotificationManager.dailyNotificationsEnabled) {
+      NotificationService.scheduleDailyResetReminder();
+    }
     _refreshPresenceCounts();
     AchievementsService.recordActiveDay(); // 🆕 הישגים - ימי משחק
     _refreshMedals();
-    _presenceTimer = Timer.periodic(_presenceRefreshInterval, (_) => _refreshPresenceCounts());
+    _presenceTimer = Timer.periodic(
+      _presenceRefreshInterval,
+      (_) => _refreshPresenceCounts(),
+    );
+    _refreshTournamentHero();
+    _refreshFriends();
+    _refreshTournamentBonus();
+    _refreshTournamentActionAvailable();
+    _refreshLoginStreakDays();
+    _refreshMissionsProgress();
+  }
+
+  // 🕐 זמן שנותר עד סוף האתגר הרב-יומי הנוכחי - אותו חישוב בדיוק כמו
+  // tournament_lobby_screen.dart._timeUntilReset (TournamentService.eventEndTime),
+  // מחושב מחדש מול השעון האמיתי בכל build (לא "נספר" עצמאית).
+  Duration get _tournamentTimeUntilReset {
+    final diff = TournamentService.eventEndTime().difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  // 🆕 נתוני "ויטרינה" לבאנר האתגר הרב-יומי במסך הבית - אותם חישובים
+  // בדיוק כמו tournament_lobby_screen.dart (currentPoolEstimate על בסיס
+  // כמות השחקנים שכבר בטבלה המצטברת של האירוע הנוכחי). כשלון שקט (רשימה
+  // ריקה) - הבאנר פשוט מציג "0 משתתפים", לא קורס.
+  Future<void> _refreshTournamentHero() async {
+    final board = await TournamentService.fetchLeaderboard(
+      TournamentService.eventId(),
+    );
+    if (!mounted) return;
+    setState(() => _tournamentTop = board);
+  }
+
+  // 🆕 כל החברים - לשורת ה"סטוריז" במסך הבית. אותו מקור בדיוק כמו
+  // friends_screen.dart (FriendService.fetchFriends).
+  Future<void> _refreshFriends() async {
+    final all = await FriendService.fetchFriends();
+    if (!mounted) return;
+    setState(() => _friends = all);
+  }
+
+  // 🆕 עיצוב מחדש "Home v10" - רצף הכניסה היומי האמיתי (LoginStreakService,
+  // אותו מקור בדיוק כמו _checkLoginStreak/_showDailyGiftsDialog) - מוצג
+  // עכשיו ליד השם בשורה העליונה.
+  Future<void> _refreshLoginStreakDays() async {
+    final days = await LoginStreakService.getCurrentStreak();
+    if (!mounted) return;
+    setState(() => _loginStreakDays = days);
+  }
+
+  // 🆕 כמה מהמשימות היומיות הפעילות כבר הושלמו (לא רק "כמה מוכנות
+  // לאיסוף") - "{completed}/{total}" בתת-הכותרת של תא "משימות" בתלתן.
+  Future<void> _refreshMissionsProgress() async {
+    final daily = await MissionsService.getDailyMissions();
+    if (!mounted) return;
+    final completed = daily.where((m) => m.isComplete).length;
+    setState(() {
+      _missionsCompletedCount = completed;
+      _missionsTotalCount = daily.length;
+    });
+  }
+
+  // 🆕 חלון בונוס "פי 1.25 מטבעות" האמיתי (IapManager, מופעל אחרי ניצחון
+  // בטורניר) - לתא "חנות" בתלתן. מתעדכן שוב בכל _refreshStats (למשל אחרי
+  // שהתקבל פרס טורניר חדש, ראו _maybeShowTournamentResult).
+  Future<void> _refreshTournamentBonus() async {
+    final active = await IapManager.tournamentBonusActive();
+    if (!mounted) return;
+    setState(() => _tournamentBonusActive = active);
+  }
+
+  // 🆕 ראו ההערה ליד _tournamentActionAvailable - פעיל רק אם הצטרפתם
+  // לאתגר הנוכחי ועוד לא שיחקתם את השלב של היום.
+  Future<void> _refreshTournamentActionAvailable() async {
+    final joined = await TournamentService.hasJoinedEvent();
+    if (!joined) {
+      if (mounted) setState(() => _tournamentActionAvailable = false);
+      return;
+    }
+    final playedToday = await TournamentService.hasPlayedToday();
+    if (!mounted) return;
+    setState(() => _tournamentActionAvailable = !playedToday);
   }
 
   // 🆕 שאילתות .count() חד-פעמיות (לא לייב) - ראו presence_service.dart
@@ -226,7 +365,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   void dispose() {
     _energyTickTimer?.cancel();
     _presenceTimer?.cancel();
-    if (MainMenuScreen.onReturnedHome != null) MainMenuScreen.onReturnedHome = null;
+    if (MainMenuScreen.onReturnedHome != null)
+      MainMenuScreen.onReturnedHome = null;
     super.dispose();
   }
 
@@ -251,10 +391,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       });
       return;
     }
-    final elapsed = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastMillis));
+    final elapsed = DateTime.now().difference(
+      DateTime.fromMillisecondsSinceEpoch(lastMillis),
+    );
     setState(() {
       _adBonusAvailable = elapsed >= _adBonusCooldown;
-      _adBonusRemaining = _adBonusAvailable ? Duration.zero : _adBonusCooldown - elapsed;
+      _adBonusRemaining = _adBonusAvailable
+          ? Duration.zero
+          : _adBonusCooldown - elapsed;
     });
   }
 
@@ -263,7 +407,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   Future<void> _collectAdBonus() async {
     if (!_adBonusAvailable || _collectingAdBonus) return;
     if (!AdsManager.isRewardedReady) {
-      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
+      AppNotification.show(
+        context,
+        AppLocalizations.of(context)!.duelLobbyNoAdAvailable,
+        type: AppNotificationType.warning,
+      );
       return;
     }
     setState(() => _collectingAdBonus = true);
@@ -273,7 +421,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         final newCoins = (prefs.getInt('coins') ?? 15) + 15;
         await prefs.setInt('coins', newCoins);
         PlayerSyncService.syncCurrentProgress(); // 🩹 בלי זה בונוס הפרסומת לא מסתנכרן לחשבון Google/Apple מקושר
-        await prefs.setInt('lastAdBonusMillis', DateTime.now().millisecondsSinceEpoch);
+        await prefs.setInt(
+          'lastAdBonusMillis',
+          DateTime.now().millisecondsSinceEpoch,
+        );
         NotificationManager.scheduleFreeCoinsReminder();
         if (!mounted) return;
         setState(() {
@@ -281,11 +432,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           _collectingAdBonus = false;
         });
         await _refreshAdBonusState();
-        if (mounted) _showRewardDialog("קיבלת 15 מטבעות!"); // 🩹 הוסר אימוג'י המטבע - לא נתמך בפונט של חלק מהמכשירים ומוצג כריבוע ריק
+        if (mounted)
+          _showRewardDialog(
+            AppLocalizations.of(context)!.mainMenuCollected15Coins,
+          ); // 🩹 הוסר אימוג'י המטבע - לא נתמך בפונט של חלק מהמכשירים ומוצג כריבוע ריק
       },
     );
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted && _adBonusAvailable) setState(() => _collectingAdBonus = false);
+      if (mounted && _adBonusAvailable)
+        setState(() => _collectingAdBonus = false);
     });
   }
 
@@ -306,8 +461,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             Text(
               message,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
         ),
@@ -318,10 +476,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFD86B),
               foregroundColor: const Color(0xFF2A1740),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
             ),
-            child: const Text("סגור", style: TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(
+              AppLocalizations.of(context)!.mainMenuCloseButton,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
           ),
         ],
       ),
@@ -335,7 +498,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Future<void> _playDailyChallenge() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => const DailyChallengeScreen()));
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const DailyChallengeScreen()),
+    );
     _refreshStats();
   }
 
@@ -388,45 +554,48 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // 🆕 שכפול מקומי קטן של getWorldName מ-levels_screen.dart - שם לא
   // מיוצא משם (מתודת instance פרטית), אז משכפלים כאן רק את שמות העולמות.
   String _worldName(int worldNum) {
+    final loc = AppLocalizations.of(context)!;
     switch (worldNum) {
       case 1:
-        return "חברות חלק א";
+        return loc.worldName1;
       case 2:
-        return "דגלים חלק א";
+        return loc.worldName2;
       case 3:
-        return "אפליקציות";
+        return loc.worldName3;
       case 4:
-        return "רכבים";
+        return loc.worldName4;
       case 5:
-        return "סופרים";
+        return loc.worldName5;
       case 6:
-        return "רשתות מוכרות";
+        return loc.worldName6;
       case 7:
-        return "חטיפים וממתקים";
+        return loc.worldName7;
       case 8:
-        return "קבוצות כדורגל";
+        return loc.worldName8;
       case 9:
-        return "ערים בישראל";
+        return loc.worldName9;
       case 10:
-        return "דגלים חלק ב";
+        return loc.worldName10;
       case 11:
-        return "בנקים וביטוח";
+        return loc.worldName11;
       case 12:
-        return "חברות חלק ב";
+        return loc.worldName12;
       case 13:
-        return "משחקים מוכרים";
+        return loc.worldName13;
       case 14:
-        return "קבוצות NBA";
+        return loc.worldName14;
       case 15:
-        return "יחידות בצה\"ל וכוחות הביטחון";
+        return loc.worldName15;
       case 16:
-        return "רכבים חלק ב";
+        return loc.worldName16;
       case 17:
-        return "אלקטרוניקה ומכשירי חשמל";
+        return loc.worldName17;
       case 18:
-        return "תקשורת וחדשות ישראליות";
+        return loc.worldName18;
+      case 22:
+        return loc.worldName22;
       default:
-        return "כללי";
+        return loc.worldNameDefault;
     }
   }
 
@@ -519,7 +688,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       _maybeShowAccountLinkPrompt();
       return;
     }
-    _readStats(await SharedPreferences.getInstance()); // המטבעות/אנרגיה כבר התעדכנו - מרעננים את התצוגה
+    _readStats(
+      await SharedPreferences.getInstance(),
+    ); // המטבעות/אנרגיה כבר התעדכנו - מרעננים את התצוגה
     if (mounted) setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -537,6 +708,35 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   Future<void> _maybeShowAccountLinkPrompt() async {
     if (!mounted) return;
     await AccountLinkPrompt.maybeShow(context);
+    // 🆕 רק אחרי שדיאלוג קישור החשבון נסגר - כדי לא להציג שני דיאלוגים
+    // בו-זמנית, בדיוק כמו שאר השרשרת הזו.
+    _maybeShowTournamentResult();
+  }
+
+  // 🆕 "יום אחריי בכללי אחריי הטורניר... הודעה שהוא נכנס למשחק משהו יפה
+  // ומושקע" - בודקים את תוצאת הטורניר היומי (פרס מיקום/החזר על מעט
+  // משתתפים) בכל כניסה כללית לאפליקציה, לא רק כשנכנסים ידנית למסך
+  // הלובי (tournament_lobby_screen.dart עושה את אותה בדיקה בעצמו -
+  // TournamentService.checkAndClaimPendingPrize שומר דגל "claimed" לכל
+  // periodId, אז אין סכנה שהפרס יינתן פעמיים גם אם שתי הבדיקות רצות
+  // קרוב אחת לשנייה).
+  Future<void> _maybeShowTournamentResult() async {
+    final prize = await TournamentService.checkAndClaimPendingPrize();
+    if (prize != null && mounted) {
+      await showTournamentResultPopup(context, prize);
+    }
+    // 🆕 אותה בדיקה גם לטורניר המתוזמן (ראו scheduled_tournament_service.dart) -
+    // ברצף (await, לא בו-זמנית) כדי שלעולם לא יוצגו שני פופאפי "זכית!"
+    // ביחד, בדיוק כמו שאר שרשרת הפופאפים במסך הזה.
+    final scheduledPrize =
+        await ScheduledTournamentService.checkAndClaimPendingPrize();
+    if (scheduledPrize != null && mounted) {
+      await showTournamentResultPopup(
+        context,
+        scheduledPrize,
+        label: 'הטורניר המתוזמן',
+      );
+    }
   }
 
   // 🆕 דיאלוג "רצף כניסה יומי" - שורת 7 נקודות שמראה איפה נמצאים
@@ -567,8 +767,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           padding: const EdgeInsets.fromLTRB(20, 26, 20, 20),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
-            gradient: const LinearGradient(colors: [Color(0xFF3A2A6B), Color(0xFF1D0E3C)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-            border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.25)),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF3A2A6B), Color(0xFF1D0E3C)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            border: Border.all(
+              color: const Color(0xFFFFD86B).withValues(alpha: 0.25),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -578,35 +784,58 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 height: 76,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
-                  gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFF8A3C)]),
-                  boxShadow: [BoxShadow(color: const Color(0xFFFF9A3C).withValues(alpha: 0.4), blurRadius: 22)],
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFE08A), Color(0xFFFF8A3C)],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF9A3C).withValues(alpha: 0.4),
+                      blurRadius: 22,
+                    ),
+                  ],
                 ),
                 // 🩹 תוקן: היה אימוג'י (🎁) - אותה בעיית תאימות מתועדת כמו
                 // אימוג'י המטבע/אנרגיה (ראו app_icons.dart).
-                child: const Center(child: Icon(Icons.card_giftcard_rounded, color: Color(0xFF2A1740), size: 36)),
+                child: const Center(
+                  child: Icon(
+                    Icons.card_giftcard_rounded,
+                    color: Color(0xFF2A1740),
+                    size: 36,
+                  ),
+                ),
               ),
               const SizedBox(height: 14),
               Text(
-                "יום ${result.streakDay} ברצף!",
+                AppLocalizations.of(
+                  context,
+                )!.mainMenuStreakDayTitle(result.streakDay),
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
-                "תחזור מחר לפרס גדול יותר",
+                AppLocalizations.of(context)!.mainMenuComeBackTomorrow,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 18),
               // 🩹 שורת עיגולים במקום שורת הפילים הישנה - ראו הערה למעלה.
               // הדיאלוג הזה נפתח *אחרי* שהיום כבר נאסף בפועל (checkInIfNewDay
               // הצליח) - ולכן claimedToday תמיד true כאן.
-              _buildStreakDayRow(dayInCycle: result.dayInCycle, claimedToday: true),
+              _buildStreakDayRow(
+                dayInCycle: result.dayInCycle,
+                claimedToday: true,
+              ),
               const SizedBox(height: 16),
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   if (result.energy > 0) ...[
                     Expanded(
@@ -615,18 +844,37 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           color: const Color(0xFF1E2A5A),
-                          border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.3)),
+                          border: Border.all(
+                            color: const Color(
+                              0xFF7DD3FC,
+                            ).withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Column(
                           children: [
-                            Text('+${result.energy}', style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 19, fontWeight: FontWeight.w900)),
+                            Text(
+                              '+${result.energy}',
+                              style: const TextStyle(
+                                color: Color(0xFF7DD3FC),
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                             const SizedBox(height: 2),
                             // 🩹 אייקון וקטורי (EnergyIcon) במקום אימוג'י ⚡ - ראו app_icons.dart.
                             Row(
                               mainAxisSize: MainAxisSize.min,
-                              textDirection: TextDirection.rtl,
                               children: [
-                                Text('אנרגיה ', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w700)),
+                                Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.mainMenuEnergyLabel,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                                 const EnergyIcon(size: 12),
                               ],
                             ),
@@ -642,18 +890,35 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         color: const Color(0xFF2A1B4D),
-                        border: Border.all(color: const Color(0xFFFFC64B).withValues(alpha: 0.3)),
+                        border: Border.all(
+                          color: const Color(0xFFFFC64B).withValues(alpha: 0.3),
+                        ),
                       ),
                       child: Column(
                         children: [
-                          Text('+${result.coins}', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 19, fontWeight: FontWeight.w900)),
+                          Text(
+                            '+${result.coins}',
+                            style: const TextStyle(
+                              color: Color(0xFFFFD86B),
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                           const SizedBox(height: 2),
                           // 🩹 אייקון וקטורי (CoinIcon) במקום אימוג'י 🪙 - ראו app_icons.dart.
                           Row(
                             mainAxisSize: MainAxisSize.min,
-                            textDirection: TextDirection.rtl,
                             children: [
-                              Text('מטבעות ', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w700)),
+                              Text(
+                                AppLocalizations.of(
+                                  context,
+                                )!.mainMenuCoinsLabel,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                               const CoinIcon(size: 12),
                             ],
                           ),
@@ -668,7 +933,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 width: double.infinity,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFF9A3C)]),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFE08A), Color(0xFFFF9A3C)],
+                    ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Material(
@@ -676,9 +943,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () => Navigator.pop(context),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 14),
-                        child: Center(child: Text("אסוף", style: TextStyle(color: Color(0xFF2A1740), fontSize: 16.5, fontWeight: FontWeight.w900))),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Center(
+                          child: Text(
+                            AppLocalizations.of(context)!.mainMenuCollectButton,
+                            style: const TextStyle(
+                              color: Color(0xFF2A1740),
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -711,6 +987,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     _refreshDailyChallenge();
     _refreshBattlePass(); // 🆕 באטל פאס - נקודות/שלב/פרסים ממתינים לכרטיס בתפריט הראשי
     _refreshMedals();
+    _refreshTournamentHero();
+    _refreshFriends();
+    _refreshTournamentBonus();
+    _refreshTournamentActionAvailable();
+    _refreshLoginStreakDays();
+    _refreshMissionsProgress();
     // 🩹 "פרס סיום הדרכה" עבר להיות מוצג ישירות בתוך logo_level_screen.dart
     // ברגע שההדרכה-בתוך-המשחק מסתיימת (לא יותר נדחה לחזרה הביתה) - ראו
     // _maybeGrantFirstLevelGift שם. מארז הפתיחה נבדק כאן כרגיל.
@@ -755,12 +1037,37 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // "קופצת" יותר על המסך מעצמה).
   Future<void> _maybeShowStarterPack() async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('starterPackAutoShown') ?? false) return;
+    if (prefs.getBool('starterPackAutoShown') ?? false) {
+      _maybeShowSocialFollowPrompt();
+      return;
+    }
     final variant = await StarterPackService.variantToShow(maxLevel: maxLevel);
-    if (variant == null || !mounted) return;
+    if (variant == null || !mounted) {
+      _maybeShowSocialFollowPrompt();
+      return;
+    }
     await prefs.setBool('starterPackAutoShown', true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) StarterPackDialog.show(context, variant);
+    });
+    // 🩹 מארז הפתיחה כן מוצג הפעם - לא מציעים גם עקיבה באותו רגע (ראו
+    // הערה למעלה ב-_maybeShowSocialFollowPrompt), היא תוצע בחזרה הבאה
+    // ממשחק אחרי שדגל מארז הפתיחה כבר "נשרף".
+  }
+
+  // 🆕 "משהו שיגרום לאנשים לעקוב באינסטגרם ובטיקטוק" - פופאפ חד-פעמי
+  // שמוצע כש-_refreshStats רץ (כלומר אחרי שהשחקן כבר חזר ממשחק אחד
+  // לפחות, לא מיד בפתיחה הראשונה של האפליקציה - אותו עיקרון תזמון כמו
+  // מארז הפתיחה למעלה). "פעם אחת בלבד" נשמר בדגל נפרד
+  // (socialFollowPromptShown) - ראו social_follow_popup.dart לדגל
+  // הנפרד שמסמן אם המטבעות כבר נתבעו בפועל.
+  Future<void> _maybeShowSocialFollowPrompt() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('socialFollowPromptShown') ?? false) return;
+    await prefs.setBool('socialFollowPromptShown', true);
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) showSocialFollowPopup(context);
     });
   }
 
@@ -828,7 +1135,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     // אקראית. עכשיו כל מעבר דרך מסך "ברוכים הבאים!" (גם עם שם חדש על
     // התקנה קיימת) מאפס את כל ההדרכות, כך שהחוויה המלאה חוזרת מההתחלה
     // בכל פעם שממלאים שם - עקבי וצפוי, לא תלוי בהיסטוריה נסתרת של המכשיר.
-    for (final key in ['missions', 'friends', 'leaderboard', 'soloLevel', 'playVsPerson', 'levels', 'subLevels']) {
+    for (final key in [
+      'missions',
+      'friends',
+      'leaderboard',
+      'soloLevel',
+      'playVsPerson',
+      'levels',
+      'subLevels',
+    ]) {
       await prefs.remove('seenExplainer_$key');
     }
     if (!mounted) return;
@@ -848,20 +1163,6 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     setState(() => showHomeTour = false);
   }
 
-  void _advanceHomeTour() {
-    AudioManager.playClick();
-    if (_tourStep >= _tourStepCount - 1) {
-      // 🩹 השלב האחרון בפועל הוא "מול אחרים" (tap-through - ראו
-      // _buildHomeGridV5), שכבר סוגר את showHomeTour בעצמו ב-onTap שלו;
-      // שאר ההדרכה (רמה ראשונה) נבדקת עצמאית ב-logo_level_screen.dart
-      // (FirstVisitExplainer('soloLevel')) בלי תלות כאן - ראו onboarding_service.dart.
-      setState(() => showHomeTour = false);
-    } else {
-      setState(() => _tourStep++);
-      _ensureTourStepVisible();
-    }
-  }
-
   // 🐛 תוקן: "הכפתור המואר היה למטה, בפועל מואר כפתור אחר" - מסך הבית
   // גולל (SingleChildScrollView), ו"מול אחרים"/"רנדומלי" יכולים להיות
   // מחוץ לתצוגה (מתחת לקצה הנראה) כשהסיור מגיע אליהם, בעיקר במסכים
@@ -871,30 +1172,23 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // יושב שם על המסך הגלוי (כרטיס אחר לגמרי). עכשיו גוללים את הרכיב
   // האמיתי לתצוגה (Scrollable.ensureVisible) *לפני* שמציגים את הספוטלייט
   // עליו, וממתינים לסיום האנימציה לפני שמחשבים/מציירים את החור.
+  // 🩹 פושט: הצעד היחיד שנותר (_tourPlayButtonKey) מצביע על כפתור "שחק"
+  // שיושב בסרגל ניווט תחתון קבוע (Positioned, לא בתוך ה-SingleChildScrollView)
+  // - הוא תמיד נראה על המסך, אז אין עוד צורך ב-Scrollable.ensureVisible
+  // (שהיה נחוץ רק כשהמטרה הייתה כרטיס בתוך האזור הגולל). עדיין מחכים
+  // שהמקלדת תיסגר בפועל (ראו ההערה ההיסטורית למטה) לפני שמציירים את
+  // הספוטלייט, כדי שה-Rect שמחושב יתאים למסך הסופי.
   Future<void> _ensureTourStepVisible() async {
-    // 🩹 הסדר כאן חייב להיות זהה בדיוק לסדר ב-steps בתוך
-    // _buildHomeTourOverlayV5 (מול אחרים → רנדומלי → CTA, ראו שם).
-    final keys = [_tourVsOthersCardKey, _tourRandomCardKey, _tourCtaKey];
-    final key = keys[_tourStep];
-    // מחכים לפריים הבא כדי לוודא שה-key כבר מחובר ל-RenderObject (למשל
-    // מיד אחרי שהמסך עצמו עלה לראשונה).
     await Future.delayed(const Duration(milliseconds: 50));
     if (!mounted) return;
-    // 🐛 תוקן: בכניסה הראשונה (מיד אחרי מילוי השם) המקלדת עדיין יכולה
-    // להיות באמצע אנימציית סגירה - מחכים שהיא תיסגר *בפועל* (viewInsets.bottom
-    // מגיע ל-0) לפני שמחשבים/מציירים את הספוטלייט, עם תקרה קצרה כדי לא
-    // להיתקע אם משהו אחר משאיר פוקוס. בשלבים הבאים של הסיור המקלדת כבר
-    // סגורה, אז הלולאה מסתיימת כמעט מיד.
     var waited = 0;
-    while (mounted && MediaQuery.of(context).viewInsets.bottom > 0 && waited < 500) {
+    while (mounted &&
+        MediaQuery.of(context).viewInsets.bottom > 0 &&
+        waited < 500) {
       await Future.delayed(const Duration(milliseconds: 50));
       waited += 50;
     }
-    if (!mounted) return;
-    final ctx = key.currentContext;
-    if (ctx == null) return;
-    await Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 320), curve: Curves.easeOut, alignment: 0.5);
-    if (mounted) setState(() {}); // מרענן את הספוטלייט עם המיקום הסופי אחרי הגלילה
+    if (mounted) setState(() {});
   }
 
   // 🆕 "המשך עם Google" ממסך הבחירה הראשוני - משתמש באותה
@@ -928,7 +1222,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         // המשתמש ביטל, או שהשמירה נכשלה - במקרה של כישלון מציגים הודעה ידידותית
         if (AccountService.lastAuthFailed) {
           AccountService.lastAuthFailed = false;
-          AppNotification.show(context, "ההתחברות נכשלה, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+          AppNotification.show(
+            context,
+            AppLocalizations.of(context)!.mainMenuSignInFailed,
+            type: AppNotificationType.error,
+          );
         }
         return;
       }
@@ -941,7 +1239,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         await _afterWelcomeLinkSuccess();
         break;
       case LinkResult.error:
-        AppNotification.show(context, "ההתחברות עם Google נכשלה - אפשר לנסות שוב או לשחק כאורח בינתיים", type: AppNotificationType.error);
+        AppNotification.show(
+          context,
+          AppLocalizations.of(context)!.mainMenuGoogleSignInFailed,
+          type: AppNotificationType.error,
+        );
         break;
       case LinkResult.cancelled:
         break; // המשתמש סגר את חלון הבחירה של Google - נשארים במסך הבחירה
@@ -967,7 +1269,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       if (!linked) {
         if (AccountService.lastAuthFailed) {
           AccountService.lastAuthFailed = false;
-          AppNotification.show(context, "ההתחברות נכשלה, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+          AppNotification.show(
+            context,
+            AppLocalizations.of(context)!.mainMenuSignInFailed,
+            type: AppNotificationType.error,
+          );
         }
         return;
       }
@@ -980,7 +1286,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         await _afterWelcomeLinkSuccess();
         break;
       case LinkResult.error:
-        AppNotification.show(context, "ההתחברות עם Apple נכשלה - אפשר לנסות שוב או לשחק כאורח בינתיים", type: AppNotificationType.error);
+        AppNotification.show(
+          context,
+          AppLocalizations.of(context)!.mainMenuAppleSignInFailed,
+          type: AppNotificationType.error,
+        );
         break;
       case LinkResult.cancelled:
         break;
@@ -1023,28 +1333,53 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             Container(
               width: 76,
               height: 76,
-              decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [const Color(0xFFFFBE50).withValues(alpha: 0.35), const Color(0xFFFFBE50).withValues(alpha: 0.0)])),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFFFFBE50).withValues(alpha: 0.35),
+                    const Color(0xFFFFBE50).withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
             ),
             Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                gradient: const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFF9A3C)]),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.7), width: 2),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFE79A), Color(0xFFFF9A3C)],
+                ),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  width: 2,
+                ),
               ),
-              child: const Center(child: Text("👋", style: TextStyle(fontSize: 28))),
+              child: const Center(
+                child: Text("👋", style: TextStyle(fontSize: 28)),
+              ),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        const Text("ברוכים הבאים!", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+        Text(
+          AppLocalizations.of(context)!.mainMenuWelcomeTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 21,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         const SizedBox(height: 4),
         Text(
-          "התחבר כדי שההתקדמות שלך תישמר גם אם תחליף מכשיר, או פשוט שחק",
+          AppLocalizations.of(context)!.mainMenuWelcomeSubtitle,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         const SizedBox(height: 26),
         // כפתור "המשך עם Google"
@@ -1062,20 +1397,45 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               ),
               child: Center(
                 child: _welcomeGoogleLoading
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF2A1740)))
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Color(0xFF2A1740),
+                        ),
+                      )
                     : Row(
                         mainAxisSize: MainAxisSize.min,
-                        textDirection: TextDirection.rtl,
                         children: [
                           Container(
                             width: 22,
                             height: 22,
-                            decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4285F4)),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFF4285F4),
+                            ),
                             alignment: Alignment.center,
-                            child: const Text("G", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                            child: const Text(
+                              "G",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 10),
-                          const Text("המשך עם Google", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900)),
+                          Text(
+                            AppLocalizations.of(
+                              context,
+                            )!.accountLinkContinueWithGoogle,
+                            style: const TextStyle(
+                              color: Color(0xFF2A1740),
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ],
                       ),
               ),
@@ -1095,18 +1455,39 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(21),
-                  gradient: const LinearGradient(colors: [Color(0xFF2A2A2A), Color(0xFF000000)]),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2A2A2A), Color(0xFF000000)],
+                  ),
                 ),
                 child: Center(
                   child: _welcomeAppleLoading
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
+                        )
                       : Row(
                           mainAxisSize: MainAxisSize.min,
-                          textDirection: TextDirection.rtl,
                           children: [
-                            const Icon(Icons.apple_rounded, color: Colors.white, size: 22),
+                            const Icon(
+                              Icons.apple_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
                             const SizedBox(width: 10),
-                            const Text("המשך עם Apple", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+                            Text(
+                              AppLocalizations.of(
+                                context,
+                              )!.accountLinkContinueWithApple,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ],
                         ),
                 ),
@@ -1131,11 +1512,21 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               child: Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  textDirection: TextDirection.rtl,
                   children: [
-                    const Icon(Icons.person_outline_rounded, color: Colors.white, size: 18),
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
-                    const Text("שחק כאורח", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+                    Text(
+                      AppLocalizations.of(context)!.mainMenuPlayAsGuest,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1143,11 +1534,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           ),
         ),
         const Spacer(flex: 4),
-        const Text(
-          "בהמשך אתם מאשרים את תנאי השימוש ומדיניות הפרטיות",
+        Text(
+          AppLocalizations.of(context)!.mainMenuTermsNotice,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
-          style: TextStyle(color: Colors.white30, fontSize: 10.5, fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            color: Colors.white30,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         const SizedBox(height: 16),
       ],
@@ -1195,19 +1589,28 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         children: [
                           const Spacer(flex: 3),
                           _NameEntryCard(
-                            title: "ברוכים הבאים!",
-                            subtitle: "איך נקרא לך בטבלה הארצית?",
+                            title: AppLocalizations.of(
+                              context,
+                            )!.mainMenuWelcomeTitle,
+                            subtitle: AppLocalizations.of(
+                              context,
+                            )!.mainMenuNameEntrySubtitle,
                             initialName: _welcomeInitialName,
-                            confirmLabel: "בואו נתחיל ›",
+                            confirmLabel: AppLocalizations.of(
+                              context,
+                            )!.mainMenuLetsStartButton,
                             popOnSave: false,
                             onSaved: _saveWelcomeName,
                           ),
                           const Spacer(flex: 4),
-                          const Text(
-                            "בהמשך אתם מאשרים את תנאי השימוש ומדיניות הפרטיות",
+                          Text(
+                            AppLocalizations.of(context)!.mainMenuTermsNotice,
                             textAlign: TextAlign.center,
-                            textDirection: TextDirection.rtl,
-                            style: TextStyle(color: Colors.white30, fontSize: 10.5, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                              color: Colors.white30,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                           const SizedBox(height: 16),
                         ],
@@ -1220,11 +1623,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       );
     }
 
-    // 🆕 מסך הבית עוצב מחדש לפי מוקאפ "homescreen.html" עם סרגל ניווט
-    // תחתון קבוע (5 יעדים: חנות/מובילים/בית/משימות/הגדרות) - ראו
-    // app_bottom_nav.dart (משותף - מופיע עכשיו בכל מסכי הטאב, לא רק כאן).
-    // הסטטיסטיקות (XP/מטבעות/רצף/אנרגיה) עברו לשורת המצב העליונה +
-    // כרטיס אנרגיה ייעודי.
+    // 🆕 עיצוב מחדש "Home v10" (מחליף לגמרי את 1b הקודם, לפי מוקאפ חדש
+    // שסופק) - כותרת ראשית + "תלתן" של 4 כרטיסים (חברים/טורנירים/חנות/
+    // משימות) עם כפתור "שחק" מרכזי צף במרכזם שפותח את גיליון "בחרו מוד"
+    // עם *כל* המודים (ראו _buildModesSheetV7) + פס התקדמות רמה אמיתי.
+    // הסרגל התחתון (_buildHomeBottomNavV7, מקומי למסך הזה בלבד) חוזר
+    // עכשיו לסט המקורי: חנות·מובילים·שחק·משימות·הגדרות - "חברים" נגיש
+    // דרך כרטיס התלתן במקום טאב נפרד, ו"הגדרות"/"משימות" חוזרים לסרגל.
     return Scaffold(
       backgroundColor: const Color(0xFF120C2E),
       body: Stack(
@@ -1233,84 +1638,66 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           const Positioned.fill(child: _AuroraBackground()),
           SafeArea(
             bottom: false,
-            // 🩹 קריסות אדומות אמיתיות ("padding.isNonNegative", ואז
-            // "given an infinite size during layout" בניסיון התיקון
-            // הקודם עם OverflowBox) - שני הניסיונות הקודמים ("Padding
-            // שלילי", ואז "OverflowBox" בתוך Column בגובה לא-מוגבל בתוך
-            // SingleChildScrollView) התבססו על widgets שלא מתמודדים טוב
-            // עם המצב הזה. התיקון היציב: מסירים לגמרי את ה-Padding
-            // האופקי (18) שעטף את כל ה-SingleChildScrollView, ובמקום זה
-            // עוטפים כל כרטיס בנפרד ב-Padding(horizontal: 18) - חוץ
-            // מ"שחק מול אחרים"/"אתגר רנדומלי" (_buildModesGrid) שנשאר
-            // בלי עטיפה, כך שהוא ממלא את כל רוחב המסך (עד השפה) באופן
-            // טבעי, בלי שום widget חריג שעלול לקרוס.
             child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                // 🐛 תוקן: "לא מצליח לרדת הכי למטה, האתגר היומי חתוך למטה" -
-                // ה-padding כאן היה קבוע (128), אבל הגובה האמיתי של
-                // AppBottomNav הוא דינמי: 108 + MediaQuery.of(context).padding.bottom
-                // (ה-safe-area התחתון, ה"בליטה" של פס הבית באייפון - בד"כ
-                // 34 פיקסלים). בפועל 128 היה מספיק רק למכשירים עם safe-area
-                // קטן מ-20 - באייפון רגיל (safe-area 34) סרגל הניווט בפועל
-                // גבוה ב-14 פיקסלים נוספים מהמקום שהוקצה לו, וכיסה בדיוק
-                // את תחתית הכרטיס האחרון בגלילה.
-                padding: EdgeInsets.only(bottom: 108 + MediaQuery.of(context).padding.bottom + 20),
-                child: Column(
-                  children: [
-                    // 🩹 תוקן: כל המרווחים כאן צומצמו (8→6, 14→10, 18→10,
-                    // 20→12, 16→10) כדי שהמסך יתקרב לתחושת "מסך אחד" בלי
-                    // גלילה ארוכה, בדיוק כמו במוקאפ (מסך 01 · בית) - קודם
-                    // המרווחים היו נדיבים מדי ודחפו את הכרטיס האחרון הרחק
-                    // מתחת לקצה הנראה.
-                    // 🆕 עיצוב מחדש מלא לפי מוקאפ "Home v5" (claude.ai/design) -
-                    // ראו תוכנית ההטמעה שאושרה. מחליף לגמרי את הסרגל/הפילים/
-                    // הלוגו/כרטיס הרמות/גריד המודים/באטל פאס/אתגר יומי הישנים
-                    // (_buildTopBar/_buildStatsPillsRow/_buildLogoHero/
-                    // _buildLevelsCard/_buildModesGrid/_buildBattlePassCard/
-                    // _buildDailyChallengeCard נשארו מוגדרים למטה, לא נקראים
-                    // יותר מכאן - אותה קונבנציה כבר קיימת בקובץ הזה ל-
-                    // _buildLogoRaceCard/_buildDailyBonusCard).
-                    const SizedBox(height: 14),
-                    Padding(padding: const EdgeInsets.symmetric(horizontal: 18.0), child: _buildTopBarV5()),
-                    if (_energy < EnergyService.maxEnergy) ...[
-                      const SizedBox(height: 12),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                        child: _FadeSlideIn(index: 0, child: _buildEnergyAdCard()),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 1, child: _buildLevelPillV5()),
-                    ),
-                    const SizedBox(height: 8),
-                    _FadeSlideIn(index: 2, child: Center(child: _buildNextLogoTeaserV5())),
-                    const SizedBox(height: 10),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 3, child: _buildPlayCtaButtonV5()),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 4, child: _buildProgressDotsV5()),
-                    ),
+              physics: const ClampingScrollPhysics(),
+              // 🩹 אותו חישוב פדינג-תחתון דינמי שכבר היה כאן (ראו הערה
+              // מתועדת למטה בהיסטוריה) - רק מותאם לגובה הסרגל התחתון
+              // החדש (80 + המרווחים סביבו, ראו _buildHomeBottomNavV7).
+              padding: EdgeInsets.only(
+                bottom: 96 + MediaQuery.of(context).padding.bottom + 24,
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 14),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                    child: _buildTopBarV7(),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                    child: _buildMedalsButtonV10(),
+                  ),
+                  if (_energy < EnergyService.maxEnergy) ...[
                     const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 18.0),
-                      child: _FadeSlideIn(index: 5, child: _buildHomeGridV5()),
+                      child: _FadeSlideIn(
+                        index: 0,
+                        child: _buildEnergyAdCard(),
+                      ),
                     ),
                   ],
-                ),
+                  const SizedBox(height: 10),
+                  _buildHomeTitleHeaderV10(),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14.0),
+                    child: _FadeSlideIn(index: 1, child: _buildCloverGridV10()),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                    child: _FadeSlideIn(
+                      index: 2,
+                      child: _buildBattlePassBannerV7(),
+                    ),
+                  ),
+                ],
               ),
+            ),
           ),
-          // 🆕 סרגל ניווט תחתון קבוע ומשותף - זהה למה שמופיע גם בחנות/
-          // מובילים/משימות/הגדרות (ראו app_bottom_nav.dart).
-          const AppBottomNav(current: AppTab.home),
-          // 🆕 שלב 2 של ההדרכה הראשונית - סיור קצר (3 טיפים) מעל מסך
-          // הבית האמיתי (לא מסך נפרד) - ראו showHomeTour למעלה.
-          if (showHomeTour) (_tourWelcomeDismissed ? _buildHomeTourOverlayV5() : _buildHomeTourWelcomeOverlay()),
+          // 🆕 סרגל ניווט תחתון חדש, ייעודי למסך הבית בלבד - ראו הערה
+          // למעלה.
+          _buildHomeBottomNavV7(),
+          // 🆕 הדרכה ראשונית - שלב 1 (מתוך 2) הוא ספוטלייט על כפתור "שחק"
+          // המרכזי כאן (ראו _tourPlayButtonKey/_buildCenterPlayButtonV10);
+          // שלב 2 ("שלבים" בגיליון המודים) מוצג בנפרד בתוך
+          // _buildModesSheetV7 עצמו - ראו _tourLevelsCardKey.
+          if (showHomeTour && _tourStep == 0)
+            (_tourWelcomeDismissed
+                ? _buildHomeTourOverlayV5()
+                : _buildHomeTourWelcomeOverlay()),
         ],
       ),
     );
@@ -1327,82 +1714,321 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // 🩹 שם המשתמש הוסר מהשורה הזו (לא מופיע במוקאפ בכלל - שם האווטאר שם
   // קטן ודחוס) - הלחיצה על "מדליות" שהייתה מתחת לשם הועברה לאווטאר עצמו,
   // כדי לא לאבד את הגישה למסך ההישגים.
-  Widget _buildTopBarV5() {
+  // 🆕 עיצוב מחדש "Home v10" - שורה עליונה מצומצמת: אווטאר+שם+רצף כניסה
+  // (ליד השם, לא עוד כפתור נפרד) + פילי מטבעות/אנרגיה. אין יותר כפתורי
+  // מתנה/משימות/הגדרות כאן - משימות והגדרות עברו לסרגל הניווט התחתון
+  // (ראו _buildHomeBottomNavV7), ומתנת הרצף היומי ממשיכה לצוץ אוטומטית
+  // לבד (_checkLoginStreak, ללא שינוי) כשרלוונטי.
+  Widget _buildTopBarV7() {
+    final loc = AppLocalizations.of(context)!;
     final (world, _, _) = _worldProgress(maxLevel);
+    // 🩹 אוחד לשורה אחת לפי בקשה מפורשת - בניגוד לניסיון קודם עם שורה
+    // אחת (שם אנרגיה "נעלמה" כי כל הפילים התכווצו/נדחקו לגלילה באופן
+    // שווה), כאן רק בלוק הפרופיל (אווטאר+שם+עולם+רצף) עטוף ב-Expanded
+    // ומתכווץ (שם המשתמש עובר ל-ellipsis ככל שצריך); 4 תגי הסטטיסטיקה
+    // והמתנה תמיד בגודל הקבוע והקטן שלהם ולעולם לא נגללים/נעלמים - הם
+    // הכי חשובים לראות תמיד. נבדק ב-393dp (רוחב אייפון אמיתי).
     return Row(
-      textDirection: TextDirection.rtl,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () {
-              AudioManager.playClick();
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()));
-            },
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.8), width: 1.6),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(11),
-                    child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+        Expanded(
+          child: Material(
+            color: Colors.transparent,
+            shape: const StadiumBorder(),
+            child: InkWell(
+              customBorder: const StadiumBorder(),
+              onTap: () {
+                AudioManager.playClick();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AchievementsScreen()),
+                );
+              },
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 170),
+                padding: const EdgeInsets.fromLTRB(5, 5, 11, 5),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: Colors.white.withValues(alpha: 0.09),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.14),
                   ),
                 ),
-                Positioned(
-                  bottom: -4,
-                  left: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      color: const Color(0xFF1E2A5A),
-                      border: Border.all(color: const Color(0xFF120C2E), width: 1.5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(11),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFFFD86B,
+                              ).withValues(alpha: 0.8),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.asset(
+                              'assets/icon/logo.png',
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: -4,
+                          left: -4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: const Color(0xFF1E2A5A),
+                              border: Border.all(
+                                color: const Color(0xFF120C2E),
+                                width: 1.3,
+                              ),
+                            ),
+                            child: Text(
+                              '$world',
+                              style: const TextStyle(
+                                color: Color(0xFFFFD86B),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    child: Text('$world', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 10, fontWeight: FontWeight.w900)),
-                  ),
+                    const SizedBox(width: 7),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            username.isNotEmpty
+                                ? username
+                                : loc.mainMenuHelloFallback,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          // 🩹 תוקן: "🔥 {days}" כמחרוזת טקסט אחת תחת RTL אמביינטי
+                          // התהפך ויזואלית ל-"{days} 🔥" (אין בו שום תו "חזק"
+                          // שיעגן את כיוון הקריאה - בדיוק אותו באג bidi
+                          // שתועד כבר במקומות אחרים בקובץ הזה עם ספרות/שעון).
+                          // אייקון אמיתי + Row נפרד פותר את זה לגמרי (אין
+                          // יותר תלות ב-bidi על מחרוזת מעורבת אימוג'י+ספרה).
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.local_fire_department_rounded,
+                                color: const Color(
+                                  0xFFFF8A3C,
+                                ).withValues(alpha: 0.85),
+                                size: 12,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '$_loginStreakDays',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
-        const SizedBox(width: 10),
-        _topPillV5(icon: Icons.monetization_on_rounded, color: const Color(0xFFFFD86B), text: '$coins'),
-        const SizedBox(width: 8),
-        _topPillV5(icon: Icons.bolt_rounded, color: const Color(0xFF7DD3FC), text: '$_energy/${EnergyService.maxEnergy}'),
-        const Spacer(),
-        _topIconButton(
-          iconWidget: const GiftIcon(size: 24),
-          ringColor: const Color(0xFFFFD86B),
-          showDot: _adBonusAvailable,
-          onTap: _showDailyGiftsDialog,
+        const SizedBox(width: 6),
+        _topPillV5(
+          icon: Icons.monetization_on_rounded,
+          color: const Color(0xFFFFD86B),
+          text: '$coins',
         ),
-        const SizedBox(width: 10),
-        _topIconButton(
-          icon: Icons.settings_rounded,
-          onTap: () async {
-            final prefs = await SharedPreferences.getInstance();
-            final name = prefs.getString('username') ?? '';
-            if (!mounted) return;
-            await Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(username: name)));
-            _refreshStats();
-          },
+        const SizedBox(width: 4),
+        _topPillV5(
+          icon: Icons.bolt_rounded,
+          color: const Color(0xFF7DD3FC),
+          text: '$_energy/${EnergyService.maxEnergy}',
         ),
+        const SizedBox(width: 4),
+        _topPillV5(
+          icon: Icons.star_rounded,
+          color: const Color(0xFFC4B5FD),
+          text: '$xp',
+        ),
+        const SizedBox(width: 6),
+        _topBarGiftButtonV10(),
       ],
     );
   }
 
-  Widget _topPillV5({required IconData icon, required Color color, required String text}) {
+  // 🆕 כפתור "מדליות" מפורש עם מילה כתובה (לא רק אייקון/מספר כמו הפיל
+  // שהיה בשורה העליונה) - לפי בקשה מפורשת: "ככה יהיה לאנשים יותר קל"
+  // (יותר ברור/מזוהה מפיל קטן). פותח את מסך ההישגים, בדיוק כמו שהלחיצה
+  // על כרטיס הפרופיל כבר עושה (ראו _buildTopBarV7) - נקודת כניסה נוספת
+  // ובולטת יותר, לא מחליפה את הקיימת.
+  Widget _buildMedalsButtonV10() {
+    final loc = AppLocalizations.of(context)!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          AudioManager.playClick();
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AchievementsScreen()),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFFFDA4AF).withValues(alpha: 0.2),
+                const Color(0xFFFDA4AF).withValues(alpha: 0.06),
+              ],
+            ),
+            border: Border.all(
+              color: const Color(0xFFFDA4AF).withValues(alpha: 0.35),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.military_tech_rounded,
+                color: Color(0xFFFDA4AF),
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  loc.mainMenuMedalsCount(
+                    _medalsEarned,
+                    AchievementsService.all.length,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_left_rounded,
+                color: Colors.white.withValues(alpha: 0.4),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 🩹 הועבר לכאן לפי בקשה מפורשת ("איפה שרשום רמה 1 שלב 2... יש סימה
+  // של מתנה, תיקח אותו תשים אותו למעלה צד שמאל") - היה חלק מכרטיס פס
+  // ההתקדמות (_buildLevelProgressRibbonV10, נמחק כעת כולו לפי אותה
+  // בקשה: "ואת איפה שרשום רמה 1 שלב 2 תמחק"). הכפתור עצמו (דיאלוג
+  // המתנות היומיות האמיתי) לא השתנה בהתנהגותו - רק קיבל גרסה קומפקטית
+  // שמתאימה לשורת הפילים העליונה, ועבר להיות הילד האחרון ב-Row של
+  // _buildTopBarV7 - תחת RTL אמביינטי זה ממקם אותו הכי בצד שמאל, בדיוק
+  // כמו שהתבקש.
+  Widget _topBarGiftButtonV10() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(13),
+        onTap: _showDailyGiftsDialog,
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFFE08A), Color(0xFFFF9F45)],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFB4531A).withValues(alpha: 0.4),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              const Icon(
+                Icons.card_giftcard_rounded,
+                color: Color(0xFF2A1740),
+                size: 18,
+              ),
+              if (_adBonusAvailable)
+                Positioned(
+                  top: -3,
+                  right: -3,
+                  child: Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFE11D48),
+                      border: Border.all(
+                        color: const Color(0xFF120C2E),
+                        width: 1.4,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _topPillV5({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      // 🩹 צומצם עוד (7→6) - עכשיו באותה שורה ממש עם הפרופיל והמתנה
+      // (ראו _buildTopBarV7), צריך כל פיקסל אפשרי.
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: color.withValues(alpha: 0.4)),
@@ -1411,128 +2037,763 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(text, style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w900)),
-          const SizedBox(width: 5),
-          if (icon == Icons.monetization_on_rounded) const CoinIcon(size: 14) else const EnergyIcon(size: 14),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 4),
+          // 🆕 XP/מדליות (ראו קריאות _topPillV5 למטה) - אין להם אייקון
+          // נכס ייעודי כמו מטבעות/אנרגיה, אז פשוט אייקון Material וקטורי
+          // (מוכח כעובד בכל שאר האפליקציה - בניגוד לאימוג'י).
+          if (icon == Icons.monetization_on_rounded)
+            const CoinIcon(size: 13)
+          else if (icon == Icons.bolt_rounded)
+            const EnergyIcon(size: 13)
+          else
+            Icon(icon, color: color, size: 13),
         ],
       ),
     );
   }
 
-  // פיל קטן וכהה: "רמה X • לוגו Y מתוך Z" - אותם נתונים בדיוק שכבר
-  // חושבו ב-_worldProgress, רק ניסוח אחר (היה "ממשיכים... שלב X · Y%").
-  Widget _buildLevelPillV5() {
-    final (world, sub, count) = _worldProgress(maxLevel);
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          color: Colors.white.withValues(alpha: 0.08),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+  // ===================== מסך הבית - עיצוב "Home v10" (מחליף את 1b) =====================
+  // כותרת ראשית + "תלתן" של 4 כרטיסים (חברים/טורנירים/חנות/משימות) עם
+  // כפתור "שחק" מרכזי צף שפותח את גיליון המודים + פס התקדמות רמה אמיתי.
+
+  Widget _buildHomeTitleHeaderV10() {
+    final loc = AppLocalizations.of(context)!;
+    return Column(
+      children: [
+        Text(
+          loc.mainMenuHomeTitle,
+          style: const TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFFFFD86B),
+            shadows: [Shadow(color: Color(0xFFB4531A), offset: Offset(0, 3))],
+          ),
         ),
-        child: Text(
-          'רמה $world • לוגו $sub מתוך $count',
-          textDirection: TextDirection.rtl,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 12.5, fontWeight: FontWeight.w800),
+        const SizedBox(height: 6),
+        Text(
+          loc.mainMenuHomeTagline,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 🩹 "תלתן" הכרטיסים נבנה בתוך Directionality(ltr) מכוונת, בדיוק כמו
+  // ב-dir="ltr" שעוטף את ה-grid במוקאפ - כדי שסדר הכרטיסים (חברים
+  // למעלה-ימין בפועל) לא יתהפך לפי כיוון RTL של שאר האפליקציה. כל כרטיס
+  // עצמו עוטף את התוכן שלו חזרה ב-Directionality(rtl) כדי שהטקסט
+  // העברי יתיישר נכון (ראו dir="rtl" על כל תא-תוכן במוקאפ).
+  Widget _buildCloverGridV10() {
+    final loc = AppLocalizations.of(context)!;
+    final participants = _tournamentTop.length;
+    final onlineFriends = _friends.where((f) => f.online).length;
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: SizedBox(
+        height: 330,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _cloverTileV10(
+                          icon: Icons.groups_rounded,
+                          title: loc.appBottomNavFriends,
+                          subtitle: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFFA7F3D0),
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                loc.playVsPersonConnectedCount(onlineFriends),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                          gradient: const [
+                            Color(0xFF38BDF8),
+                            Color(0xFF1D4ED8),
+                          ],
+                          shadowColor: const Color(0xFF1D4ED8),
+                          radius: const BorderRadius.only(
+                            topLeft: Radius.circular(48),
+                            topRight: Radius.circular(48),
+                            bottomRight: Radius.circular(18),
+                            bottomLeft: Radius.circular(48),
+                          ),
+                          pushToTop: true,
+                          onTap: () async {
+                            AudioManager.playClick();
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    FriendsScreen(username: username),
+                              ),
+                            );
+                            _refreshStats();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _cloverTileV10(
+                          icon: Icons.emoji_events_rounded,
+                          title: loc.mainMenuBottomNavTournaments,
+                          statusBadgeIcon: _tournamentActionAvailable ? Icons.priority_high_rounded : null,
+                          // 🩹 תוקן באג bidi: צירוף שעון HH:MM:SS (ספרות
+                          // + נקודתיים) בתוך אותה מחרוזת עם טקסט עברי תחת
+                          // RTL הסתיר/בלבל את הספרות (אותו דפוס באג שכבר
+                          // תועד ומטופל בתת-כותרת תא המשימות למטה) - השעון
+                          // עכשיו ב-Text נפרד בתוך Directionality(ltr) משלו.
+                          // 🩹 תוקן סופית: לא עוד ellipsis/Flexible חלקי -
+                          // על מסך צר (אייפון אמיתי, לא האמולטור הרחב
+                          // שבדקתי בו) המחרוזת המלאה ("קופה 200 · 71:59:59"
+                          // בתחילת אירוע 3 ימים) עדיין לא נכנסה ברוחב
+                          // האריח, והמספר האחרון "נקטע"/נדחס לתוך הפינה
+                          // המעוגלת (רדיוס קטן, 18, בפינה הפנימית). FittedBox
+                          // עם scaleDown מכווץ את כל השורה (קופה+שעון יחד,
+                          // ביחס אחיד) אם היא לא נכנסת - במקום שחלק ממנה
+                          // יחרוג/ייחתך. זה לא תלוי ברוחב מסך ספציפי - בטוח
+                          // בכל מכשיר.
+                          subtitle: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  loc.mainMenuTournamentTileSubtitlePrefix(
+                                    currentPoolEstimate(participants),
+                                  ),
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Directionality(
+                                  textDirection: TextDirection.ltr,
+                                  child: Text(
+                                    _formatHms(_tournamentTimeUntilReset),
+                                    maxLines: 1,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          gradient: const [
+                            Color(0xFFFBBF24),
+                            Color(0xFFEA580C),
+                          ],
+                          shadowColor: const Color(0xFFEA580C),
+                          radius: const BorderRadius.only(
+                            topLeft: Radius.circular(48),
+                            topRight: Radius.circular(48),
+                            bottomRight: Radius.circular(48),
+                            bottomLeft: Radius.circular(18),
+                          ),
+                          pushToTop: true,
+                          onTap: _showTournamentChooserV7,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _cloverTileV10(
+                          icon: Icons.shopping_cart_rounded,
+                          title: loc.appBottomNavShop,
+                          statusBadgeIcon: _tournamentBonusActive ? Icons.percent_rounded : null,
+                          subtitle: Text(
+                            _tournamentBonusActive
+                                ? loc.mainMenuShopTileBonusActive
+                                : loc.mainMenuShopQuickLinkSubtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          gradient: const [
+                            Color(0xFF059669),
+                            Color(0xFF34D399),
+                          ],
+                          shadowColor: const Color(0xFF059669),
+                          radius: const BorderRadius.only(
+                            topLeft: Radius.circular(48),
+                            topRight: Radius.circular(18),
+                            bottomRight: Radius.circular(48),
+                            bottomLeft: Radius.circular(48),
+                          ),
+                          pushToTop: false,
+                          onTap: () async {
+                            AudioManager.playClick();
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ShopScreen(),
+                              ),
+                            );
+                            _refreshStats();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _cloverTileV10(
+                          icon: Icons.track_changes_rounded,
+                          title: loc.appBottomNavMissions,
+                          badgeCount: _missionsUnclaimed > 0
+                              ? _missionsUnclaimed
+                              : null,
+                          subtitle: Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(
+                              '$_missionsCompletedCount/$_missionsTotalCount',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          gradient: const [
+                            Color(0xFFBE185D),
+                            Color(0xFFF472B6),
+                          ],
+                          shadowColor: const Color(0xFFBE185D),
+                          radius: const BorderRadius.only(
+                            topLeft: Radius.circular(18),
+                            topRight: Radius.circular(48),
+                            bottomRight: Radius.circular(48),
+                            bottomLeft: Radius.circular(48),
+                          ),
+                          pushToTop: false,
+                          onTap: () async {
+                            AudioManager.playClick();
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const MissionsScreen(),
+                              ),
+                            );
+                            _refreshStats();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            _buildCenterPlayButtonV10(),
+          ],
         ),
       ),
     );
   }
 
-  // כרטיס "?" מסתורי - בדיוק כמו במוקאפ: ריבוע מעוגל עם גרדיאנט פסטלי
-  // בהיר ו"?" סגול גדול באמצע, על הילת זוהר (אותו מבנה שכבר קיים ב-
-  // _buildLogoHero - עיגול RadialGradient מאחורי ריבוע מעוגל). בכוונה
-  // דקורטיבי בלבד (לא "תצוגה מקדימה" אמיתית של הלוגו הבא) - בדיוק כמו
-  // במוקאפ, ששם כן מוצג "?" גנרי ולא רמז אמיתי ללוגו.
-  // 🩹 תוקן לפי בקשה מפורשת: "גדול מידי ומגושם" - היה 0.38 עם clamp
-  // (140,190) והילת זוהר ב-1.6x הגודל (עגול ענק ומטושטש). עכשיו הרבה
-  // יותר קומפקטי (0.24, clamp 92-112, הילה 1.25x בלבד) כדי שכל מסך הבית
-  // ייכנס למסך אחד בלי יותר מדי גלילה.
-  // 🩹 תוקן לפי בקשה מפורשת: "הלוגו של הסימן שאלה מוזר לי מאוד, אולי
-  // פשוט נשים את הלוגו של האפליקציה שמה" - הוסר ה"?" הגנרי (שלא מייצג
-  // שום דבר אמיתי), ובמקומו מוצג הלוגו האמיתי של האפליקציה
-  // (assets/icon/logo.png - אותה תמונה בדיוק שמופיעה באווטאר בשורה
-  // העליונה), באותה מסגרת/הילה שהייתה קודם.
-  Widget _buildNextLogoTeaserV5() {
-    return Builder(builder: (context) {
-      final double size = (MediaQuery.of(context).size.width * 0.24).clamp(92.0, 112.0);
-      return GestureDetector(
-        onTap: _goToLevelsV5,
-        child: Column(
-          children: [
-            Stack(
-              alignment: Alignment.center,
+  // 🩹 תוקן סופית לפי בקשה חוזרת ("אותו הדבר עדיין הזמן מאחוריי הכפתור") -
+  // נבדק בפועל במסך צר (393dp, רוחב אייפון אמיתי - לא האמולטור הרחב יותר
+  // שבדקתי בו קודם, ששם זה פשוט לא נראה) ושוחזר במדויק: כפתור "שחק"
+  // המרכזי (קוטר 150, ממורכז אנכית בתוך ה-SizedBox בגובה 330) תופס את
+  // הטווח האנכי y=90..240 מתוך ה-330. תוכן אריח "pushToTop" (עליון, דחוף
+  // להתחלה) היה מגיע עד y≈110 (16 ריפוד + 42 אייקון + 10 + 22 כותרת + 4 +
+  // 16 תת-כותרת) - נכנס לתוך הטווח הזה, ועל אריח צר שבו תוכן ממורכז
+  // אופקית מגיע קרוב לפינה הפנימית, הטקסט ממש נחתך מאחורי העיגול. אייקון/
+  // מרווחים/גופן כותרת קטנים יותר כאן מצמצמים את גובה התוכן ל-~72px -
+  // מסתיים ב-y≈88, לפני שהעיגול בכלל מתחיל (y=90). אותו תיקון חל גם על
+  // אריחי "pushToBottom" (דחופים לסוף) באותה סימטריה.
+  Widget _cloverTileV10({
+    required IconData icon,
+    required String title,
+    required Widget subtitle,
+    required List<Color> gradient,
+    required Color shadowColor,
+    required BorderRadius radius,
+    required VoidCallback onTap,
+    required bool pushToTop,
+    int? badgeCount,
+    // 🆕 "יופיע להם בצד ימין לוגו צהוב... עם סימן של הנחה ככה הם ידעו
+    // שעדיין יש להם את ההנחה" / "אותו דבר עם הטורנירים" - תג פינתי זהוב
+    // קבוע (לא מספר) לציון "יש כאן משהו פעיל שמחכה לך" - בונוס הנחה פעיל
+    // בחנות, או שלב היום באתגר הרב-יומי שעדיין לא שוחק. לא מוצג יחד עם
+    // badgeCount (אף אריח לא צריך את שניהם בפועל).
+    IconData? statusBadgeIcon,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradient,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: shadowColor.withValues(alpha: 0.4),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: pushToTop
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.end,
               children: [
-                Container(
-                  width: size * 1.25,
-                  height: size * 1.25,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(colors: [const Color(0xFFFFB24D).withValues(alpha: 0.22), const Color(0xFFFFB24D).withValues(alpha: 0.0)]),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(11),
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 16),
+                    ),
+                    if (badgeCount != null)
+                      Positioned(
+                        top: -6,
+                        right: -6,
+                        child: Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 19,
+                            minHeight: 19,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                          ),
+                          child: Text(
+                            '$badgeCount',
+                            style: TextStyle(
+                              color: shadowColor,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (statusBadgeIcon != null)
+                      Positioned(
+                          top: -6,
+                          right: -6,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            alignment: Alignment.center,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFFFFD86B),
+                              boxShadow: [
+                                BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+                              ],
+                            ),
+                            child: Icon(statusBadgeIcon, color: const Color(0xFF2A1740), size: 13),
+                          ),
+                        ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                Container(
-                  width: size,
-                  height: size,
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(size * 0.26),
-                    gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE79A), Color(0xFFC98A32), Color(0xFFFFD86B)]),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 16, offset: const Offset(0, 8))],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(size * 0.22),
-                    child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+                const SizedBox(height: 2),
+                subtitle,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // כפתור "שחק" המרכזי הצף - פותח את אותו גיליון מודים כמו כפתור "שחק"
+  // בסרגל הניווט התחתון (_openModesSheetV7, משותף). נושא את
+  // _tourPlayButtonKey - המטרה של הסיור הראשוני (הועבר לכאן מהסרגל
+  // התחתון כי זה עכשיו הכפתור הבולט/מרכזי יותר בעיצוב Home v10).
+  Widget _buildCenterPlayButtonV10() {
+    final loc = AppLocalizations.of(context)!;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: _tourPlayButtonKey,
+        customBorder: const CircleBorder(),
+        onTap: _openModesSheetV7,
+        child: Container(
+          width: 150,
+          height: 150,
+          padding: const EdgeInsets.all(4),
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0xFF2A145E),
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFFFE08A),
+                  Color(0xFFFFB24D),
+                  Color(0xFFFF8A3C),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 26,
+                  offset: const Offset(0, 14),
+                ),
+                BoxShadow(
+                  color: const Color(0xFFFFAA3C).withValues(alpha: 0.4),
+                  blurRadius: 30,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Color(0xFF2A1740),
+                  size: 36,
+                ),
+                Text(
+                  loc.appBottomNavPlay,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    color: Color(0xFF2A1740),
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text('מוכנים לזהות את הלוגו הבא?', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
-          ],
+          ),
         ),
-      );
-    });
+      ),
+    );
   }
 
-  Future<void> _goToLevelsV5() async {
+  // ניווט למסך השלבים - נקרא מתוך גיליון המודים (_buildModesSheetV7,
+  // כרטיס "שלבים"). סגירת הסיור (אם פעיל) מטופלת בכפתור "שחק" עצמו
+  // (_buildHomeBottomNavV7) שפותח את הגיליון, לא כאן.
+  Future<void> _goToLevels() async {
     AudioManager.playClick();
-    // 🩹 תוקן לפי בקשה מפורשת: "אני רוצה שהם ישלחו את הבנאדם לרמות
-    // והשלבים" - השלב האחרון/הפעיל-ללחיצה בסיור עבר לכאן (כפתור
-    // "שחקו את רמה X") - מוביל למסך השלבים האמיתי, לא לרנדומלי ולא
-    // למול-אחרים (ראו _buildHomeTourOverlayV5).
-    if (showHomeTour && _tourStep == _tourStepCount - 1) {
-      setState(() => showHomeTour = false);
-    }
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => const LevelsScreen()));
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LevelsScreen()),
+    );
     _refreshStats();
   }
 
-  // כפתור CTA מלא-רוחב בגרדיאנט כתום-זהב - "▶ שחקו את רמה X".
-  Widget _buildPlayCtaButtonV5() {
-    final (world, _, _) = _worldProgress(maxLevel);
+  // ===================== מסך הבית - עיצוב "Home v10" (מחליף את 1b) =====================
+
+  // ===================== סרגל ניווט תחתון ייעודי למסך הבית (Home v10) =====================
+  // 🆕 מחליף כאן את AppBottomNav המשותף - ראו הערה ב-build(). חוזר לסט
+  // המקורי של המוקאפ: חנות · מובילים · שחק · משימות · הגדרות. "חברים"
+  // ו"טורנירים" לא נעלמו - נגישים עכשיו דרך כרטיסי התלתן (ראו
+  // _buildCloverGridV10), בדיוק לפי המוקאפ שכבר לא כולל אותם כאן.
+  // 🩹 תוקן לפי בקשה מפורשת ("המניו למטה הוא לא הכי למטה ומופיעים מאחוריו
+  // דברים") - הסרגל היה "כרית" צפה עם שוליים מכל 4 הצדדים (left/right:18,
+  // bottom:safeArea+14), שמשאירה פער שקוף בינה לבין קצה המסך האמיתי - בדיוק
+  // שם תוכן גלול יכול "להציץ" מתחת לסרגל. בדיקה מול המוקאפ המקורי
+  // (Home v10.html, "bottom tab bar") מראה שהסרגל שם למעשה צמוד לקצה
+  // (left:0, right:0, bottom:0, רק הפינות העליונות מעוגלות) - לא כרית צפה.
+  // עכשיו תואם את זה בדיוק: צמוד לקצה התחתון האמיתי, בלי שום פער.
+  Widget _buildHomeBottomNavV7() {
+    final loc = AppLocalizations.of(context)!;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(30),
+          topRight: Radius.circular(30),
+        ),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            padding: EdgeInsets.fromLTRB(
+              8,
+              12,
+              8,
+              MediaQuery.of(context).padding.bottom + 12,
+            ),
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(30),
+                topRight: Radius.circular(30),
+              ),
+              border: const Border(
+                top: BorderSide(color: Colors.white24, width: 1),
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF1E1448).withValues(alpha: 0.95),
+                  const Color(0xFF120C2E).withValues(alpha: 0.99),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 36,
+                  offset: const Offset(0, -14),
+                ),
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: _navTabV7(
+                    icon: Icons.shopping_cart_rounded,
+                    color: const Color(0xFF6EE7B7),
+                    label: loc.appBottomNavShop,
+                    discountBadge: _tournamentBonusActive,
+                    onTap: () async {
+                      AudioManager.playClick();
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ShopScreen(),
+                        ),
+                      );
+                      _refreshStats();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _navTabV7(
+                    icon: Icons.bar_chart_rounded,
+                    color: const Color(0xFFFDA4AF),
+                    label: loc.appBottomNavLeaderboard,
+                    onTap: () async {
+                      AudioManager.playClick();
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LeaderboardScreen(),
+                        ),
+                      );
+                      _refreshStats();
+                    },
+                  ),
+                ),
+                SizedBox(width: 88, child: _navPlayButtonV7()),
+                Expanded(
+                  child: _navTabV7(
+                    icon: Icons.track_changes_rounded,
+                    color: const Color(0xFF34D399),
+                    label: loc.appBottomNavMissions,
+                    badgeCount: _missionsUnclaimed > 0
+                        ? _missionsUnclaimed
+                        : null,
+                    onTap: () async {
+                      AudioManager.playClick();
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const MissionsScreen(),
+                        ),
+                      );
+                      _refreshStats();
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: _navTabV7(
+                    icon: Icons.settings_rounded,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    label: loc.settingsScreenTitle,
+                    onTap: () async {
+                      final prefs = await SharedPreferences.getInstance();
+                      final name = prefs.getString('username') ?? '';
+                      if (!mounted) return;
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SettingsScreen(username: name),
+                        ),
+                      );
+                      _refreshStats();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _navTabV7({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required VoidCallback onTap,
+    int? badgeCount,
+    bool showDot = false,
+    // 🆕 "שיופיע להם בצד ימין לוגו צהוב של החנות עם סימן של הנחה" - טאב
+    // "חנות" הוא הראשון ב-Row הזה, שמוצג בפועל הכי מימין בגלל ה-RTL -
+    // בדיוק "בצד ימין" שהתבקש. תג זהוב עם "%" כשיש בונוס מבצע-אלוף פעיל
+    // (IapManager.tournamentBonusActive), כדי שלא ישכחו שההנחה עדיין בתוקף.
+    bool discountBadge = false,
+  }) {
     return Material(
-      key: _tourCtaKey,
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: _goToLevelsV5,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            gradient: const LinearGradient(colors: [Color(0xFFFFB24D), Color(0xFFFF8A3C)]),
-            boxShadow: [BoxShadow(color: const Color(0xFFFF8A3C).withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 8))],
-          ),
-          child: Row(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
-            textDirection: TextDirection.rtl,
             children: [
-              Text('שחקו את רמה $world', style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
-              const SizedBox(width: 8),
-              const Icon(Icons.play_arrow_rounded, color: Color(0xFF2A1740), size: 20),
+              Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Icon(icon, color: color, size: 23),
+                  if (discountBadge)
+                    Positioned(
+                      top: -4,
+                      right: -6,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFFFD86B),
+                        ),
+                        child: const Icon(Icons.percent_rounded, color: Color(0xFF2A1740), size: 10),
+                      ),
+                    ),
+                  if (showDot)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF4ADE80),
+                        ),
+                      ),
+                    ),
+                  if (badgeCount != null)
+                    Positioned(
+                      top: -4,
+                      right: -8,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 17,
+                          minHeight: 17,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color,
+                          border: Border.all(
+                            color: const Color(0xFF120C2E),
+                            width: 1.3,
+                          ),
+                        ),
+                        child: Text(
+                          '$badgeCount',
+                          style: const TextStyle(
+                            color: Color(0xFF120C2E),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
@@ -1540,163 +2801,1141 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     );
   }
 
-  // שורת נקודות התקדמות - "18 •••••• 1" במוקאפ. אותם נתונים בדיוק כמו
-  // הפיל/פס ההתקדמות הישן (_worldProgress), רק כתצוגת נקודות במקום %.
-  Widget _buildProgressDotsV5() {
-    final (_, sub, count) = _worldProgress(maxLevel);
-    final dots = count.clamp(1, 40); // הגנה - עולם הכי ארוך היום הוא 35
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        Text('$count', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Row(
-            children: List.generate(dots, (i) {
-              final idx = i + 1;
-              final isCurrent = idx == sub;
-              final isDone = idx < sub;
-              final color = isCurrent
-                  ? const Color(0xFFFFD86B)
-                  : (isDone ? const Color(0xFF4ADE80) : Colors.white.withValues(alpha: 0.18));
-              return Expanded(
-                child: Container(
-                  height: 5,
-                  margin: const EdgeInsets.symmetric(horizontal: 1.2),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), color: color),
+  // כפתור "שחק" בסרגל הניווט התחתון - מוגבה ומוגדל (זהה בעיקרון
+  // ל-_buildHomeSlot של AppBottomNav, רק עם onTap שפותח את גיליון
+  // המודים במקום popUntil). 🩹 ה-_tourPlayButtonKey עבר לכפתור "שחק"
+  // המרכזי הגדול של התלתן (_buildCenterPlayButtonV10) - הוא הבולט/
+  // המרכזי יותר בעיצוב Home v10, אז הסיור מצביע עליו ולא עוד על הכפתור
+  // הזה (אי אפשר שאותו GlobalKey יהיה על שני ווידג'טים בעת ובעונה אחת).
+  Widget _navPlayButtonV7() {
+    final loc = AppLocalizations.of(context)!;
+    return Center(
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _playButtonPressed = true),
+        onTapUp: (_) => setState(() => _playButtonPressed = false),
+        onTapCancel: () => setState(() => _playButtonPressed = false),
+        onTap: _openModesSheetV7,
+        child: AnimatedScale(
+          scale: _playButtonPressed ? 0.88 : 1.0,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFFFFE08A),
+                  Color(0xFFFFB24D),
+                  Color(0xFFFF8A3C),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
                 ),
-              );
-            }),
+                BoxShadow(
+                  color: const Color(0xFFFFAA3C).withValues(alpha: 0.4),
+                  blurRadius: 26,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Color(0xFF2A1740),
+                  size: 24,
+                ),
+                Text(
+                  loc.appBottomNavPlay,
+                  style: const TextStyle(
+                    color: Color(0xFF2A1740),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        Text('1', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11, fontWeight: FontWeight.w700)),
-      ],
+      ),
     );
   }
 
-  // גריד 2x2 - מחליף את _buildModesGrid + _buildBattlePassCard +
-  // _buildDailyChallengeCard הישנים באחד מאוחד, כל כרטיס עם אותו onTap
-  // ומקור נתונים בדיוק כמו קודם (ראו הערות בכל כרטיס).
-  Widget _buildHomeGridV5() {
-    final liveCount = (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) + (_superdualPlayersNow ?? 0);
+  // ===================== גיליון "איך משחקים היום?" (Home v7) =====================
+  // 🆕 פותח עם כל המודים של המשחק - "יש הרבה מודים" לפי הבקשה המקורית
+  // שהניעה את העיצוב מחדש הזה, אז במקום גריד קבוע על מסך הבית, כל
+  // האפשרויות מרוכזות כאן בגיליון אחד שנפתח מכפתור "שחק" המרכזי.
+  // 🩹 תוקן לפי בקשה מפורשת ("תעביר את המניו שנפתח אחריי שלוחצים על
+  // השחק", עם צירוף חוזר של המוקאפ) - במוקאפ המקורי (Home v10.html,
+  // ה-sc-if של isOpen) המסך הזה הוא עמוד מסך-מלא (inset:0 על כל גובה/
+  // רוחב הפלאפון) שמחליף את מסך הבית לגמרי, לא גיליון חלקי שעולה
+  // מלמטה ומשאיר פס מהבית גלוי למעלה (showModalBottomSheet הקודם).
+  // עכשיו נפתח כ-route מסך-מלא רגיל (Navigator.push), עם אנימציית
+  // fade+scale קלה במקום slide-up - התוכן עצמו (כותרת/שורות המודים)
+  // לא השתנה, רק המארז סביבו.
+  void _openModesSheetV7() {
+    AudioManager.playClick();
+    // 🩹 לפי בקשה מפורשת - לא סוגרים את הסיור כאן יותר. במקום זה מתקדמים
+    // לשלב הבא (הכרטיס "שלבים" בתוך הגיליון שנפתח עכשיו, ראו
+    // _buildModesSheetV7/_tourLevelsCardKey) - הסיור ממשיך שם, לא נעצר.
+    if (showHomeTour && _tourStep == 0) {
+      setState(() => _tourStep = 1);
+    }
+    Navigator.push(
+      context,
+      PageRouteBuilder<void>(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (routeContext, animation, secondaryAnimation) =>
+            _buildModesSheetV7(routeContext),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
+  Widget _buildModesSheetV7(BuildContext sheetContext) {
+    final loc = AppLocalizations.of(context)!;
     final challenge = _dailyChallenge;
     final done = challenge?.completed ?? false;
     final usedUp = challenge != null && !done && challenge.attempted;
     final dailySubtitle = done
-        ? 'קיבלת את הפרס - חוזר מחר'
-        : (usedUp ? 'נוצל להיום, נסה מחר' : '${MissionsService.dailyChallengeLogoCount} לוגואים');
+        ? loc.mainMenuDailyRewardClaimed
+        : (usedUp
+              ? loc.mainMenuDailyUsedUp
+              : loc.playVsPersonLogosRangeSingle(
+                  MissionsService.dailyChallengeLogoCount,
+                ));
+    // 🩹 תוקן לפי בקשה מפורשת: "רשום בשני רמה 2 ואני ברמה 1" - הכרטיס
+    // "שלבים" הציג את maxLevel הגולמי (מונה הלוגו הכללי לאורך כל המשחק,
+    // למשל 2 = "הלוגו השני בסך הכול") תחת התווית "רמה 2", מה שנראה כמו
+    // "עולם/רמה 2" - אבל המשתמש עדיין בעולם 1. עכשיו מציג "עולם · שלב"
+    // אמיתיים (אותו _worldProgress בדיוק כמו בפס ההתקדמות בבית), כך
+    // שהמספר תואם למה שבאמת רואים שם.
+    final (levelsWorld, levelsSub, _) = _worldProgress(maxLevel);
 
-    final bpSubtitle = _bpPendingClaims > 0 ? 'דרגה $_bpTier • $_bpPendingClaims פרסים מחכים' : 'דרגה $_bpTier';
-
-    return Column(
-      children: [
-        Row(
-          textDirection: TextDirection.rtl,
-          children: [
-            Expanded(
-              child: _HomeStatusCardV5(
-                key: _tourRandomCardKey,
-                gradient: const [Color(0xFF4FACFE), Color(0xFF2E6DC4)],
-                icon: Icons.casino_rounded,
-                title: 'רנדומלי',
-                subtitle: 'לוגו אקראי • רצף $streak 🔥',
-                onTap: () async {
-                  AudioManager.playClick();
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LevelLoadingScreen(puzzleId: 0, isRandomMode: true, categoryLabel: "אתגר רנדומלי")),
-                  );
-                  _refreshStats();
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _HomeStatusCardV5(
-                key: _tourVsOthersCardKey,
-                gradient: const [Color(0xFFEF3B5B), Color(0xFFC2163F)],
-                icon: Icons.groups_rounded,
-                title: 'מול אחרים',
-                subtitle: '3 מודים • $liveCount מחוברים',
-                topLeftBadge: _liveBadgeV5(liveCount),
-                onTap: () async {
-                  AudioManager.playClick();
-                  // 🩹 מסך "מול אחרים" בודק בעצמו (PlayVsPersonModeScreen, ראו
-                  // FirstVisitExplainer) אם זו הכניסה הראשונה שלו אליו - לא
-                  // משנה אם זה קרה דרך הסיור או בכל דרך אחרת מאוחר יותר.
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => PlayVsPersonModeScreen(username: username)),
-                  );
-                  _refreshStats();
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          textDirection: TextDirection.rtl,
-          children: [
-            Expanded(
-              child: _HomeStatusCardV5(
-                gradient: const [Color(0xFFFFB24D), Color(0xFFFF8A3C)],
-                icon: Icons.auto_awesome_rounded,
-                title: 'באטל פאס',
-                subtitle: bpSubtitle,
-                topLeftBadge: _bpPendingClaims > 0 ? _countBadgeV5(_bpPendingClaims, const Color(0xFFE11D74)) : null,
-                onTap: () async {
-                  AudioManager.playClick();
-                  await Navigator.push(context, MaterialPageRoute(builder: (context) => const BattlePassScreen()));
-                  _refreshStats();
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _HomeStatusCardV5(
-                gradient: const [Color(0xFF34D399), Color(0xFF15936A)],
-                icon: Icons.event_note_rounded,
-                title: 'אתגר יומי',
-                subtitle: dailySubtitle,
-                onTap: _playDailyChallenge,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // 🩹 לפי בקשה מפורשת - התג עצמו ("LIVE") מציג גם את כמות השחקנים
-  // המחוברים, לא רק את המילה "LIVE" לבד (הכמות עדיין מופיעה גם בתת-
-  // הכותרת של הכרטיס - "3 מודים • X מחוברים" - זו תוספת, לא תחליף).
-  // 🩹 תוקן לפי בקשה מפורשת: היה כתוב "LIVE $liveCount" - עכשיו "X
-  // מחוברים" (בלי המילה LIVE בכלל).
-  Widget _liveBadgeV5(int liveCount) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.black.withValues(alpha: 0.32)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E0F4A),
+      // 🩹 תוקן לפי בקשה מפורשת ("תקטין טיפה את זה... ושיהיה למטה
+      // המניו") - נוסף Stack עם AppBottomNav המשותף בתחתית (לא היה כאן
+      // בכלל קודם), ורוב הגדלים/הריפודים בתוכן קוטנו כדי שכל התוכן יכנס
+      // קרוב ככל האפשר למסך אחד בלי גלילה.
+      body: Stack(
         children: [
-          Container(width: 7, height: 7, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
-          const SizedBox(width: 5),
-          Text('$liveCount מחוברים', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
+          SizedBox.expand(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF3A1B82), Color(0xFF1E0F4A)],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    18,
+                    10,
+                    18,
+                    110 + MediaQuery.of(context).padding.bottom,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 🩹 נבנה מחדש לפי בקשה מפורשת ("שלחתי לך את המסך שאני
+                      // רוצה תשים אותו") - תואם עכשיו בדיוק את גיליון isOpen
+                      // במוקאפ (Home v10.html): כפתור סגירה "›" + פילי מטבעות/
+                      // אנרגיה בשורה אחת, כותרת גדולה ממורכזת + משפט קריצה,
+                      // רשת 2x2 לכרטיסי "לבד" (לא עוד רשימת שורות), ו"מול
+                      // אחרים" עם מחוון "X מחוברים" חי ליד הכותרת. כל המספרים
+                      // עדיין אמיתיים (coins/_energy/world/sub/tafzoretWorlds/
+                      // streak/dailySubtitle/players), רק המארז הוויזואלי תואם
+                      // את המוקאפ עכשיו.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          InkWell(
+                            onTap: () => Navigator.pop(sheetContext),
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              width: 42,
+                              height: 42,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                color: Colors.white.withValues(alpha: 0.09),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.14),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _topPillV5(
+                                icon: Icons.monetization_on_rounded,
+                                color: const Color(0xFFFFD86B),
+                                text: '$coins',
+                              ),
+                              const SizedBox(width: 6),
+                              _topPillV5(
+                                icon: Icons.bolt_rounded,
+                                color: const Color(0xFF7DD3FC),
+                                text: '$_energy/${EnergyService.maxEnergy}',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Center(
+                        child: Column(
+                          children: [
+                            Text(
+                              loc.mainMenuModesSheetTitle,
+                              style: const TextStyle(
+                                color: Color(0xFFFFD86B),
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                shadows: [
+                                  Shadow(
+                                    color: Color(0xFFB4531A),
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              loc.mainMenuModesSheetSubtitle,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.65),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _modesSheetSectionDividerV7(
+                        loc.mainMenuModesSheetSoloSection,
+                      ),
+                      const SizedBox(height: 6),
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: 7,
+                        crossAxisSpacing: 7,
+                        childAspectRatio: 150 / 98,
+                        children: [
+                          _modesSoloCardV7(
+                            cardKey: _tourLevelsCardKey,
+                            icon: Icons.map_rounded,
+                            gradient: const [
+                              Color(0xFFA78BFA),
+                              Color(0xFF6D28D9),
+                            ],
+                            shadowColor: const Color(0xFF4C1D95),
+                            title: loc.mainMenuModesLevelsTitle,
+                            note: loc.mainMenuLevelProgressTitle(
+                              levelsWorld,
+                              levelsSub,
+                            ),
+                            onTap: () {
+                              // 🩹 שלב 2 (האחרון) של הסיור הראשוני מסתיים
+                              // כאן, בדיוק כמו שהתבקש - ראו _tourLevelsCardKey.
+                              if (showHomeTour) {
+                                setState(() => showHomeTour = false);
+                              }
+                              Navigator.pop(sheetContext);
+                              _goToLevels();
+                            },
+                          ),
+                          _modesSoloCardV7(
+                            icon: Icons.extension_rounded,
+                            gradient: const [
+                              Color(0xFFF472B6),
+                              Color(0xFFBE185D),
+                            ],
+                            shadowColor: const Color(0xFF831843),
+                            title: loc.mainMenuModesTafzoretTitle,
+                            note: loc.mainMenuModesTafzoretNote(
+                              tafzoretWorlds.length,
+                            ),
+                            onTap: () async {
+                              Navigator.pop(sheetContext);
+                              AudioManager.playClick();
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const TafzoretWorldsScreen(),
+                                ),
+                              );
+                              _refreshStats();
+                            },
+                          ),
+                          _modesSoloCardV7(
+                            icon: Icons.casino_rounded,
+                            gradient: const [
+                              Color(0xFFFBBF24),
+                              Color(0xFFEA580C),
+                            ],
+                            shadowColor: const Color(0xFF9A3412),
+                            title: loc.mainMenuRandomTitle,
+                            note: loc.mainMenuRandomSubtitle(streak),
+                            onTap: () async {
+                              Navigator.pop(sheetContext);
+                              AudioManager.playClick();
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => LevelLoadingScreen(
+                                    puzzleId: 0,
+                                    isRandomMode: true,
+                                    categoryLabel:
+                                        loc.mainMenuRandomChallengeLabel,
+                                  ),
+                                ),
+                              );
+                              _refreshStats();
+                            },
+                          ),
+                          _modesSoloCardV7(
+                            icon: Icons.event_note_rounded,
+                            gradient: const [
+                              Color(0xFF38BDF8),
+                              Color(0xFF1D4ED8),
+                            ],
+                            shadowColor: const Color(0xFF1E3A8A),
+                            title: loc.mainMenuDailyChallengeMiniTitle,
+                            note: dailySubtitle,
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              _playDailyChallenge();
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _modesSheetSectionDividerV7(
+                        loc.mainMenuVsOthersTitle,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF6EE7B7),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              loc.playVsPersonConnectedCount(
+                                (_superdualPlayersNow ?? 0) +
+                                    (_duelPlayersNow ?? 0) +
+                                    (_racePlayersNow ?? 0),
+                              ),
+                              style: const TextStyle(
+                                color: Color(0xFF6EE7B7),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _modesVersusRowV7(
+                        icon: Icons.emoji_events_rounded,
+                        gradient: const [Color(0xFFFFC94D), Color(0xFFF97316)],
+                        shadowColor: const Color(0xFF9A3412),
+                        title: loc.playVsPersonSeriesTitle,
+                        note: loc.playVsPersonSeriesSubtitle,
+                        onlineCount: _superdualPlayersNow,
+                        energyCost: 2,
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          AudioManager.playClick();
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DuelLobbyScreen(
+                                username: username,
+                                seriesMode: true,
+                              ),
+                            ),
+                          );
+                          _refreshStats();
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      _modesVersusRowV7(
+                        icon: Icons.bolt_rounded,
+                        gradient: const [Color(0xFFFB7185), Color(0xFFBE123C)],
+                        shadowColor: const Color(0xFF881337),
+                        title: loc.playVsPersonDuelTitle,
+                        note: loc.playVsPersonDuelSubtitle,
+                        onlineCount: _duelPlayersNow,
+                        energyCost: 2,
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          AudioManager.playClick();
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  DuelLobbyScreen(username: username),
+                            ),
+                          );
+                          _refreshStats();
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      _modesVersusRowV7(
+                        icon: Icons.flag_rounded,
+                        gradient: const [Color(0xFF34D399), Color(0xFF047857)],
+                        shadowColor: const Color(0xFF064E3B),
+                        title: loc.playVsPersonRaceTitle,
+                        note: loc.playVsPersonRaceSubtitle,
+                        onlineCount: _racePlayersNow,
+                        energyCost: 2,
+                        onTap: () async {
+                          Navigator.pop(sheetContext);
+                          AudioManager.playClick();
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  LogoRaceScreen(username: username),
+                            ),
+                          );
+                          _refreshStats();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // 🩹 none (לא home) - ראו ההערה המתועדת ב-app_bottom_nav.dart -
+          // כדי שכפתור "בית" כאן יסגור את הגיליון הזה בפועל, במקום no-op.
+          AppBottomNav(current: AppTab.none),
+          // 🆕 שלב 2 (האחרון) של הסיור הראשוני - ראו _tourLevelsCardKey.
+          // הגיליון הזה נפתח כ-route מסך-מלא נפרד (לא overlay על מסך
+          // הבית), אז ספוטלייט הסיור חייב להיות מצויר כאן בתוך הגיליון
+          // עצמו ולא ב-Stack של main_menu_screen.dart - אחרת הוא פשוט
+          // לא יהיה גלוי (מתחת לגיליון האטום הזה).
+          if (showHomeTour && _tourStep == 1)
+            // 🩹 StatefulBuilder מקומי - ראו ההסבר המלא ב-_buildTourSpotlight
+            // (onRetryRebuild): הגיליון הזה route נפרד, this.setState לא
+            // יכול לרענן אותו - ה-setState המקומי של ה-StatefulBuilder כן.
+            StatefulBuilder(
+              builder: (sbContext, setSheetState) => _buildTourSpotlight(
+                targetKey: _tourLevelsCardKey,
+                title: loc.mainMenuTourLevelsCardTitle,
+                body: loc.mainMenuTourLevelsCardBody,
+                onRetryRebuild: () => setSheetState(() {}),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _countBadgeV5(int count, Color color) {
+  // שורת מוד "מול אחרים" - אייקון בריבוע מעוגל + שם/הערה + פיל "מחוברים
+  // עכשיו" (אמיתי, ראו קריאות ל-PresenceService ב-_refreshPresenceCounts).
+  // onlineCount == null מוצג כ"עוד לא נטען" (לא מציג פיל בכלל) - בדיוק
+  // כמו הדפוס הקיים ב-_ModeCard.liveCount.
+  // 🆕 נוסף בחזרה למסך הבית לפי בקשה מפורשת ("הלוגו פאס עדיין לא
+  // מופיע... תעשה עיצוב אחר ומיוחד", ואז "הוא אמור להיות במקום איפה
+  // שרשום למטה רמה X שלב X") - במעבר ל-Home v10 נמחק הכרטיס הישן
+  // (_buildBattlePassCard למטה - עדיין קיים אך הפך ללא מקושר) בלי שנוספה
+  // לו נקודת כניסה חדשה, כך שהלוגו פאס נעלם לגמרי מהתפריט. בניסיון
+  // ראשון הוא הוצג בתוך גיליון "בחרו מוד", ואז עבר לאזור פס ההתקדמות
+  // "רמה · שלב" - אבל אותו פס נמחק לגמרי בעקבות בקשה נוספת ("ואת איפה
+  // שרשום רמה 1 שלב 2 תמחק"), אז הבאנר הזה הפך לכרטיס היחיד באזור הזה
+  // (ראו build()). עדיין "באנר" ייעודי - זהוב, גדול ומבריק יותר מכרטיסי
+  // המוד הרגילים - בדיוק כי זה פיצ'ר פרימיום שראוי לבלוט. ה-state
+  // (_bpTier/_bpPoints/...) כבר חי ומתעדכן (_refreshBattlePass נקרא
+  // מ-_refreshStats), רק חסרה הייתה נקודת תצוגה - חישוב ההתקדמות כאן
+  // זהה ל-_buildBattlePassCard הישן.
+  Widget _buildBattlePassBannerV7() {
+    final loc = AppLocalizations.of(context)!;
+    final tiers = BattlePassService.tiers;
+    final maxTier = tiers.length;
+    final int currentRequired = _bpTier <= 0
+        ? 0
+        : tiers
+              .firstWhere((t) => t.tier == _bpTier, orElse: () => tiers.first)
+              .pointsRequired;
+    final nextDef = _bpTier < maxTier ? tiers[_bpTier] : null;
+    final int span = nextDef == null
+        ? 0
+        : nextDef.pointsRequired - currentRequired;
+    final int within = nextDef == null
+        ? 0
+        : (_bpPoints - currentRequired).clamp(0, span);
+    final double progress = nextDef == null
+        ? 1.0
+        : (span == 0 ? 1.0 : within / span);
+    final String fractionText = nextDef == null
+        ? loc.mainMenuMaxLabel
+        : "$within/$span";
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () async {
+          AudioManager.playClick();
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const BattlePassScreen()),
+          );
+          _refreshStats();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF7A4E12), Color(0xFF3A2306)],
+            ),
+            border: Border.all(
+              color: const Color(0xFFFFD86B).withValues(alpha: 0.6),
+              width: 1.4,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFFB84D).withValues(alpha: 0.28),
+                blurRadius: 22,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: -24,
+                  top: -36,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          Colors.white.withValues(alpha: 0.14),
+                          Colors.white.withValues(alpha: 0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFE79A), Color(0xFFFF9A3C)],
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Color(0xFF2A1740),
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    loc.mainMenuBattlePassTitle,
+                                    style: const TextStyle(
+                                      color: Color(0xFFFFD86B),
+                                      fontSize: 16.5,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  if (_bpPremium) ...[
+                                    const SizedBox(width: 5),
+                                    const Text(
+                                      "👑",
+                                      style: TextStyle(fontSize: 13),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              // 🩹 תוקן לפי בקשה מפורשת ("לא רואים את
+                              // המספרים טוב") - "X/Y" היה שורה נפרדת,
+                              // קטנה ולבנה, מרוחקת לגמרי מתחת לפס ההתקדמות
+                              // (בלי שום קשר חזותי ישיר אליו) - קל לפספס.
+                              // עכשיו צמוד לתווית "דרגה" באותה שורה
+                              // (spaceBetween), גדול וזהוב בוהק - אותו
+                              // דפוס מוכח שהיה בפס ההתקדמות של השלבים
+                              // (שנמחק מאז, ראו ההערה מעל הפונקציה).
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${loc.battlePassTierLabel} $_bpTier',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  Directionality(
+                                    textDirection: TextDirection.ltr,
+                                    child: Text(
+                                      fractionText,
+                                      style: const TextStyle(
+                                        color: Color(0xFFFFD86B),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_bpPendingClaims > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: const Color(0xFFE11D74),
+                            ),
+                            child: Text(
+                              loc.mainMenuClaimsCount(_bpPendingClaims),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          )
+                        else
+                          Icon(
+                            Icons.chevron_left_rounded,
+                            color: Colors.white.withValues(alpha: 0.55),
+                            size: 22,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 9,
+                        backgroundColor: Colors.white.withValues(alpha: 0.14),
+                        valueColor: const AlwaysStoppedAnimation(
+                          Color(0xFFFFD86B),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 🆕 כותרת section בגיליון המודים - תואמת עכשיו את המוקאפ (Home v10.html):
+  // כותרת מודגשת + קו מפריד שמתפרס על שאר הרוחב, ואופציונלית ווידג'ט נוסף
+  // בקצה (למשל מחוון "X מחוברים" חי ליד "מול אחרים").
+  Widget _modesSheetSectionDividerV7(String label, {Widget? trailing}) {
+    return Row(
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.12),
+          ),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 10), trailing],
+      ],
+    );
+  }
+
+  // 🆕 כרטיס "לבד" ברשת 2x2 - תואם עכשיו את המוקאפ (Home v10.html) במקום
+  // שורת-רשימה: כרטיס גבוה עם רקע גרדיאנט מלא, "צל כפתור" מוצק (לא רק
+  // טשטוש) שנותן תחושת לחיצה תלת-מימדית, עיגול דקורטיבי ואייקון גדול
+  // שמציצים מהפינה, וכותרת+הערה בראש. 🩹 אייקון וקטורי (לא אימוג'י כמו
+  // במוקאפ המקורי) - אותה בעיית "ריבוע ריק" שתועדה כבר כמה פעמים
+  // באפליקציה הזו (ראו app_icons.dart).
+  Widget _modesSoloCardV7({
+    Key? cardKey,
+    required IconData icon,
+    required List<Color> gradient,
+    required Color shadowColor,
+    required String title,
+    required String note,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      key: cardKey,
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(26),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(26),
+        onTap: onTap,
+        splashColor: Colors.white.withValues(alpha: 0.1),
+        child: Container(
+          // 🩹 תוקן לפי בקשה מפורשת ("האות הראשונה חתוכה") - הריפוד
+          // (12px) היה על ה-Container החיצוני, ואילו ה-ClipRRect שמעגל
+          // את הפינות (רדיוס 22) עטף את ה-Stack *בפנים* כבר-מצומצם ב-
+          // 12px מכל צד - כך שהעיגול הוחל על קופסה קטנה משמעותית מהכרטיס
+          // האמיתי, וקצץ עמוק מדי לתוך הפינה הימנית-עליונה שם מתחיל
+          // הכיתוב (הימנית = תחילת הטקסט ב-RTL). עכשיו ה-ClipRRect עוטף
+          // את הגבולות האמיתיים (לא מצומצם), והריפוד עבר להיות רק סביב
+          // הכיתוב עצמו (לא סביב האלמנטים הדקורטיביים, שעדיין "מציצים"
+          // עד הקצה האמיתי בדיוק כמו במוקאפ).
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradient,
+            ),
+            boxShadow: [
+              BoxShadow(color: shadowColor, offset: const Offset(0, 5)),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: -22,
+                  bottom: -22,
+                  child: Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 4,
+                  bottom: 0,
+                  child: Transform.rotate(
+                    angle: -0.14,
+                    child: Icon(
+                      icon,
+                      size: 38,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        note,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // קטע "● N משחקים" / "⚡ N" - פיל שחור-שקוף קטן בתוך שורת "מול אחרים".
+  // 🩹 האנרגיה כ-Icon וקטורי נפרד (לא "⚡ $cost" במחרוזת אחת) - אותה
+  // בעיית bidi (אימוג'י+ספרה בלי עוגן RTL) שתועדה כבר כמה פעמים בקובץ
+  // הזה (ראו למשל הסבר ליד _loginStreakDays ב-_buildTopBarV7).
+  Widget _versusInfoPillV7({
+    Color? dotColor,
+    IconData? icon,
+    required String text,
+    Color? textColor,
+  }) {
     return Container(
-      width: 22,
-      height: 22,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color, border: Border.all(color: const Color(0xFF120C2E), width: 1.5)),
-      child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.black.withValues(alpha: 0.22),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (dotColor != null) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: dotColor,
+              ),
+            ),
+            const SizedBox(width: 5),
+          ] else if (icon != null) ...[
+            Icon(icon, size: 11, color: textColor ?? Colors.white),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              color: textColor ?? Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🩹 עוצב מחדש לפי בקשה מפורשת ("שלחתי לך את המסך שאני רוצה תשים
+  // אותו") - תואם עכשיו במדויק את שורות "versus" במוקאפ (Home v10.html):
+  // ריבוע-אייקון 60x60 על רקע לבן שקוף (לא עוד ריבוע-גרדיאנט נפרד),
+  // עיגול דקורטיבי שמציץ מהפינה, "צל כפתור" מוצק, ושורת פילים "● N
+  // משחקים" / "⚡ N" מתחת לכותרת/הערה. גם משמש את גיליון בחירת הטורניר
+  // (_showTournamentChooserV7) - שם אין onlineCount/energyCost אמיתיים,
+  // אז הפילים פשוט לא מוצגים (שום דבר לא מומצא).
+  Widget _modesVersusRowV7({
+    required IconData icon,
+    required List<Color> gradient,
+    required Color shadowColor,
+    required String title,
+    required String note,
+    int? onlineCount,
+    int? energyCost,
+    required VoidCallback onTap,
+  }) {
+    final loc = AppLocalizations.of(context)!;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(26),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(26),
+        onTap: onTap,
+        splashColor: Colors.white.withValues(alpha: 0.1),
+        child: Container(
+          // 🩹 אותו תיקון בדיוק כמו ב-_modesSoloCardV7 ("האות הראשונה
+          // חתוכה") - הריפוד עבר מה-Container החיצוני (לפני ה-ClipRRect,
+          // שגרם לעיגול הפינות להיות מוחל על קופסה כבר-מצומצמת) לתוך
+          // ה-Row עצמו (אחרי ה-ClipRRect, על הגבולות האמיתיים).
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradient,
+            ),
+            boxShadow: [
+              BoxShadow(color: shadowColor, offset: const Offset(0, 5)),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: -26,
+                  top: -26,
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(11),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          color: Colors.white.withValues(alpha: 0.24),
+                        ),
+                        child: Icon(icon, color: Colors.white, size: 22),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              note,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.88),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (onlineCount != null || energyCost != null) ...[
+                              const SizedBox(height: 5),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (onlineCount != null)
+                                    _versusInfoPillV7(
+                                      dotColor: const Color(0xFF6EE7B7),
+                                      text:
+                                          '$onlineCount ${loc.playVsPersonPlayingLabel}',
+                                    ),
+                                  if (onlineCount != null && energyCost != null)
+                                    const SizedBox(width: 6),
+                                  if (energyCost != null)
+                                    _versusInfoPillV7(
+                                      icon: Icons.bolt_rounded,
+                                      textColor: const Color(0xFFBAE6FD),
+                                      text: '$energyCost',
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_left_rounded,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===================== גיליון בחירת סוג טורניר (Home v7) =====================
+  // 🆕 כפתור "טורנירים" בסרגל התחתון החדש מוביל לכאן - שני פורמטי הטורניר
+  // הקיימים (יומי/מתוזמן) במקום לבחור אחד מהם כברירת מחדל.
+  void _showTournamentChooserV7() {
+    AudioManager.playClick();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final loc = AppLocalizations.of(context)!;
+        return SafeArea(
+          top: false,
+          child: Container(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              MediaQuery.of(context).padding.bottom + 20,
+            ),
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF3A1B82), Color(0xFF1E0F4A)],
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(3),
+                      color: Colors.white.withValues(alpha: 0.25),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  loc.mainMenuTournamentChooserTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _modesVersusRowV7(
+                  icon: Icons.emoji_events_rounded,
+                  gradient: const [Color(0xFFFF7A59), Color(0xFF8B2FD1)],
+                  shadowColor: const Color(0xFF5B1F87),
+                  title: loc.mainMenuTournamentChooserDailyTitle,
+                  note: loc.mainMenuTournamentChooserDailySubtitle(
+                    tournamentEntryFee,
+                  ),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    AudioManager.playClick();
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const TournamentLobbyScreen(),
+                      ),
+                    );
+                    _refreshStats();
+                  },
+                ),
+                const SizedBox(height: 10),
+                _modesVersusRowV7(
+                  icon: Icons.bolt_rounded,
+                  gradient: const [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                  shadowColor: const Color(0xFF3730A3),
+                  title: loc.mainMenuTournamentChooserScheduledTitle,
+                  note: loc.mainMenuTournamentChooserScheduledSubtitle(
+                    scheduledTournamentEntryFee,
+                    scheduledTournamentLogoCount,
+                  ),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    AudioManager.playClick();
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ScheduledTournamentScreen(),
+                      ),
+                    );
+                    _refreshStats();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1724,14 +3963,24 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       child: Stack(
         children: [
           Positioned.fill(
-            child: GestureDetector(onTap: () {}, child: Container(color: const Color(0xCC0C0820))),
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(color: const Color(0xCC0C0820)),
+            ),
           ),
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 18,
             child: TextButton(
               onPressed: _skipOnboarding,
-              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+              child: Text(
+                AppLocalizations.of(context)!.mainMenuSkipButton,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
           Center(
@@ -1742,7 +3991,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
                   color: Colors.white,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 30, offset: const Offset(0, 14))],
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      blurRadius: 30,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1761,19 +4016,53 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(20),
-                          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE79A), Color(0xFFC98A32), Color(0xFFFFD86B)]),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 4))],
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFE79A),
+                              Color(0xFFC98A32),
+                              Color(0xFFFFD86B),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(17),
-                          child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+                          child: Image.asset(
+                            'assets/icon/logo.png',
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('ברוכים הבאים ל"זהה את הלוגו!" 🎉', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF2A1740), fontSize: 18, fontWeight: FontWeight.w900)),
+                    Text(
+                      AppLocalizations.of(context)!.mainMenuTourWelcomeTitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF2A1740),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const SizedBox(height: 8),
-                    const Text('בואו נראה לכם בקצרה איך המשחק עובד - זה ייקח רק חצי דקה, ואפשר לדלג בכל שלב.', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black54, fontSize: 13.5, fontWeight: FontWeight.w600, height: 1.4)),
+                    Text(
+                      AppLocalizations.of(context)!.mainMenuTourWelcomeBody,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
@@ -1782,14 +4071,22 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                           backgroundColor: const Color(0xFFFF8A3C),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                         ),
                         onPressed: () {
                           AudioManager.playClick();
                           setState(() => _tourWelcomeDismissed = true);
                           _ensureTourStepVisible();
                         },
-                        child: const Text('בואו נתחיל ›', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                        child: Text(
+                          AppLocalizations.of(context)!.mainMenuLetsStartButton,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -1803,20 +4100,39 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   }
 
   Widget _buildHomeTourOverlayV5() {
-    // 🩹 תוקן לפי בקשה מפורשת: הסדר השתנה - קודם מסבירים על "מול אחרים"
-    // (בלי ללחוץ), אחר כך על "רנדומלי", וה-שלב האחרון/הפעיל-ללחיצה הוא
-    // "רנדומלי" (לא "מול אחרים" כמו קודם) - כי הוא מוביל למשחק יחיד עם
-    // הדרכה מלאה ובדוקה, בלי תלות ביריב אמיתי אונליין.
-    // 🩹 תוקן לפי בקשה מפורשת: "אני רוצה שהם ישלחו את הבנאדם לרמות
-    // והשלבים" - קודם מסבירים על "מול אחרים", אחר כך "רנדומלי" (שניהם
-    // בלי ללחוץ), והשלב האחרון/הפעיל-ללחיצה הוא כפתור "שחקו את רמה X"
-    // (ראו _goToLevelsV5) - מוביל למסך השלבים האמיתי.
-    final steps = [
-      (_tourVsOthersCardKey, 'שחק מול אחרים', 'דו-קרב, מירוץ וסדרת דו-קרב נגד שחקנים אמיתיים בזמן אמת.', false),
-      (_tourRandomCardKey, 'אתגר רנדומלי', 'לוגו רנדומלי בכל פעם - פותר נכון שומר על הרצף (🔥) שרואים כאן.', false),
-      (_tourCtaKey, 'כאן מתחילים לשחק', 'כפתור "שחקו את רמה X" לוקח אתכם ישר ללוגו הבא בתור. לחצו על הכפתור המואר כדי להתחיל לשחק!', true),
-    ];
-    final (targetKey, title, body, isTapThrough) = steps[_tourStep];
+    // 🆕 עיצוב מחדש "Home v7" - שלב 1 (מתוך 2 - ראו _tourStepCount)
+    // שמצביע על כפתור "שחק" המרכזי. לחיצה על הכפתור המואר (tap-through)
+    // מתקדמת לשלב 2 (ראו _openModesSheetV7) ופותחת את גיליון המודים.
+    final loc = AppLocalizations.of(context)!;
+    return _buildTourSpotlight(
+      targetKey: _tourPlayButtonKey,
+      title: loc.mainMenuTourPlayButtonTitle,
+      body: loc.mainMenuTourPlayButtonBody,
+    );
+  }
+
+  // 🆕 ציור הספוטלייט עצמו (חור מואר מעל הרכיב + כרטיסיית הסבר) - הופרד
+  // לפונקציה משותפת כדי ששני השלבים (כפתור "שחק" כאן, "שלבים" בתוך
+  // _buildModesSheetV7) ישתמשו באותו ציור בדיוק, רק עם מטרה/טקסט שונים -
+  // ראו _buildHomeTourOverlayV5 (שלב 1) וההפעלה הישירה ב-_buildModesSheetV7
+  // (שלב 2). שני השלבים תמיד tap-through (לוחצים על הרכיב המואר עצמו
+  // כדי להתקדם/לסיים - אין כפתור "הבא" נפרד).
+  Widget _buildTourSpotlight({
+    required GlobalKey targetKey,
+    required String title,
+    required String body,
+    // 🩹 תוקן: כברירת מחדל מרעננים את מסך הבית עצמו (this.setState) - נכון
+    // לשלב 1 (כפתור "שחק"), שהספוטלייט שלו חי בתוך ה-Stack של build() של
+    // מסך הבית. אבל שלב 2 ("שלבים") חי בתוך _buildModesSheetV7, שנבנה
+    // *פעם אחת* ע"י PageRouteBuilder.pageBuilder ונשאר ב-route נפרד
+    // משלו (לא child אמיתי של build() כאן) - this.setState לא גורם לאותו
+    // route להיבנות מחדש בכלל, אז אם הרכיב עוד לא היה מוכן בפריים
+    // הראשון, הספוטלייט שם נשאר תקוע ריק לנצח. הקריאה מ-_buildModesSheetV7
+    // עוטפת את עצמה ב-StatefulBuilder ומעבירה את ה-setState המקומי שלו
+    // במקום זה - ראו שם.
+    VoidCallback? onRetryRebuild,
+  }) {
+    final loc = AppLocalizations.of(context)!;
 
     final ctx = targetKey.currentContext;
     final box = ctx?.findRenderObject() as RenderBox?;
@@ -1824,7 +4140,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       // הרכיב עוד לא צויר בפריים הזה (למשל מיד אחרי מעבר שלב) - מתזמנים
       // רענון לפריים הבא במקום להציג ספוטלייט ללא חור בכלל.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        if (onRetryRebuild != null) {
+          onRetryRebuild();
+        } else {
+          setState(() {});
+        }
       });
       return const SizedBox.shrink();
     }
@@ -1844,10 +4165,46 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           // לחיצות (IgnorePointer = "שקוף ללחיצות", ההפך ממה שרצינו) -
           // אפשר היה ללחוץ "דרך" האזור הכהה על תוכן אמיתי מתחתיו. עכשיו
           // כל מלבן הוא GestureDetector חוסם אמיתי (בולע את הלחיצה).
-          Positioned(left: 0, top: 0, right: 0, height: hole.top.clamp(0, screenSize.height), child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
-          Positioned(left: 0, top: hole.bottom.clamp(0, screenSize.height), right: 0, bottom: 0, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
-          Positioned(left: 0, top: hole.top, width: hole.left.clamp(0, screenSize.width), height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
-          Positioned(left: hole.right, top: hole.top, right: 0, height: hole.height, child: GestureDetector(onTap: () {}, child: Container(color: dimColor))),
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            height: hole.top.clamp(0, screenSize.height),
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(color: dimColor),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: hole.bottom.clamp(0, screenSize.height),
+            right: 0,
+            bottom: 0,
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(color: dimColor),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: hole.top,
+            width: hole.left.clamp(0, screenSize.width),
+            height: hole.height,
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(color: dimColor),
+            ),
+          ),
+          Positioned(
+            left: hole.right,
+            top: hole.top,
+            right: 0,
+            height: hole.height,
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(color: dimColor),
+            ),
+          ),
           // מסגרת זוהרת סביב החור - מדגישה ויזואלית מה בדיוק "מואר".
           Positioned(
             left: hole.left,
@@ -1855,7 +4212,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             width: hole.width,
             height: hole.height,
             child: IgnorePointer(
-              child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFFFD86B), width: 2.5))),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFFFD86B),
+                    width: 2.5,
+                  ),
+                ),
+              ),
             ),
           ),
           Positioned(
@@ -1863,7 +4228,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             left: 18,
             child: TextButton(
               onPressed: _skipOnboarding,
-              child: const Text('דלג', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700)),
+              child: Text(
+                loc.mainMenuSkipButton,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
           Positioned(
@@ -1879,53 +4251,88 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
                     color: Colors.white,
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 24, offset: const Offset(0, 10))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
-                        textDirection: TextDirection.rtl,
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('${_tourStep + 1} מתוך $_tourStepCount', style: TextStyle(color: Colors.black.withValues(alpha: 0.4), fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          Text(
+                            loc.mainMenuTourProgress(
+                              _tourStep + 1,
+                              _tourStepCount,
+                            ),
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                           Row(
-                            children: List.generate(_tourStepCount, (i) => Container(
-                                  width: 6,
-                                  height: 6,
-                                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                                  decoration: BoxDecoration(shape: BoxShape.circle, color: i == _tourStep ? const Color(0xFFFF8A3C) : Colors.black12),
-                                )),
+                            children: List.generate(
+                              _tourStepCount,
+                              (i) => Container(
+                                width: 6,
+                                height: 6,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: i == _tourStep
+                                      ? const Color(0xFFFF8A3C)
+                                      : Colors.black12,
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 16, fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 6),
-                      Text(body, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w600, height: 1.4)),
-                      const SizedBox(height: 14),
-                      if (isTapThrough)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('👆 ', style: const TextStyle(fontSize: 15)),
-                            Text('לחצו על הכרטיס המואר למעלה', textDirection: TextDirection.rtl, style: TextStyle(color: const Color(0xFFFF8A3C), fontSize: 13.5, fontWeight: FontWeight.w900)),
-                          ],
-                        )
-                      else
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFF8A3C),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: _advanceHomeTour,
-                            child: const Text('הבא', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
-                          ),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Color(0xFF2A1740),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
                         ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        body,
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      // 🩹 שני השלבים (ראו _buildTourSpotlight) תמיד
+                      // tap-through - לוחצים על הרכיב המואר עצמו כדי
+                      // להתקדם/לסיים, אין יותר כפתור "הבא" נפרד.
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('👆 ', style: TextStyle(fontSize: 15)),
+                          Text(
+                            loc.mainMenuTourTapHighlighted,
+                            style: const TextStyle(
+                              color: Color(0xFFFF8A3C),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -1942,10 +4349,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // (הגדרות - עבר לכאן כי הוצא מסרגל הניווט התחתון) + אייקון מתנה
   // (רצף כניסה יומי - מציג נקודה אדומה כשיש פרס לא-נאסף היום). =====================
   Widget _buildTopBar() {
+    final loc = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
-        textDirection: TextDirection.rtl,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // גלולת פרופיל - שם + מקום בדירוג + אווטאר
@@ -1958,79 +4365,106 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           // תמיד יישארו גלויים במלואם, גם עם שם ארוך.
           Flexible(
             child: Container(
-                // 🩹 "רק הגדלת את הבועה אבל לא שינית את הנראות" - עיצוב
-                // אמיתי הפעם, לא רק ריפוד: מסגרת עדינה + צל שנותן עומק
-                // (בועה "מרחפת" במקום כתם שטוח), האווטאר קיבל טבעת זהב
-                // וזז לצד הפתיחה (ימין) עם השם לידו - לא בקצה הרחוק כמו
-                // קודם, וכל הבועה ירדה טיפה למטה (ראה ה-SizedBox שלפניה).
-                padding: const EdgeInsets.fromLTRB(8, 7, 16, 7),
-                constraints: const BoxConstraints(minWidth: 132),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 12, offset: const Offset(0, 4))],
-                ),
-                child: Row(
-                  textDirection: TextDirection.rtl,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 🩹 תוקן לפי בקשה מפורשת: במקום עיגול עם האות הראשונה
-                    // של השם, הלוגו האמיתי של המשחק משמש כאן כ"תמונת
-                    // הפרופיל" - גם ממותג וגם פותר את "הלוגו הגדול באמצע
-                    // הבית לא מתחבר" (הלוגו הגדול הוסר לגמרי, ראו למעלה).
-                    // 🩹 תוקן לפי עיצוב חדש (Claude Design) - ריבוע מעוגל
-                    // (כמו אייקון האפליקציה עצמו) במקום עיגול.
-                    Container(
-                      width: 44,
-                      height: 44,
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.7), width: 1.6),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(11),
-                        child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+              // 🩹 "רק הגדלת את הבועה אבל לא שינית את הנראות" - עיצוב
+              // אמיתי הפעם, לא רק ריפוד: מסגרת עדינה + צל שנותן עומק
+              // (בועה "מרחפת" במקום כתם שטוח), האווטאר קיבל טבעת זהב
+              // וזז לצד הפתיחה (ימין) עם השם לידו - לא בקצה הרחוק כמו
+              // קודם, וכל הבועה ירדה טיפה למטה (ראה ה-SizedBox שלפניה).
+              padding: const EdgeInsets.fromLTRB(8, 7, 16, 7),
+              constraints: const BoxConstraints(minWidth: 132),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 🩹 תוקן לפי בקשה מפורשת: במקום עיגול עם האות הראשונה
+                  // של השם, הלוגו האמיתי של המשחק משמש כאן כ"תמונת
+                  // הפרופיל" - גם ממותג וגם פותר את "הלוגו הגדול באמצע
+                  // הבית לא מתחבר" (הלוגו הגדול הוסר לגמרי, ראו למעלה).
+                  // 🩹 תוקן לפי עיצוב חדש (Claude Design) - ריבוע מעוגל
+                  // (כמו אייקון האפליקציה עצמו) במקום עיגול.
+                  Container(
+                    width: 44,
+                    height: 44,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFFFD86B).withValues(alpha: 0.7),
+                        width: 1.6,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Flexible(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            username.isNotEmpty ? username : "שלום!",
-                            textDirection: TextDirection.rtl,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(11),
+                      child: Image.asset(
+                        'assets/icon/logo.png',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          username.isNotEmpty
+                              ? username
+                              : loc.mainMenuHelloFallback,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        // 🆕 לפי בקשה מפורשת - לחיצה על שורת המדליות פותחת
+                        // את מסך ההישגים (achievements_screen.dart), בדיוק
+                        // כמו הקישור "הישגים" שכבר קיים במסך המובילים.
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            AudioManager.playClick();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AchievementsScreen(),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            loc.mainMenuMedalsCount(
+                              _medalsEarned,
+                              AchievementsService.all.length,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 1),
-                          // 🆕 לפי בקשה מפורשת - לחיצה על שורת המדליות פותחת
-                          // את מסך ההישגים (achievements_screen.dart), בדיוק
-                          // כמו הקישור "הישגים" שכבר קיים במסך המובילים.
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              AudioManager.playClick();
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => const AchievementsScreen()));
-                            },
-                            child: Text(
-                              "🎖️ $_medalsEarned/${AchievementsService.all.length} מדליות",
-                              textDirection: TextDirection.rtl,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.55),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
           ),
           const SizedBox(width: 8),
           Row(
@@ -2041,7 +4475,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                   final prefs = await SharedPreferences.getInstance();
                   final name = prefs.getString('username') ?? '';
                   if (!mounted) return;
-                  await Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(username: name)));
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SettingsScreen(username: name),
+                    ),
+                  );
                   _refreshStats();
                 },
               ),
@@ -2066,7 +4505,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     );
   }
 
-// כפתור אייקון עגול (הגדרות/מתנה) עם נקודת התראה אופציונלית - בדיוק
+  // כפתור אייקון עגול (הגדרות/מתנה) עם נקודת התראה אופציונלית - בדיוק
   // כמו במוקאפ (מסך 01 · בית): עיגול גדול יותר (56px). כשמועבר gradient
   // (המתנה) העיגול מלא בצבע במקום שקוף - כדי שיבלוט כ"מתנה" צבעונית.
   Widget _topIconButton({
@@ -2075,40 +4514,111 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     bool showDot = false,
     Color? ringColor,
     Gradient? gradient,
-    Color? iconColor, // 🆕 צבע אייקון אופציונלי - כדי לבלוט קצת (למשל מתנה בזהב) בלי גרדיאנט מלא שלא מתאים לשפה העיצובית של שאר הסרגל
+    Color?
+    iconColor, // 🆕 צבע אייקון אופציונלי - כדי לבלוט קצת (למשל מתנה בזהב) בלי גרדיאנט מלא שלא מתאים לשפה העיצובית של שאר הסרגל
     // 🆕 תמונת PNG (כמו GiftIcon) במקום אייקון וקטורי - ראו app_icons.dart
     // להסבר המלא למה (אייקוני Material לא תמיד נטענים אצל המשתמש הזה).
     // כשסופק - מחליף לגמרי את ה-Icon(icon) הרגיל.
     Widget? iconWidget,
+    // 🆕 תג-ספירה מספרי (לא רק נקודה) - לכפתור "משימות" בשורה העליונה
+    // (ראו _buildTopBarV7), אותו עיצוב כמו ב-app_bottom_nav.dart._TabItem.
+    int? badgeCount,
+    // 🩹 "RIGHT OVERFLOWED BY 80 PIXELS" בצילום מסך אמיתי - השורה
+    // העליונה החדשה (Home v7) דחוסה מדי מכדי ש-3 כפתורים ב-56x56 (הגודל
+    // הישן, מ-עיצוב קודם) ייכנסו לצד פיל השם+אווטאר/מטבעות/אנרגיה בלי
+    // לגלוש. גודל קטן יותר כברירת מחדל כאן (40, במקום ב-_buildTopBarV7
+    // עצמו) כדי לא לשנות כפתורים ישנים/לא-בשימוש שעדיין קוראים לפונקציה
+    // הזו בגודל המקורי.
+    double size = 56,
   }) {
-    assert(icon != null || iconWidget != null, '_topIconButton needs either icon or iconWidget');
+    assert(
+      icon != null || iconWidget != null,
+      '_topIconButton needs either icon or iconWidget',
+    );
     return Material(
-      color: gradient == null ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
-      shape: CircleBorder(side: (ringColor != null && gradient == null) ? BorderSide(color: ringColor.withValues(alpha: 0.7), width: 1.6) : BorderSide.none),
+      color: gradient == null
+          ? Colors.white.withValues(alpha: 0.1)
+          : Colors.transparent,
+      shape: CircleBorder(
+        side: (ringColor != null && gradient == null)
+            ? BorderSide(color: ringColor.withValues(alpha: 0.7), width: 1.6)
+            : BorderSide.none,
+      ),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: Container(
-          width: 56,
-          height: 56,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: gradient,
-            boxShadow: gradient != null ? [BoxShadow(color: const Color(0xFFF472B6).withValues(alpha: 0.35), blurRadius: 14, offset: const Offset(0, 5))] : null,
+            boxShadow: gradient != null
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFFF472B6).withValues(alpha: 0.35),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
           ),
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              iconWidget ?? Icon(icon, color: iconColor ?? Colors.white, size: gradient != null ? 25 : 22),
+              iconWidget ??
+                  Icon(
+                    icon,
+                    color: iconColor ?? Colors.white,
+                    size: (gradient != null ? 25 : 22) * (size / 56),
+                  ),
               if (showDot)
                 Positioned(
-                  top: 6,
-                  right: 6,
+                  top: size * 0.11,
+                  right: size * 0.11,
                   child: Container(
                     width: 11,
                     height: 11,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFFE11D48), border: Border.all(color: const Color(0xFF3A1E7B), width: 1.5)),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFE11D48),
+                      border: Border.all(
+                        color: const Color(0xFF3A1E7B),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              if (badgeCount != null)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF34D399), Color(0xFF16A46F)],
+                      ),
+                      border: Border.all(
+                        color: const Color(0xFF120C2E),
+                        width: 1.3,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$badgeCount',
+                      style: const TextStyle(
+                        color: Color(0xFF08281C),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -2127,9 +4637,15 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   Widget _buildStatsPillsRow() {
     final bool canWatchForEnergy = _energy < EnergyService.maxEnergy;
     return Row(
-      textDirection: TextDirection.rtl,
       children: [
-        Expanded(child: _bigStatPill(icon: null, emoji: '🔥', color: const Color(0xFFFB7185), text: "$streak")),
+        Expanded(
+          child: _bigStatPill(
+            icon: null,
+            emoji: '🔥',
+            color: const Color(0xFFFB7185),
+            text: "$streak",
+          ),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: _bigStatPill(
@@ -2139,11 +4655,22 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             text: "$_energy/${EnergyService.maxEnergy}",
             onTap: canWatchForEnergy ? _watchAdForEnergyFromHome : null,
             showAdBadge: canWatchForEnergy,
-            subtitle: (canWatchForEnergy && _energyCountdown != null) ? "עוד ${_formatMmSs(_energyCountdown!)}" : null,
+            subtitle: (canWatchForEnergy && _energyCountdown != null)
+                ? AppLocalizations.of(
+                    context,
+                  )!.mainMenuMoreTime(_formatMmSs(_energyCountdown!))
+                : null,
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(child: _bigStatPill(icon: Icons.monetization_on_rounded, emoji: null, color: const Color(0xFFFFD86B), text: "$coins")),
+        Expanded(
+          child: _bigStatPill(
+            icon: Icons.monetization_on_rounded,
+            emoji: null,
+            color: const Color(0xFFFFD86B),
+            text: "$coins",
+          ),
+        ),
       ],
     );
   }
@@ -2154,8 +4681,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     required Color color,
     required String text,
     VoidCallback? onTap,
-    bool showAdBadge = false, // 🆕 תג "צפה בפרסומת +X" קבוע וגלוי - ראו _buildStatsPillsRow
-    String? subtitle, // 🆕 שורת טקסט קטנה מתחת לפיל (למשל "עוד 03:24 לאנרגיה הבאה")
+    bool showAdBadge =
+        false, // 🆕 תג "צפה בפרסומת +X" קבוע וגלוי - ראו _buildStatsPillsRow
+    String?
+    subtitle, // 🆕 שורת טקסט קטנה מתחת לפיל (למשל "עוד 03:24 לאנרגיה הבאה")
   }) {
     final pill = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -2171,7 +4700,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(text, style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w900)),
+              Text(
+                text,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               const SizedBox(width: 5),
               if (icon == Icons.monetization_on_rounded)
                 const CoinIcon(size: 15)
@@ -2185,13 +4721,27 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           ),
           if (subtitle != null) ...[
             const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(color: color.withValues(alpha: 0.75), fontSize: 10, fontWeight: FontWeight.w700)),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: color.withValues(alpha: 0.75),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ],
       ),
     );
     if (onTap == null) return pill;
-    final tappable = Material(color: Colors.transparent, child: InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap, child: pill));
+    final tappable = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: pill,
+      ),
+    );
     if (!showAdBadge) return tappable;
     // 🆕 תג קבוע (לא רק בלחיצה) שאומר בפירוש "יש כאן פרסומת לצפייה תמורת
     // אנרגיה" - כדי שהתכונה תהיה גלויה תמיד, לא רק כשמנחשים ללחוץ.
@@ -2207,16 +4757,34 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
-                gradient: const LinearGradient(colors: [Color(0xFF34D399), Color(0xFF16A46F)]),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF34D399), Color(0xFF16A46F)],
+                ),
                 border: Border.all(color: const Color(0xFF120C2E), width: 1.5),
-                boxShadow: [BoxShadow(color: const Color(0xFF34D399).withValues(alpha: 0.5), blurRadius: 8)],
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF34D399).withValues(alpha: 0.5),
+                    blurRadius: 8,
+                  ),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.play_arrow_rounded, color: Color(0xFF08281C), size: 10),
+                  const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Color(0xFF08281C),
+                    size: 10,
+                  ),
                   const SizedBox(width: 1),
-                  Text("+${EnergyService.adRewardAmount}", style: const TextStyle(color: Color(0xFF08281C), fontSize: 9.5, fontWeight: FontWeight.w900)),
+                  Text(
+                    "+${EnergyService.adRewardAmount}",
+                    style: const TextStyle(
+                      color: Color(0xFF08281C),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2229,7 +4797,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // 🆕 icon עכשיו nullable - כדי לאפשר "פיל" בלי שום אייקון בכלל (ראו
   // ה-XP למעלה, שאיבד את האייקון הוקטורי שלו כי הוא לא הוצג אצל המשתמש -
   // בדיוק כמו שקרה עם אייקוני המטבע/אנרגיה בעבר, לפני שהוחלפו לתמונת PNG).
-  Widget _topStatPill({required IconData? icon, required Color color, required String text}) {
+  Widget _topStatPill({
+    required IconData? icon,
+    required Color color,
+    required String text,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -2252,7 +4824,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             Icon(icon, size: 13, color: color),
             const SizedBox(width: 4),
           ],
-          Text(text, style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.w900)),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ],
       ),
     );
@@ -2273,7 +4852,10 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
         onTap: () async {
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => const LevelsScreen()));
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const LevelsScreen()),
+          );
           _refreshStats();
         },
         child: Container(
@@ -2285,34 +4867,65 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               end: Alignment.centerRight,
               colors: [Color(0xFF3D7EF3), Color(0xFF5B3CE0)],
             ),
-            boxShadow: [BoxShadow(color: const Color(0xFF4F46E5).withValues(alpha: 0.35), blurRadius: 24, offset: const Offset(0, 10))],
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4F46E5).withValues(alpha: 0.35),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   Container(
                     width: 38,
                     height: 38,
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(13), color: Colors.white.withValues(alpha: 0.22)),
-                    child: const Icon(Icons.public_rounded, color: Colors.white, size: 18),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(13),
+                      color: Colors.white.withValues(alpha: 0.22),
+                    ),
+                    child: const Icon(
+                      Icons.public_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text("ממשיכים", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11, fontWeight: FontWeight.w700)),
+                      Text(
+                        AppLocalizations.of(context)!.mainMenuContinuingLabel,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text("${_worldName(world)} · שלב $sub", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                      Text(
+                        AppLocalizations.of(
+                          context,
+                        )!.mainMenuWorldStepLabel(_worldName(world), sub),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ],
                   ),
                   const Spacer(),
                   Text(
                     "$percent%",
-                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ],
               ),
@@ -2326,7 +4939,11 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                   child: FractionallySizedBox(
                     widthFactor: percent / 100,
                     child: Container(
-                      decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFFFD86B), Color(0xFFFFE7A8)])),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFFFD86B), Color(0xFFFFE7A8)],
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -2349,8 +4966,8 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // מימין ו"אתגר רנדומלי" סגול משמאל, כל אחד תופס חצי מהרוחב ב-Expanded),
   // בדיוק כמו שהיה במקור לפני התיקון השגוי.
   Widget _buildModesGrid() {
+    final loc = AppLocalizations.of(context)!;
     return Row(
-      textDirection: TextDirection.rtl,
       children: [
         Expanded(
           child: _ModeCard(
@@ -2363,17 +4980,30 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             // ושם בוחרים באיזה מוד לשחק (הימור עדיין נבחר בתוך כל מוד
             // בנפרד). כרטיס "מרוץ לוגואים" הנפרד הוסר מהבית לפי בקשה
             // מפורשת - שני המודים עכשיו רק כאן, לא כפול.
-            icon: const Icon(Icons.groups_rounded, color: Colors.white, size: 22),
+            icon: const Icon(
+              Icons.groups_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
             gradient: const [Color(0xFFEF3B5B), Color(0xFFC2163F)],
-            title: "שחק מול אחרים",
-            note: "דו־קרב · מירוץ",
+            title: loc.mainMenuPlayVsOthersTitle,
+            note: loc.mainMenuDuelRaceNote,
             liveCount: () {
-              final total = (_duelPlayersNow ?? 0) + (_racePlayersNow ?? 0) + (_superdualPlayersNow ?? 0);
+              final total =
+                  (_duelPlayersNow ?? 0) +
+                  (_racePlayersNow ?? 0) +
+                  (_superdualPlayersNow ?? 0);
               return total > 0 ? total : null;
             }(),
             onTap: () async {
               AudioManager.playClick();
-              await Navigator.push(context, MaterialPageRoute(builder: (context) => PlayVsPersonModeScreen(username: username)));
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      PlayVsPersonModeScreen(username: username),
+                ),
+              );
               _refreshStats();
             },
           ),
@@ -2381,17 +5011,27 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: _ModeCard(
-          icon: const Icon(Icons.casino_rounded, color: Colors.white, size: 22),
-          gradient: const [Color(0xFFA250F3), Color(0xFF732CDC)],
-          title: "אתגר רנדומלי",
-          note: "לוגו אקראי · שומר על הרצף",
-          onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const LevelLoadingScreen(puzzleId: 0, isRandomMode: true, categoryLabel: "אתגר רנדומלי")),
-            );
-            _refreshStats();
-          },
+            icon: const Icon(
+              Icons.casino_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
+            gradient: const [Color(0xFFA250F3), Color(0xFF732CDC)],
+            title: loc.mainMenuRandomChallengeLabel,
+            note: loc.mainMenuRandomNote,
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => LevelLoadingScreen(
+                    puzzleId: 0,
+                    isRandomMode: true,
+                    categoryLabel: loc.mainMenuRandomChallengeLabel,
+                  ),
+                ),
+              );
+              _refreshStats();
+            },
           ),
         ),
       ],
@@ -2410,7 +5050,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         borderRadius: BorderRadius.circular(20),
         onTap: () async {
           AudioManager.playClick();
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => LogoRaceScreen(username: username)));
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LogoRaceScreen(username: username),
+            ),
+          );
           _refreshStats();
         },
         child: Stack(
@@ -2424,14 +5069,34 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 left: 10,
                 bottom: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.black.withValues(alpha: 0.28)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    color: Colors.black.withValues(alpha: 0.28),
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(width: 7, height: 7, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF4ADE80),
+                        ),
+                      ),
                       const SizedBox(width: 5),
-                      Text('$_racePlayersNow', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                      Text(
+                        '$_racePlayersNow',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2444,54 +5109,79 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
 
   Widget _buildLogoRaceCardContent() {
     return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.5)),
-            color: const Color(0xFF123A52).withValues(alpha: 0.7),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+        ),
+        color: const Color(0xFF123A52).withValues(alpha: 0.7),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)],
+              ),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.flag_circle_rounded,
+              color: Color(0xFF0C2A3D),
+              size: 24,
+            ),
           ),
-          child: Row(
-            textDirection: TextDirection.rtl,
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(15),
-                  gradient: const LinearGradient(colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)]),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context)!.mainMenuLogoRaceTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.flag_circle_rounded, color: Color(0xFF0C2A3D), size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  textDirection: TextDirection.rtl,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("מרוץ לוגואים 🏁", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 3),
-                    Text(
-                      "1 על 1 · מי שמנחש ראשון מנצח",
-                      textDirection: TextDirection.rtl,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 11.5, fontWeight: FontWeight.w600),
-                    ),
-                  ],
+                const SizedBox(height: 3),
+                Text(
+                  AppLocalizations.of(context)!.mainMenuLogoRaceSubtitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  gradient: const LinearGradient(colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)]),
-                ),
-                child: const Text("שחק", style: TextStyle(color: Color(0xFF0C2A3D), fontSize: 14, fontWeight: FontWeight.w900)),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)],
+              ),
+            ),
+            child: Text(
+              AppLocalizations.of(context)!.mainMenuPlayButton,
+              style: const TextStyle(
+                color: Color(0xFF0C2A3D),
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // 🆕 צפייה בפרסומת תמורת אנרגיה - עכשיו נלחצת ישירות מ"פיל" האנרגיה
@@ -2504,19 +5194,36 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     final adCooldown = await EnergyService.timeUntilNextAdEnergy();
     if (adCooldown != null) {
       if (!mounted) return;
-      AppNotification.show(context, "אפשר לצפות בפרסומת נוספת בעוד ${_formatMmSs(adCooldown)}", type: AppNotificationType.warning);
+      AppNotification.show(
+        context,
+        AppLocalizations.of(
+          context,
+        )!.duelLobbyAdCooldownMsg(_formatMmSs(adCooldown)),
+        type: AppNotificationType.warning,
+      );
       return;
     }
     if (!AdsManager.isRewardedReady) {
-      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
+      AppNotification.show(
+        context,
+        AppLocalizations.of(context)!.duelLobbyNoAdAvailable,
+        type: AppNotificationType.warning,
+      );
       return;
     }
-    AdsManager.showRewardedAd(onReward: () async {
-      await EnergyService.addFromAd();
-      if (!mounted) return;
-      await _refreshEnergy();
-      if (mounted) _showRewardDialog("קיבלת ${EnergyService.adRewardAmount} אנרגיה! ⚡");
-    });
+    AdsManager.showRewardedAd(
+      onReward: () async {
+        await EnergyService.addFromAd();
+        if (!mounted) return;
+        await _refreshEnergy();
+        if (mounted)
+          _showRewardDialog(
+            AppLocalizations.of(
+              context,
+            )!.mainMenuEnergyRewardMessage(EnergyService.adRewardAmount),
+          );
+      },
+    );
   }
 
   // ===================== כרטיס "אתגר יומי" (קיצור דרך מהמסך הראשי) =====================
@@ -2524,13 +5231,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // עם כפתור-פיל תכלת "שחק" צמוד לצד שמאל, כותרת+תיאור קצר במרכז/ימין,
   // ואייקון קטן בפינה הימנית-קיצונית - בלי כרטיס "בונוס X מטבעות" נפרד.
   Widget _buildDailyChallengeCard() {
+    final loc = AppLocalizations.of(context)!;
     final challenge = _dailyChallenge;
     final done = challenge?.completed ?? false;
     final usedUp = challenge != null && !done && challenge.attempted;
     final dimmed = done || usedUp;
     final String subtitle = done
-        ? "אתגר יומי · קיבלת את הפרס - חוזר מחר"
-        : (usedUp ? "אתגר יומי · נוצל להיום, נסה מחר" : "אתגר יומי · ${MissionsService.dailyChallengeLogoCount} לוגואים");
+        ? loc.mainMenuDailyChallengeSubtitleDone
+        : (usedUp
+              ? loc.mainMenuDailyChallengeSubtitleUsedUp
+              : loc.mainMenuDailyChallengeSubtitleDefault(
+                  MissionsService.dailyChallengeLogoCount,
+                ));
     // 🐛 תוקן: "לא מופיע העניין של ההתראות" - הכרטיס הזה היה onTap: null
     // (לגמרי לא לחיץ) ברגע שהאתגר כבר נוצל/הושלם היום - בדיוק המצב שבו
     // כפתור "תזכיר לי מחר" (daily_challenge_screen.dart, _buildAlreadyDone/
@@ -2538,7 +5250,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     // הכפתור קיים. עכשיו הכרטיס תמיד לחיץ (הניגוה/הדהוי נשאר ויזואלית
     // בלבד), ותווית הכפתור במצב "נוצל" משתנה מ"מחר" (משתמע לא-לחיץ)
     // ל"תזכורת" כדי לרמוז שיש עוד משהו לעשות שם.
-    final String btnLabel = done ? "בוצע ✓" : (usedUp ? "תזכורת" : "שחק");
+    final String btnLabel = done
+        ? loc.mainMenuDoneCheckLabel
+        : (usedUp ? loc.mainMenuReminderLabel : loc.mainMenuPlayButton);
 
     return Material(
       color: Colors.transparent,
@@ -2549,14 +5263,19 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF3B4A8F).withValues(alpha: 0.6)),
+            border: Border.all(
+              color: const Color(0xFF3B4A8F).withValues(alpha: 0.6),
+            ),
             color: const Color(0xFF1E2A5A),
           ),
           child: Row(
-            textDirection: TextDirection.rtl,
             children: [
               Icon(
-                done ? Icons.check_circle_rounded : (usedUp ? Icons.timer_off_rounded : Icons.event_note_rounded),
+                done
+                    ? Icons.check_circle_rounded
+                    : (usedUp
+                          ? Icons.timer_off_rounded
+                          : Icons.event_note_rounded),
                 color: Colors.white.withValues(alpha: 0.55),
                 size: 20,
               ),
@@ -2564,122 +5283,36 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               Expanded(
                 child: Text(
                   subtitle,
-                  textDirection: TextDirection.rtl,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Opacity(
                 opacity: dimmed ? 0.5 : 1,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 11,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    gradient: const LinearGradient(colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)]),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)],
+                    ),
                   ),
-                  child: Text(btnLabel, style: const TextStyle(color: Color(0xFF0C2A3D), fontSize: 14, fontWeight: FontWeight.w900)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ===================== כרטיס "באטל פאס" (עונתי - נקודות/שלב/פרסים
-  // ממתינים) - נכנסים למסך הייעודי BattlePassScreen לפרטים ותביעת פרסים.
-  // 🆕 עיצוב מחדש - בדיוק כמו במוקאפ (מסך 01 · בית): מספר הנקודות בתוך
-  // השלב הנוכחי צמוד לצד שמאל, "X פרסים" (פיל אדום) + כותרת "באטל פאס"
-  // צמודים לצד ימין, ומתחת פס התקדמות שמתפרס על כל הרוחב. אייקון
-  // מרובע-גרדיאנט כתום עם ניצוץ בפינה הימנית-קיצונית. =====================
-  Widget _buildBattlePassCard() {
-    final tiers = BattlePassService.tiers;
-    final maxTier = tiers.length;
-    // 🩹 תוקן: כשעדיין לא הושלם אף שלב (_bpTier == 0) - הקוד הקודם השווה
-    // בטעות את "כמות הנקודות הדרושות לשלב הנוכחי" ל"כמות הנקודות הדרושות
-    // לשלב 1" גם לצורך ה"נוכחי" וגם לצורך ה"הבא", כך שההפרש (span) יצא
-    // תמיד 0 - זו הסיבה ש"0/0" הופיע במקום "0/<כמות הנקודות לשלב 1>".
-    // עכשיו: כל עוד לא הושלם אף שלב, נקודת ההתחלה (currentRequired) היא
-    // פשוט 0, לא הדרישה של שלב 1 עצמו.
-    final int currentRequired = _bpTier <= 0 ? 0 : tiers.firstWhere((t) => t.tier == _bpTier, orElse: () => tiers.first).pointsRequired;
-    final nextDef = _bpTier < maxTier ? tiers[_bpTier] : null; // tiers[_bpTier] = השלב הבא (אינדקס 0 = tier 1)
-    final int span = nextDef == null ? 0 : nextDef.pointsRequired - currentRequired;
-    final int within = nextDef == null ? 0 : (_bpPoints - currentRequired).clamp(0, span);
-    final double progress = nextDef == null ? 1.0 : (span == 0 ? 1.0 : within / span);
-    final String fractionText = nextDef == null ? "מקסימום" : "$within/$span";
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () async {
-          await Navigator.push(context, MaterialPageRoute(builder: (context) => const BattlePassScreen()));
-          // 🩹 באג שתוקן: כאן היה נקרא רק _refreshBattlePass() (נקודות/שלב/
-          // פרסים ממתינים של הכרטיס עצמו) - אבל לא _refreshStats() המלא,
-          // כך שאם נאסף פרס עם מטבעות בתוך הבאטל פאס, המספר בסרגל העליון
-          // של מסך הבית לא התעדכן עד שנכנסים למסך אחר (שכן קורא ל-
-          // _refreshStats בעצמו). עכשיו קוראים ל-_refreshStats המלא, שכולל
-          // גם את _refreshBattlePass בתוכו.
-          _refreshStats();
-        },
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.5)),
-            color: const Color(0xFF2B2140).withValues(alpha: 0.6),
-          ),
-          child: Row(
-            textDirection: TextDirection.rtl,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), gradient: const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFF9A3C)])),
-                alignment: Alignment.center,
-                child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF2A1740), size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 🩹 תוקן: הסדר היה הפוך מהמוקאפ - "באטל פאס" צריך
-                    // להיות הכי קרוב לאייקון (בצד ימין), ותג "X פרסים"
-                    // מיד אחריו, לא לפניו.
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        Text("באטל פאס", textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
-                        if (_bpPremium) ...[
-                          const SizedBox(width: 5),
-                          const Text("👑", style: TextStyle(fontSize: 12)),
-                        ],
-                        if (_bpPendingClaims > 0) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                            decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: const Color(0xFFE11D74)),
-                            child: Text('$_bpPendingClaims פרסים', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
-                          ),
-                        ],
-                        const Spacer(),
-                        Text(fractionText, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w900)),
-                      ],
+                  child: Text(
+                    btnLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF0C2A3D),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
                     ),
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 8,
-                        backgroundColor: const Color(0xFF241A38),
-                        valueColor: const AlwaysStoppedAnimation(Color(0xFFFF9A3C)),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -2710,13 +5343,19 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // 🆕 שורת 7 העיגולים של "רצף הכניסה" - עטופה כך שתתפרס שווה על פני כל
   // רוחב הדיאלוג. משמשת גם את _showLoginStreakDialog וגם את
   // _showDailyGiftsDialog כדי ששני הדיאלוגים ייראו זהים.
-  Widget _buildStreakDayRow({required int dayInCycle, required bool claimedToday}) {
+  Widget _buildStreakDayRow({
+    required int dayInCycle,
+    required bool claimedToday,
+  }) {
     return Row(
-      textDirection: TextDirection.rtl,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: List.generate(7, (i) {
         final dayNum = i + 1;
-        return _buildStreakDayCircle(dayNum: dayNum, dayInCycle: dayInCycle, claimedToday: claimedToday);
+        return _buildStreakDayCircle(
+          dayNum: dayNum,
+          dayInCycle: dayInCycle,
+          claimedToday: claimedToday,
+        );
       }),
     );
   }
@@ -2727,9 +5366,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // 🩹 אייקון וקטורי (Icons.*) ולא אימוג'י (✓/🎁/🔒/💎) - כדי למנוע את
   // בעיית "הריבוע הריק" בפונט האימוג'י שכבר תועדה כמה פעמים באפליקציה
   // הזו (ראו app_icons.dart).
-  Widget _buildStreakDayCircle({required int dayNum, required int dayInCycle, required bool claimedToday}) {
+  Widget _buildStreakDayCircle({
+    required int dayNum,
+    required int dayInCycle,
+    required bool claimedToday,
+  }) {
     final bool isMilestone = dayNum == 7; // יום 7 - מארז היהלום
-    final bool done = dayNum < dayInCycle || (dayNum == dayInCycle && claimedToday);
+    final bool done =
+        dayNum < dayInCycle || (dayNum == dayInCycle && claimedToday);
     final bool isToday = dayNum == dayInCycle && !claimedToday;
     final bool locked = dayNum > dayInCycle;
 
@@ -2744,10 +5388,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
       iconColor = const Color(0xFF2A1740);
       circleColor = const Color(0xFFFF9A3C);
       borderColor = Colors.white.withValues(alpha: 0.5);
-      shadows = [BoxShadow(color: const Color(0xFFFF9A3C).withValues(alpha: 0.55), blurRadius: 14, spreadRadius: 1)];
+      shadows = [
+        BoxShadow(
+          color: const Color(0xFFFF9A3C).withValues(alpha: 0.55),
+          blurRadius: 14,
+          spreadRadius: 1,
+        ),
+      ];
     } else if (done) {
       icon = isMilestone ? Icons.diamond_rounded : Icons.check_rounded;
-      iconColor = isMilestone ? const Color(0xFFFFD86B) : const Color(0xFF6EE7B7);
+      iconColor = isMilestone
+          ? const Color(0xFFFFD86B)
+          : const Color(0xFF6EE7B7);
       circleColor = const Color(0xFF1E2A5A);
       borderColor = Colors.white.withValues(alpha: 0.18);
     } else {
@@ -2776,7 +5428,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
         Text(
           '$dayNum',
           style: TextStyle(
-            color: isToday ? Colors.white : Colors.white.withValues(alpha: locked ? 0.35 : 0.7),
+            color: isToday
+                ? Colors.white
+                : Colors.white.withValues(alpha: locked ? 0.35 : 0.7),
             fontSize: 10.5,
             fontWeight: FontWeight.w800,
           ),
@@ -2800,8 +5454,14 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           padding: const EdgeInsets.fromLTRB(20, 26, 20, 20),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
-            gradient: const LinearGradient(colors: [Color(0xFF3A2A6B), Color(0xFF1D0E3C)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-            border: Border.all(color: const Color(0xFFFFD86B).withValues(alpha: 0.25)),
+            gradient: const LinearGradient(
+              colors: [Color(0xFF3A2A6B), Color(0xFF1D0E3C)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            border: Border.all(
+              color: const Color(0xFFFFD86B).withValues(alpha: 0.25),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2811,64 +5471,107 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 height: 76,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(22),
-                  gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFF8A3C)]),
-                  boxShadow: [BoxShadow(color: const Color(0xFFFF9A3C).withValues(alpha: 0.4), blurRadius: 22)],
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFE08A), Color(0xFFFF8A3C)],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF9A3C).withValues(alpha: 0.4),
+                      blurRadius: 22,
+                    ),
+                  ],
                 ),
-                child: const Center(child: Icon(Icons.card_giftcard_rounded, color: Color(0xFF2A1740), size: 36)),
+                child: const Center(
+                  child: Icon(
+                    Icons.card_giftcard_rounded,
+                    color: Color(0xFF2A1740),
+                    size: 36,
+                  ),
+                ),
               ),
               const SizedBox(height: 14),
               Text(
-                "יום $streakDay ברצף!",
+                AppLocalizations.of(context)!.mainMenuStreakDayTitle(streakDay),
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
-                claimedToday ? "כבר נאסף היום - תחזור מחר לפרס הבא" : "תחזור מחר לפרס גדול יותר",
+                claimedToday
+                    ? AppLocalizations.of(context)!.mainMenuAlreadyClaimedToday
+                    : AppLocalizations.of(context)!.mainMenuComeBackTomorrow,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 18),
               // 🩹 שורת עיגולים במקום שורת הפילים הישנה - ראו הערה למעלה.
-              _buildStreakDayRow(dayInCycle: dayInCycle, claimedToday: claimedToday),
+              _buildStreakDayRow(
+                dayInCycle: dayInCycle,
+                claimedToday: claimedToday,
+              ),
               const SizedBox(height: 14),
               // 🆕 משפט "טיזר" למרחק ליום 7 (יום השיא/מארז היהלום) - בדיוק
               // כמו שמופיע במוקאפ. אייקון יהלום וקטורי (לא אימוג'י 💎) -
               // אותו טעם כמו כל שאר האייקונים בדיאלוג הזה.
-              Builder(builder: (_) {
-                final daysLeft = 7 - dayInCycle;
-                final String teaserText;
-                if (dayInCycle >= 7 && claimedToday) {
-                  teaserText = "מזל טוב - זכית במארז היהלום של יום 7!";
-                } else if (dayInCycle >= 7) {
-                  teaserText = "היום היום הגדול - יום 7 ומארז היהלום!";
-                } else if (daysLeft == 1) {
-                  teaserText = "עוד יום אחד - ומקבל מארז יהלום";
-                } else {
-                  teaserText = "עוד $daysLeft ימים - ומקבל מארז יהלום";
-                }
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  textDirection: TextDirection.rtl,
-                  children: [
-                    Text(teaserText, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 11.5, fontWeight: FontWeight.w700)),
-                    const SizedBox(width: 5),
-                    const Icon(Icons.diamond_rounded, size: 13, color: Color(0xFF7DD3FC)),
-                  ],
-                );
-              }),
+              Builder(
+                builder: (ctx) {
+                  final loc = AppLocalizations.of(ctx)!;
+                  final daysLeft = 7 - dayInCycle;
+                  final String teaserText;
+                  if (dayInCycle >= 7 && claimedToday) {
+                    teaserText = loc.mainMenuDiamondWonToday;
+                  } else if (dayInCycle >= 7) {
+                    teaserText = loc.mainMenuDiamondTodayIsDay7;
+                  } else if (daysLeft == 1) {
+                    teaserText = loc.mainMenuDiamondOneDayLeft;
+                  } else {
+                    teaserText = loc.mainMenuDiamondDaysLeft(daysLeft);
+                  }
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        teaserText,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.65),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      const Icon(
+                        Icons.diamond_rounded,
+                        size: 13,
+                        color: Color(0xFF7DD3FC),
+                      ),
+                    ],
+                  );
+                },
+              ),
               const SizedBox(height: 16),
               // 🆕 כותרת "הפרס של היום" מעל שורת הפרסים - בדיוק כמו במוקאפ.
               // כרטיס ה"כוכב" (⭐ +1) שמופיע שם *לא* נכלל - ראו הערה למעלה.
               Align(
                 alignment: Alignment.centerRight,
-                child: Text("הפרס של היום", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12.5, fontWeight: FontWeight.w800)),
+                child: Text(
+                  AppLocalizations.of(context)!.mainMenuTodaysRewardLabel,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   if ((todayReward['energy'] ?? 0) > 0) ...[
                     Expanded(
@@ -2877,18 +5580,37 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           color: const Color(0xFF1E2A5A),
-                          border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.3)),
+                          border: Border.all(
+                            color: const Color(
+                              0xFF7DD3FC,
+                            ).withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Column(
                           children: [
-                            Text('+${todayReward['energy']}', style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 19, fontWeight: FontWeight.w900)),
+                            Text(
+                              '+${todayReward['energy']}',
+                              style: const TextStyle(
+                                color: Color(0xFF7DD3FC),
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                             const SizedBox(height: 2),
                             // 🩹 אייקון וקטורי (EnergyIcon) במקום אימוג'י ⚡ - ראו app_icons.dart.
                             Row(
                               mainAxisSize: MainAxisSize.min,
-                              textDirection: TextDirection.rtl,
                               children: [
-                                Text('אנרגיה ', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w700)),
+                                Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.mainMenuEnergyLabel,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                                 const EnergyIcon(size: 12),
                               ],
                             ),
@@ -2904,19 +5626,36 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         color: const Color(0xFF2A1B4D),
-                        border: Border.all(color: const Color(0xFFFFC64B).withValues(alpha: 0.3)),
+                        border: Border.all(
+                          color: const Color(0xFFFFC64B).withValues(alpha: 0.3),
+                        ),
                       ),
                       child: Column(
                         children: [
-                          Text('+${todayReward['coins']}', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 19, fontWeight: FontWeight.w900)),
+                          Text(
+                            '+${todayReward['coins']}',
+                            style: const TextStyle(
+                              color: Color(0xFFFFD86B),
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                           const SizedBox(height: 2),
                           // 🩹 אייקון וקטורי (CoinIcon) במקום אימוג'י מטבע (🪙) - לא נתמך
                           // בפונט של חלק מהמכשירים ומוצג כריבוע ריק. ראו app_icons.dart.
                           Row(
                             mainAxisSize: MainAxisSize.min,
-                            textDirection: TextDirection.rtl,
                             children: [
-                              Text('מטבעות ', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontWeight: FontWeight.w700)),
+                              Text(
+                                AppLocalizations.of(
+                                  context,
+                                )!.mainMenuCoinsLabel,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                               const CoinIcon(size: 12),
                             ],
                           ),
@@ -2931,7 +5670,9 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                 width: double.infinity,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFF9A3C)]),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFE08A), Color(0xFFFF9A3C)],
+                    ),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Material(
@@ -2939,9 +5680,18 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () => Navigator.pop(dialogContext),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 14),
-                        child: Center(child: Text("סגור", style: TextStyle(color: Color(0xFF2A1740), fontSize: 16.5, fontWeight: FontWeight.w900))),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Center(
+                          child: Text(
+                            AppLocalizations.of(context)!.mainMenuCloseButton,
+                            style: const TextStyle(
+                              color: Color(0xFF2A1740),
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -2956,10 +5706,13 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
               // אמיתית לפוש בשעה הזו. אם בעתיד תרצה תזכורת אמיתית לרצף -
               // צריך להוסיף לה תזמון ייעודי משלה, בדומה ל-scheduleFreeCoinsReminder.
               Text(
-                "תזכורת מחר · 20:00",
+                AppLocalizations.of(context)!.mainMenuReminderTomorrow8pm,
                 textAlign: TextAlign.center,
-                textDirection: TextDirection.rtl,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 10.5, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -2981,43 +5734,81 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.4)),
-            gradient: LinearGradient(colors: [const Color(0xFF38BDF8).withValues(alpha: 0.16), const Color(0xFF38BDF8).withValues(alpha: 0.02)]),
+            border: Border.all(
+              color: const Color(0xFF7DD3FC).withValues(alpha: 0.4),
+            ),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF38BDF8).withValues(alpha: 0.16),
+                const Color(0xFF38BDF8).withValues(alpha: 0.02),
+              ],
+            ),
           ),
           child: Row(
-            textDirection: TextDirection.rtl,
             children: [
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: const Color(0xFF38BDF8).withValues(alpha: 0.22)),
-                child: const Icon(Icons.smart_display_rounded, color: Color(0xFF7DD3FC), size: 16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  color: const Color(0xFF38BDF8).withValues(alpha: 0.22),
+                ),
+                child: const Icon(
+                  Icons.smart_display_rounded,
+                  color: Color(0xFF7DD3FC),
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("צריך אנרגיה?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
+                    Text(
+                      AppLocalizations.of(context)!.mainMenuNeedEnergyTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
-                      "צפה בפרסומת - קבל ${EnergyService.adRewardAmount} אנרגיה מיידית",
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w500),
+                      AppLocalizations.of(
+                        context,
+                      )!.mainMenuWatchAdEnergySubtitle(
+                        EnergyService.adRewardAmount,
+                      ),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF7DD3FC).withValues(alpha: 0.5)),
+                  border: Border.all(
+                    color: const Color(0xFF7DD3FC).withValues(alpha: 0.5),
+                  ),
                   color: const Color(0xFF38BDF8).withValues(alpha: 0.2),
                 ),
-                child: const Text("צפה", textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFF7DD3FC), fontSize: 12, fontWeight: FontWeight.w800)),
+                child: Text(
+                  AppLocalizations.of(context)!.mainMenuWatchButton,
+                  style: const TextStyle(
+                    color: Color(0xFF7DD3FC),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ],
           ),
@@ -3039,46 +5830,90 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.35)),
-            gradient: LinearGradient(colors: [const Color(0xFF34D399).withValues(alpha: 0.12), const Color(0xFF34D399).withValues(alpha: 0.02)]),
+            border: Border.all(
+              color: const Color(0xFF6EE7B7).withValues(alpha: 0.35),
+            ),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF34D399).withValues(alpha: 0.12),
+                const Color(0xFF34D399).withValues(alpha: 0.02),
+              ],
+            ),
           ),
           child: Row(
-            textDirection: TextDirection.rtl,
             children: [
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: const Color(0xFF34D399).withValues(alpha: 0.22)),
-                child: const Icon(Icons.smart_display_rounded, color: Color(0xFFA7F3D0), size: 16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  color: const Color(0xFF34D399).withValues(alpha: 0.22),
+                ),
+                child: const Icon(
+                  Icons.smart_display_rounded,
+                  color: Color(0xFFA7F3D0),
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("בונוס פרסומת", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
+                    Text(
+                      AppLocalizations.of(context)!.mainMenuAdBonusTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
-                      _adBonusAvailable ? "צפה בפרסומת - קבל 15 מטבעות" : "זמין שוב בעוד ${_formatHms(_adBonusRemaining)}",
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w500),
+                      _adBonusAvailable
+                          ? AppLocalizations.of(
+                              context,
+                            )!.mainMenuWatchAdCoinsSubtitle
+                          : AppLocalizations.of(
+                              context,
+                            )!.mainMenuAvailableAgainIn(
+                              _formatHms(_adBonusRemaining),
+                            ),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.5)),
-                  color: const Color(0xFF34D399).withValues(alpha: _adBonusAvailable ? 0.18 : 0.07),
+                  border: Border.all(
+                    color: const Color(0xFF6EE7B7).withValues(alpha: 0.5),
+                  ),
+                  color: const Color(
+                    0xFF34D399,
+                  ).withValues(alpha: _adBonusAvailable ? 0.18 : 0.07),
                 ),
                 child: Text(
-                  _adBonusAvailable ? "צפה" : "ממתין",
-                  textDirection: TextDirection.rtl,
-                  style: TextStyle(color: _adBonusAvailable ? const Color(0xFFA7F3D0) : Colors.white38, fontSize: 12, fontWeight: FontWeight.w800),
+                  _adBonusAvailable
+                      ? AppLocalizations.of(context)!.mainMenuWatchButton
+                      : AppLocalizations.of(context)!.mainMenuWaitingLabel,
+                  style: TextStyle(
+                    color: _adBonusAvailable
+                        ? const Color(0xFFA7F3D0)
+                        : Colors.white38,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -3102,47 +5937,101 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
           padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.35)),
-            gradient: LinearGradient(colors: [const Color(0xFF34D399).withValues(alpha: 0.12), const Color(0xFF34D399).withValues(alpha: 0.02)]),
+            border: Border.all(
+              color: const Color(0xFF6EE7B7).withValues(alpha: 0.35),
+            ),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF34D399).withValues(alpha: 0.12),
+                const Color(0xFF34D399).withValues(alpha: 0.02),
+              ],
+            ),
           ),
           child: Row(
-            textDirection: TextDirection.rtl,
             children: [
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: const Color(0xFF34D399).withValues(alpha: 0.22)),
-                child: const Icon(Icons.smart_display_rounded, color: Color(0xFFA7F3D0), size: 16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  color: const Color(0xFF34D399).withValues(alpha: 0.22),
+                ),
+                child: const Icon(
+                  Icons.smart_display_rounded,
+                  color: Color(0xFFA7F3D0),
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
-                  textDirection: TextDirection.rtl,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("בונוס פרסומת", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
+                    Text(
+                      AppLocalizations.of(context)!.mainMenuAdBonusTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
-                      _adBonusAvailable ? "צפה בפרסומת - קבל 15 מטבעות" : "זמין שוב בעוד ${_formatHms(_adBonusRemaining)}",
-                      textDirection: TextDirection.rtl,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w500),
+                      _adBonusAvailable
+                          ? AppLocalizations.of(
+                              context,
+                            )!.mainMenuWatchAdCoinsSubtitle
+                          : AppLocalizations.of(
+                              context,
+                            )!.mainMenuAvailableAgainIn(
+                              _formatHms(_adBonusRemaining),
+                            ),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.5)),
-                  color: const Color(0xFF34D399).withValues(alpha: _adBonusAvailable ? 0.18 : 0.07),
+                  border: Border.all(
+                    color: const Color(0xFF6EE7B7).withValues(alpha: 0.5),
+                  ),
+                  color: const Color(
+                    0xFF34D399,
+                  ).withValues(alpha: _adBonusAvailable ? 0.18 : 0.07),
                 ),
                 child: _collectingAdBonus
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFA7F3D0)))
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFA7F3D0),
+                        ),
+                      )
                     : Text(
-                        _adBonusAvailable ? "צפה" : "בהמתנה",
-                        style: TextStyle(color: const Color(0xFFA7F3D0).withValues(alpha: _adBonusAvailable ? 1 : 0.55), fontSize: 12, fontWeight: FontWeight.w900),
+                        _adBonusAvailable
+                            ? AppLocalizations.of(context)!.mainMenuWatchButton
+                            : AppLocalizations.of(
+                                context,
+                              )!.mainMenuWaitingLabel2,
+                        style: TextStyle(
+                          color: const Color(
+                            0xFFA7F3D0,
+                          ).withValues(alpha: _adBonusAvailable ? 1 : 0.55),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
               ),
             ],
@@ -3176,39 +6065,63 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   // בין שני המסכים.
   Widget _buildLogoHero() {
     return _FloatHero(
-      child: Builder(builder: (context) {
-        // 🩹 תוקן: היה 0.56 עם מינימום 210 - יצא לוגו ענק שתפס כמעט את
-        // כל רוחב המסך. במוקאפ (מסך 01 · בית) הלוגו הוא בגודל "אייקון"
-        // בינוני, בערך שליש מרוחב המסך - לא הירו-אלמנט דומיננטי.
-        final double size = (MediaQuery.of(context).size.width * 0.34).clamp(130.0, 170.0);
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(
-              width: size * 1.5,
-              height: size * 1.5,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [const Color(0xFFFFB24D).withValues(alpha: 0.35), const Color(0xFFFFB24D).withValues(alpha: 0.0)]),
+      child: Builder(
+        builder: (context) {
+          // 🩹 תוקן: היה 0.56 עם מינימום 210 - יצא לוגו ענק שתפס כמעט את
+          // כל רוחב המסך. במוקאפ (מסך 01 · בית) הלוגו הוא בגודל "אייקון"
+          // בינוני, בערך שליש מרוחב המסך - לא הירו-אלמנט דומיננטי.
+          final double size = (MediaQuery.of(context).size.width * 0.34).clamp(
+            130.0,
+            170.0,
+          );
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: size * 1.5,
+                height: size * 1.5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      const Color(0xFFFFB24D).withValues(alpha: 0.35),
+                      const Color(0xFFFFB24D).withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            Container(
-              width: size,
-              height: size,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(size * 0.24),
-                gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFE79A), Color(0xFFC98A32), Color(0xFFFFD86B)]),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 24, offset: const Offset(0, 12))],
+              Container(
+                width: size,
+                height: size,
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(size * 0.24),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFFFE79A),
+                      Color(0xFFC98A32),
+                      Color(0xFFFFD86B),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 24,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(size * 0.2),
+                  child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
+                ),
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(size * 0.2),
-                child: Image.asset('assets/icon/logo.png', fit: BoxFit.cover),
-              ),
-            ),
-          ],
-        );
-      }),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -3220,33 +6133,43 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
   //    dependencies:
   //      share_plus: ^10.0.0
   //    ואז להריץ: flutter pub get)
-  static const String _iosStoreLink = "https://apps.apple.com/au/app/%D7%96%D7%94%D7%94-%D7%90%D7%AA-%D7%94%D7%9C%D7%95%D7%92%D7%95/id6797976197";
-  static const String _androidStoreLink = "https://play.google.com/store/apps/details?id=com.ofeksela.zehethalogo&hl=he";
+  static const String _iosStoreLink =
+      "https://apps.apple.com/au/app/%D7%96%D7%94%D7%94-%D7%90%D7%AA-%D7%94%D7%9C%D7%95%D7%92%D7%95/id6797976197";
+  static const String _androidStoreLink =
+      "https://play.google.com/store/apps/details?id=com.ofeksela.zehethalogo&hl=he";
 
   Future<void> _inviteFriends() async {
-    final String text =
-        "בואו לשחק איתי במשחק 🎮 \"זהה את הלוגו!\" - מי מכיר הכי הרבה לוגואים? 🔥\n\n"
-        "📱 אייפון: $_iosStoreLink\n"
-        "🤖 אנדרואיד/גלקסי: $_androidStoreLink";
+    final loc = AppLocalizations.of(context)!;
+    final String text = loc.mainMenuInviteShareText(
+      _iosStoreLink,
+      _androidStoreLink,
+    );
     try {
       // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
       // (נקודת העיגון של ה-popover ב-iOS, ראו share_helper.dart להסבר המלא).
       final box = context.findRenderObject() as RenderBox?;
-      await Share.share(text, subject: "זהה את הלוגו!", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
+      await Share.share(
+        text,
+        subject: loc.appLoadingTitle,
+        sharePositionOrigin: box != null
+            ? (box.localToGlobal(Offset.zero) & box.size)
+            : null,
+      );
     } catch (_) {
       if (mounted) _showShareFallback(text);
     }
   }
 
   void _showShareFallback(String text) {
-    AppNotification.show(context, "לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", duration: const Duration(seconds: 5));
+    AppNotification.show(
+      context,
+      AppLocalizations.of(context)!.friendChallengeNoShareAppFallback(text),
+      duration: const Duration(seconds: 5),
+    );
   }
-
-
 }
 
 enum _NameCheckStatus { idle, checking, available, taken }
-
 
 // ============================================================
 // הליבה המשותפת: שדה קלט שם + בדיקת זמינות אמיתית מול Firestore (debounce)
@@ -3282,7 +6205,9 @@ class _NameEntryCard extends StatefulWidget {
 }
 
 class _NameEntryCardState extends State<_NameEntryCard> {
-  late final TextEditingController _controller = TextEditingController(text: widget.initialName);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialName,
+  );
   Timer? _debounce;
   _NameCheckStatus _status = _NameCheckStatus.idle;
   bool _saving = false;
@@ -3294,7 +6219,8 @@ class _NameEntryCardState extends State<_NameEntryCard> {
     DeviceId.get().then((id) => _myDeviceId = id);
     // אם נכנסים עם שם קיים (מסך "שינוי שם") - השם הנוכחי כמובן "פנוי"
     // עבורנו (הוא כבר שלנו), בלי צורך לבדוק מול Firestore מיד בפתיחה.
-    if (widget.initialName.trim().isNotEmpty) _status = _NameCheckStatus.available;
+    if (widget.initialName.trim().isNotEmpty)
+      _status = _NameCheckStatus.available;
   }
 
   @override
@@ -3318,22 +6244,36 @@ class _NameEntryCardState extends State<_NameEntryCard> {
     }
     setState(() => _status = _NameCheckStatus.checking);
     _debounce = Timer(const Duration(milliseconds: 500), () async {
-      final taken = await LeaderboardService.isNameTaken(trimmed, excludeDeviceId: _myDeviceId);
+      final taken = await LeaderboardService.isNameTaken(
+        trimmed,
+        excludeDeviceId: _myDeviceId,
+      );
       if (!mounted) return;
       // ⚠️ בודקים שהטקסט לא השתנה בינתיים (המשתמש המשיך להקליד) - כדי
       // שתוצאה איטית של בקשה ישנה לא "תדרוס" תוצאה עדכנית יותר.
       if (_controller.text.trim() != trimmed) return;
-      setState(() => _status = taken ? _NameCheckStatus.taken : _NameCheckStatus.available);
+      setState(
+        () => _status = taken
+            ? _NameCheckStatus.taken
+            : _NameCheckStatus.available,
+      );
     });
   }
 
   Future<void> _onConfirm() async {
     final name = _controller.text.trim();
-    if (name.isEmpty || _status == _NameCheckStatus.taken || _status == _NameCheckStatus.checking || _saving) return;
+    if (name.isEmpty ||
+        _status == _NameCheckStatus.taken ||
+        _status == _NameCheckStatus.checking ||
+        _saving)
+      return;
     setState(() => _saving = true);
     // בדיקה אחרונה וסופית ממש לפני השמירה - מונעת מקרה קצה נדיר שבו שני
     // שחקנים "תפסו" בו-זמנית את אותו השם בין הבדיקה האחרונה לשמירה.
-    final taken = await LeaderboardService.isNameTaken(name, excludeDeviceId: _myDeviceId);
+    final taken = await LeaderboardService.isNameTaken(
+      name,
+      excludeDeviceId: _myDeviceId,
+    );
     if (!mounted) return;
     if (taken) {
       setState(() {
@@ -3358,24 +6298,60 @@ class _NameEntryCardState extends State<_NameEntryCard> {
             Container(
               width: 76,
               height: 76,
-              decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [const Color(0xFFFFBE50).withValues(alpha: 0.35), const Color(0xFFFFBE50).withValues(alpha: 0.0)])),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFFFFBE50).withValues(alpha: 0.35),
+                    const Color(0xFFFFBE50).withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
             ),
             Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                gradient: const LinearGradient(colors: [Color(0xFFFFE79A), Color(0xFFFF9A3C)]),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.7), width: 2),
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFE79A), Color(0xFFFF9A3C)],
+                ),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  width: 2,
+                ),
               ),
-              child: const Center(child: Text("?", style: TextStyle(fontSize: 28, color: Color(0xFF2A1740), fontWeight: FontWeight.w900))),
+              child: const Center(
+                child: Text(
+                  "?",
+                  style: TextStyle(
+                    fontSize: 28,
+                    color: Color(0xFF2A1740),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        Text(widget.title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+        Text(
+          widget.title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 21,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(widget.subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500)),
+        Text(
+          widget.subtitle,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 20),
 
         // גלולת קלט השם - גבול בגרדיאנט זהב, כמו במוקאפ
@@ -3383,14 +6359,26 @@ class _NameEntryCardState extends State<_NameEntryCard> {
           padding: const EdgeInsets.all(1.6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            gradient: LinearGradient(colors: [const Color(0xFFFFD86B).withValues(alpha: 0.85), Colors.white.withValues(alpha: 0.15)]),
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFFFFD86B).withValues(alpha: 0.85),
+                Colors.white.withValues(alpha: 0.15),
+              ],
+            ),
           ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(21), color: const Color(0xFF170F38).withValues(alpha: 0.9)),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(21),
+              color: const Color(0xFF170F38).withValues(alpha: 0.9),
+            ),
             child: Row(
               children: [
-                Icon(Icons.edit_rounded, size: 16, color: Colors.white.withValues(alpha: 0.4)),
+                Icon(
+                  Icons.edit_rounded,
+                  size: 16,
+                  color: Colors.white.withValues(alpha: 0.4),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
@@ -3398,15 +6386,21 @@ class _NameEntryCardState extends State<_NameEntryCard> {
                     autofocus: true,
                     maxLength: 12,
                     textAlign: TextAlign.center,
-                    textDirection: TextDirection.rtl,
                     onChanged: _onChanged,
                     onSubmitted: (_) => _onConfirm(),
-                    style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700),
-                    decoration: const InputDecoration(
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    decoration: InputDecoration(
                       counterText: "",
                       border: InputBorder.none,
-                      hintText: "הקלד את שמך כאן...",
-                      hintStyle: TextStyle(color: Colors.white30, fontSize: 15),
+                      hintText: AppLocalizations.of(context)!.mainMenuNameHint,
+                      hintStyle: const TextStyle(
+                        color: Colors.white30,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),
@@ -3425,18 +6419,44 @@ class _NameEntryCardState extends State<_NameEntryCard> {
             onTap: _onConfirm,
             borderRadius: BorderRadius.circular(21),
             child: Opacity(
-              opacity: (_status == _NameCheckStatus.taken || _controller.text.trim().isEmpty) ? 0.45 : 1,
+              opacity:
+                  (_status == _NameCheckStatus.taken ||
+                      _controller.text.trim().isEmpty)
+                  ? 0.45
+                  : 1,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(21),
-                  gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  gradient: const LinearGradient(
+                    colors: [
+                      Color(0xFFFFE08A),
+                      Color(0xFFFFB24D),
+                      Color(0xFFFF8A3C),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                 ),
                 child: Center(
                   child: _saving
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF2A1740)))
-                      : Text(widget.confirmLabel, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Color(0xFF2A1740),
+                          ),
+                        )
+                      : Text(
+                          widget.confirmLabel,
+                          style: const TextStyle(
+                            color: Color(0xFF2A1740),
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -3447,7 +6467,14 @@ class _NameEntryCardState extends State<_NameEntryCard> {
           const SizedBox(height: 12),
           InkWell(
             onTap: () => Navigator.pop(context),
-            child: Text("ביטול", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5, fontWeight: FontWeight.bold)),
+            child: Text(
+              AppLocalizations.of(context)!.duelLobbyCancelButton,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ],
@@ -3460,24 +6487,39 @@ class _NameEntryCardState extends State<_NameEntryCard> {
         return const SizedBox(height: 1);
       case _NameCheckStatus.checking:
         return _statusRow(
-          icon: const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFFD86B))),
-          text: "בודק זמינות...",
+          icon: const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFFFFD86B),
+            ),
+          ),
+          text: AppLocalizations.of(context)!.mainMenuCheckingAvailability,
           textColor: Colors.white.withValues(alpha: 0.55),
           borderColor: Colors.white.withValues(alpha: 0.14),
           bgColor: Colors.white.withValues(alpha: 0.05),
         );
       case _NameCheckStatus.available:
         return _statusRow(
-          icon: const Icon(Icons.check_circle_rounded, size: 15, color: Color(0xFF6EE7B7)),
-          text: "השם פנוי",
+          icon: const Icon(
+            Icons.check_circle_rounded,
+            size: 15,
+            color: Color(0xFF6EE7B7),
+          ),
+          text: AppLocalizations.of(context)!.mainMenuNameAvailable,
           textColor: const Color(0xFFA7F3D0),
           borderColor: const Color(0xFF6EE7B7).withValues(alpha: 0.4),
           bgColor: const Color(0xFF34D399).withValues(alpha: 0.1),
         );
       case _NameCheckStatus.taken:
         return _statusRow(
-          icon: const Icon(Icons.cancel_rounded, size: 15, color: Color(0xFFFB7185)),
-          text: "השם הזה כבר תפוס, נסה שם אחר",
+          icon: const Icon(
+            Icons.cancel_rounded,
+            size: 15,
+            color: Color(0xFFFB7185),
+          ),
+          text: AppLocalizations.of(context)!.mainMenuNameTaken,
           textColor: const Color(0xFFFFC9D1),
           borderColor: const Color(0xFFFB7185).withValues(alpha: 0.4),
           bgColor: const Color(0xFFFB7185).withValues(alpha: 0.1),
@@ -3485,18 +6527,37 @@ class _NameEntryCardState extends State<_NameEntryCard> {
     }
   }
 
-  Widget _statusRow({required Widget icon, required String text, required Color textColor, required Color borderColor, required Color bgColor}) {
+  Widget _statusRow({
+    required Widget icon,
+    required String text,
+    required Color textColor,
+    required Color borderColor,
+    required Color bgColor,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor), color: bgColor),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+        color: bgColor,
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        textDirection: TextDirection.rtl,
         children: [
           icon,
           const SizedBox(width: 8),
-          Flexible(child: Text(text, textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w800))),
+          Flexible(
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -3515,13 +6576,17 @@ class _FloatHero extends StatefulWidget {
   State<_FloatHero> createState() => _FloatHeroState();
 }
 
-class _FloatHeroState extends State<_FloatHero> with SingleTickerProviderStateMixin {
+class _FloatHeroState extends State<_FloatHero>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat(reverse: true);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
   }
 
   @override
@@ -3570,7 +6635,12 @@ class _AuroraBackground extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF34186E), Color(0xFF3A1B78), Color(0xFF241154), Color(0xFF120C2E)],
+                colors: [
+                  Color(0xFF34186E),
+                  Color(0xFF3A1B78),
+                  Color(0xFF241154),
+                  Color(0xFF120C2E),
+                ],
                 stops: [0.0, 0.3, 0.64, 1.0],
               ),
             ),
@@ -3639,12 +6709,65 @@ class _FloatingMarks extends StatelessWidget {
         double drift(double phase) => sin((t + phase) * 2 * pi) * 8;
         return Stack(
           children: [
-            Positioned(top: 90 + drift(0), left: -18, child: Text("?", style: TextStyle(fontSize: 150, color: Colors.white.withValues(alpha: 0.045), fontWeight: FontWeight.w900))),
-            Positioned(bottom: 190 + drift(0.4), right: -14, child: Text("?", style: TextStyle(fontSize: 120, color: Colors.white.withValues(alpha: 0.045), fontWeight: FontWeight.w900))),
-            Positioned(top: size.height * 0.5, right: 30 + drift(0.7), child: Text("?", style: TextStyle(fontSize: 90, color: Colors.white.withValues(alpha: 0.04), fontWeight: FontWeight.w900))),
-            Positioned(top: 130, right: 40, child: _Twinkle(controller: controller, phase: 0)),
-            Positioned(top: size.height * 0.4, left: 36, child: _Twinkle(controller: controller, phase: 0.4, color: const Color(0xFFFFD86B))),
-            Positioned(bottom: 150, right: 66, child: _Twinkle(controller: controller, phase: 0.75, color: const Color(0xFFA5F3FC))),
+            Positioned(
+              top: 90 + drift(0),
+              left: -18,
+              child: Text(
+                "?",
+                style: TextStyle(
+                  fontSize: 150,
+                  color: Colors.white.withValues(alpha: 0.045),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 190 + drift(0.4),
+              right: -14,
+              child: Text(
+                "?",
+                style: TextStyle(
+                  fontSize: 120,
+                  color: Colors.white.withValues(alpha: 0.045),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Positioned(
+              top: size.height * 0.5,
+              right: 30 + drift(0.7),
+              child: Text(
+                "?",
+                style: TextStyle(
+                  fontSize: 90,
+                  color: Colors.white.withValues(alpha: 0.04),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 130,
+              right: 40,
+              child: _Twinkle(controller: controller, phase: 0),
+            ),
+            Positioned(
+              top: size.height * 0.4,
+              left: 36,
+              child: _Twinkle(
+                controller: controller,
+                phase: 0.4,
+                color: const Color(0xFFFFD86B),
+              ),
+            ),
+            Positioned(
+              bottom: 150,
+              right: 66,
+              child: _Twinkle(
+                controller: controller,
+                phase: 0.75,
+                color: const Color(0xFFA5F3FC),
+              ),
+            ),
           ],
         );
       },
@@ -3656,7 +6779,11 @@ class _Twinkle extends StatelessWidget {
   final AnimationController controller;
   final double phase;
   final Color color;
-  const _Twinkle({required this.controller, required this.phase, this.color = Colors.white});
+  const _Twinkle({
+    required this.controller,
+    required this.phase,
+    this.color = Colors.white,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3666,7 +6793,11 @@ class _Twinkle extends StatelessWidget {
         final v = (sin((controller.value + phase) * 2 * pi) + 1) / 2;
         return Opacity(
           opacity: 0.18 + v * 0.52,
-          child: Container(width: 3, height: 3, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+          child: Container(
+            width: 3,
+            height: 3,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          ),
         );
       },
     );
@@ -3685,7 +6816,8 @@ class _FadeSlideIn extends StatefulWidget {
   State<_FadeSlideIn> createState() => _FadeSlideInState();
 }
 
-class _FadeSlideInState extends State<_FadeSlideIn> with SingleTickerProviderStateMixin {
+class _FadeSlideInState extends State<_FadeSlideIn>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
@@ -3693,9 +6825,15 @@ class _FadeSlideInState extends State<_FadeSlideIn> with SingleTickerProviderSta
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _slide = Tween<Offset>(begin: const Offset(0, 0.10), end: Offset.zero).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.10),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     final delay = Duration(milliseconds: 55 * widget.index.clamp(0, 10));
     Future.delayed(delay, () {
       if (mounted) _controller.forward();
@@ -3727,83 +6865,6 @@ class _FadeSlideInState extends State<_FadeSlideIn> with SingleTickerProviderSta
 // לפי המוקאפ (מסך 01 · בית): כרטיס מלא-צבע (גרדיאנט אלכסוני), אייקון
 // בריבוע לבן-שקוף בפינה העליונה, כותרת ותת-כותרת קצרה בתחתית. בלי מסגרת,
 // בלי תג "חדש", בלי צ'יפ נוסף - בדיוק כמו שמופיע בעיצוב.
-
-// 🆕 כרטיס גריד 2x2 של מסך הבית ("Home v5") - גרדיאנט מלא, אייקון
-// בעיגול שקוף-לבן בפינה (ימין-עליון מבחינת מסך, קבוע בלי קשר ל-RTL,
-// בדיוק כמו במוקאפ), תג אופציונלי בפינה הנגדית (שמאל-עליון), וכותרת
-// + תת-כותרת צמודים לתחתית הכרטיס. ראו _buildHomeGridV5 לשימוש.
-class _HomeStatusCardV5 extends StatelessWidget {
-  final List<Color> gradient;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final Widget? topLeftBadge;
-
-  const _HomeStatusCardV5({
-    super.key,
-    required this.gradient,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.topLeftBadge,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Container(
-          height: 106,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradient),
-            boxShadow: [BoxShadow(color: gradient.last.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 8))],
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.22)),
-                  child: Icon(icon, color: Colors.white, size: 18),
-                ),
-              ),
-              if (topLeftBadge != null) Positioned(top: 0, left: 0, child: topLeftBadge!),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      textDirection: TextDirection.rtl,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 11.5, fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _ModeCard extends StatelessWidget {
   final Widget icon;
@@ -3846,7 +6907,10 @@ class _ModeCard extends StatelessWidget {
                 left: 10,
                 bottom: 10,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
                     color: Colors.black.withValues(alpha: 0.28),
@@ -3854,9 +6918,23 @@ class _ModeCard extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(width: 7, height: 7, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF4ADE80),
+                        ),
+                      ),
                       const SizedBox(width: 5),
-                      Text('$liveCount', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                      Text(
+                        '$liveCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -3869,72 +6947,85 @@ class _ModeCard extends StatelessWidget {
 
   Widget _buildCard() {
     return Container(
-          // 🩹 תוקן: "אתגר רנדומלי נמצא על הלוגו של עצמו" / "דו קרב מופיע
-          // חלק ממנו" - הבאג האמיתי: הכרטיס בנוי מ-Stack עם שני Positioned
-          // נפרדים (אייקון מלמעלה, כותרת+תת-כותרת מהתחתית) בלי שום הגבלת
-          // גובה על בלוק הטקסט - כשה-note ארוך (כמו "לוגו אקראי · שומר על
-          // הרצף") הוא עלול "לגלוש" לשתי שורות ולצמוח כלפי מעלה עד שהוא
-          // ממש חופף את ריבוע האייקון, כי Positioned לא חוסם/גוזר תוכן
-          // שגדל מעבר לגודל שתוכנן. אחרי שגובה הכרטיס גם צומצם (158->120)
-          // בעדכון הקודם, המרווח שנשאר היה קטן מדי וזה קרה בפועל. התיקון:
-          // Column זורם רגיל (בלי Stack/Positioned) + maxLines/ellipsis על
-          // הטקסטים כדי שלעולם לא יגדלו מעבר לשטח שהוקצה להם, וגובה מעט
-          // גדול יותר (136 במקום 120) כדי שיהיה רווח נשימה אמיתי.
-          // 🩹 זה היה הבאג האמיתי מאחורי "שחק מול אחרים קטן יותר מאתגר
-          // רנדומלי ומופיע באמצע": ל-Container הזה לא היה width בכלל, אז
-          // הוא התכווץ לפי רוחב התוכן שלו (Column) בלבד - וכיוון שהוא ילד
-          // לא-Positioned בתוך Stack (שנותן לילדים שלו אילוצים רופפים/
-          // loose, גם אם ל-Stack עצמו יש רוחב נוקשה מ-Expanded למעלה),
-          // כרטיס עם טקסט ארוך יותר ("אתגר רנדומלי" + התת-כותרת הארוכה
-          // "לוגו אקראי · שומר על הרצף") יצא רחב יותר בפועל מכרטיס עם
-          // טקסט קצר ("שחק מול אחרים" + "דו־קרב · מירוץ") - למרות ששניהם
-          // אמורים לתפוס בדיוק חצי-חצי. width: double.infinity מכריח את
-          // ה-Container למלא את כל הרוחב שהוקצה לו (מה-Expanded), בלי
-          // קשר לאורך הטקסט בפנים - קורה בכל מכשיר/פלטפורמה, לא קשור
-          // לאייפון בכלל.
-          width: double.infinity,
-          height: height,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradient),
+      // 🩹 תוקן: "אתגר רנדומלי נמצא על הלוגו של עצמו" / "דו קרב מופיע
+      // חלק ממנו" - הבאג האמיתי: הכרטיס בנוי מ-Stack עם שני Positioned
+      // נפרדים (אייקון מלמעלה, כותרת+תת-כותרת מהתחתית) בלי שום הגבלת
+      // גובה על בלוק הטקסט - כשה-note ארוך (כמו "לוגו אקראי · שומר על
+      // הרצף") הוא עלול "לגלוש" לשתי שורות ולצמוח כלפי מעלה עד שהוא
+      // ממש חופף את ריבוע האייקון, כי Positioned לא חוסם/גוזר תוכן
+      // שגדל מעבר לגודל שתוכנן. אחרי שגובה הכרטיס גם צומצם (158->120)
+      // בעדכון הקודם, המרווח שנשאר היה קטן מדי וזה קרה בפועל. התיקון:
+      // Column זורם רגיל (בלי Stack/Positioned) + maxLines/ellipsis על
+      // הטקסטים כדי שלעולם לא יגדלו מעבר לשטח שהוקצה להם, וגובה מעט
+      // גדול יותר (136 במקום 120) כדי שיהיה רווח נשימה אמיתי.
+      // 🩹 זה היה הבאג האמיתי מאחורי "שחק מול אחרים קטן יותר מאתגר
+      // רנדומלי ומופיע באמצע": ל-Container הזה לא היה width בכלל, אז
+      // הוא התכווץ לפי רוחב התוכן שלו (Column) בלבד - וכיוון שהוא ילד
+      // לא-Positioned בתוך Stack (שנותן לילדים שלו אילוצים רופפים/
+      // loose, גם אם ל-Stack עצמו יש רוחב נוקשה מ-Expanded למעלה),
+      // כרטיס עם טקסט ארוך יותר ("אתגר רנדומלי" + התת-כותרת הארוכה
+      // "לוגו אקראי · שומר על הרצף") יצא רחב יותר בפועל מכרטיס עם
+      // טקסט קצר ("שחק מול אחרים" + "דו־קרב · מירוץ") - למרות ששניהם
+      // אמורים לתפוס בדיוק חצי-חצי. width: double.infinity מכריח את
+      // ה-Container למלא את כל הרוחב שהוקצה לו (מה-Expanded), בלי
+      // קשר לאורך הטקסט בפנים - קורה בכל מכשיר/פלטפורמה, לא קשור
+      // לאייפון בכלל.
+      width: double.infinity,
+      height: height,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradient,
+        ),
+      ),
+      // 🩹 תוקן: הכותרת/תת-הכותרת "זזו שמאלה" - ה-Column הזה לא היה
+      // עטוף ב-Directionality משלו, אז CrossAxisAlignment.start התיישר
+      // לפי כיוון ברירת המחדל (LTR) של האפליקציה = שמאל, למרות
+      // ש-textDirection: rtl בכל Text בפנים קובע רק את כיוון האותיות
+      // עצמן ולא את יישור הבלוק כולו. CrossAxisAlignment.end מיישר את
+      // כל הבלוק לימין (בלי קשר לכיוון האב), בדיוק כמו שצריך ב-RTL.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              color: Colors.white.withValues(alpha: 0.28),
+            ),
+            alignment: Alignment.center,
+            child: icon,
           ),
-          // 🩹 תוקן: הכותרת/תת-הכותרת "זזו שמאלה" - ה-Column הזה לא היה
-          // עטוף ב-Directionality משלו, אז CrossAxisAlignment.start התיישר
-          // לפי כיוון ברירת המחדל (LTR) של האפליקציה = שמאל, למרות
-          // ש-textDirection: rtl בכל Text בפנים קובע רק את כיוון האותיות
-          // עצמן ולא את יישור הבלוק כולו. CrossAxisAlignment.end מיישר את
-          // כל הבלוק לימין (בלי קשר לכיוון האב), בדיוק כמו שצריך ב-RTL.
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.white.withValues(alpha: 0.28)),
-                alignment: Alignment.center,
-                child: icon,
-              ),
-              const Spacer(),
-              Text(
-                title,
-                textDirection: TextDirection.rtl,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
-              ),
-              if (note != null) ...[
-                const SizedBox(height: 3),
-                Text(
-                  note!,
-                  textDirection: TextDirection.rtl,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ],
+          const Spacer(),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        );
+          if (note != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              note!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

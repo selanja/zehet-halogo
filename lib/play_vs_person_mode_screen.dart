@@ -25,6 +25,7 @@ import 'duel_season_leaderboard_screen.dart';
 import 'friend_challenge_screen.dart';
 import 'friend_service.dart'; // 🆕 רשימת חברים כאן במסך עצמו - ראו _buildFriendsSection
 import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי, עצמאי - לא תלוי בסיור במסך הבית
+import 'l10n/app_localizations.dart';
 
 class PlayVsPersonModeScreen extends StatefulWidget {
   final String username;
@@ -114,10 +115,11 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     // 🎯 טווח שאלות הדו-קרב לפי טבלת ההימורים (מחושב דינמית, לא קבוע -
     // כדי שיישאר נכון גם אם DuelService.stakeQuestionCounts ישתנה).
     final duelCounts = DuelService.stakeQuestionCounts.values.toList()..sort();
-    final duelLogosLabel = duelCounts.isEmpty ? '' : (duelCounts.first == duelCounts.last ? '${duelCounts.first} לוגואים' : '${duelCounts.first}–${duelCounts.last} לוגואים');
+    final duelLogosLabel = duelCounts.isEmpty ? '' : (duelCounts.first == duelCounts.last ? loc.playVsPersonLogosRangeSingle(duelCounts.first) : loc.playVsPersonLogosRange(duelCounts.first, duelCounts.last));
     final raceMax = LogoRaceService.stakeQuestionCounts.values.isEmpty ? 0 : LogoRaceService.stakeQuestionCounts.values.reduce((a, b) => a > b ? a : b);
 
     return Scaffold(
@@ -149,9 +151,9 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                   // שמנצח 2 ראשון לוקח בונוס מטבעות על כל הסדרה.
                   _buildModeCard(
                     icon: '🏆',
-                    title: "סדרת דו-קרב",
-                    subtitle: "הטוב מ-3 מול אותו יריב · בונוס מטבעות על ניצחון בסדרה",
-                    badge: "חדש",
+                    title: loc.playVsPersonSeriesTitle,
+                    subtitle: loc.playVsPersonSeriesSubtitle,
+                    badge: loc.playVsPersonNewBadge,
                     gradient: const [Color(0xFFDC2626), Color(0xFF7C2D12)],
                     glowColor: const Color(0xFFF87171),
                     // 🆕 "סדרת דו-קרב" קיבלה מוד presence נפרד משלה
@@ -172,8 +174,8 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                   const SizedBox(height: 18),
                   _buildModeCard(
                     icon: '⚔',
-                    title: "דו־קרב",
-                    subtitle: "1 על 1 · מי שפותר יותר לוגואים מנצח",
+                    title: loc.playVsPersonDuelTitle,
+                    subtitle: loc.playVsPersonDuelSubtitle,
                     badge: null,
                     gradient: const [Color(0xFFF43F5E), Color(0xFF7F1D3A)],
                     glowColor: const Color(0xFFF43F5E),
@@ -186,14 +188,14 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                   const SizedBox(height: 18),
                   _buildModeCard(
                     icon: '🏁',
-                    title: "מירוץ",
-                    subtitle: "1 על 1 · מי שמנחש ראשון בכל לוגו מנצח",
-                    badge: "חדש",
+                    title: loc.playVsPersonRaceTitle,
+                    subtitle: loc.playVsPersonRaceSubtitle,
+                    badge: loc.playVsPersonNewBadge,
                     gradient: const [Color(0xFF0EA5E9), Color(0xFF1E3A8A)],
                     glowColor: const Color(0xFF38BDF8),
                     playersNow: _racePlayersNow,
                     energyCost: 2,
-                    infoRight: raceMax > 0 ? '$raceMax לוגואים' : '',
+                    infoRight: raceMax > 0 ? loc.playVsPersonLogosRangeSingle(raceMax) : '',
                     buttonTextColor: const Color(0xFF0369A1),
                     onTap: () => _openMode(isDuel: false),
                   ),
@@ -203,7 +205,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                       Expanded(
                         child: _bottomButton(
                           icon: '🏆',
-                          label: "טבלת העונה",
+                          label: loc.playVsPersonSeasonBoardButton,
                           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DuelSeasonLeaderboardScreen())),
                         ),
                       ),
@@ -211,7 +213,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                       Expanded(
                         child: _bottomButton(
                           icon: '👥',
-                          label: "קרא לחבר",
+                          label: loc.playVsPersonInviteFriendButton,
                           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FriendChallengeScreen(username: widget.username))),
                         ),
                       ),
@@ -232,6 +234,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
   // 🆕 "בפנים זה יסביר" - הסבר קצר (חד-פעמי) על שלושת המודים, מוצג רק
   // כשמגיעים לכאן מתוך שלב ה-3 של הסיור במסך הבית (ראו showOnboardingIntro).
   Widget _buildOnboardingIntroOverlay() {
+    final loc = AppLocalizations.of(context)!;
     return Positioned.fill(
       child: Stack(
         children: [
@@ -255,13 +258,13 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('3 דרכים לשחק נגד אחרים', textDirection: TextDirection.rtl, textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
+                    Text(loc.playVsPersonIntroTitle, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 17, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 16),
-                    _introModeRow('🏆', 'סדרת דו-קרב', 'הטוב מ-3 מול אותו יריב - בונוס מטבעות על ניצחון בסדרה'),
+                    _introModeRow('🏆', loc.playVsPersonSeriesTitle, loc.playVsPersonSeriesIntroDesc),
                     const SizedBox(height: 12),
-                    _introModeRow('⚔️', 'דו-קרב', 'עימות 1 על 1 - מי שפותר יותר לוגואים מנצח'),
+                    _introModeRow('⚔️', loc.playVsPersonDuelIntroTitle, loc.playVsPersonDuelIntroDesc),
                     const SizedBox(height: 12),
-                    _introModeRow('🏁', 'מירוץ', 'עימות 1 על 1 - מי שמנחש ראשון בכל לוגו מנצח'),
+                    _introModeRow('🏁', loc.playVsPersonRaceTitle, loc.playVsPersonRaceIntroDesc),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -277,7 +280,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                           FirstVisitExplainer.markSeen('playVsPerson');
                           setState(() => _showIntro = false);
                         },
-                        child: const Text('הבנתי, בואו נבחר!', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                        child: Text(loc.playVsPersonIntroGotItButton, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                       ),
                     ),
                   ],
@@ -292,7 +295,6 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
 
   Widget _introModeRow(String emoji, String title, String desc) {
     return Row(
-      textDirection: TextDirection.rtl,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(emoji, style: const TextStyle(fontSize: 22)),
@@ -301,9 +303,9 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
+              Text(title, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 14.5, fontWeight: FontWeight.w900)),
               const SizedBox(height: 2),
-              Text(desc, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w600, height: 1.3)),
+              Text(desc, style: TextStyle(color: Colors.black.withValues(alpha: 0.55), fontSize: 12, fontWeight: FontWeight.w600, height: 1.3)),
             ],
           ),
         ),
@@ -326,9 +328,8 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          textDirection: TextDirection.rtl,
           children: [
-            const Text("הזמן חבר ישירות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
+            Text(AppLocalizations.of(context)!.playVsPersonInviteDirectlyTitle, style: const TextStyle(color: Colors.white, fontSize: 15.5, fontWeight: FontWeight.w900)),
             const SizedBox(width: 8),
             Text("(${_friends.length})", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13)),
           ],
@@ -348,7 +349,6 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.white.withValues(alpha: 0.05)),
       child: Row(
-        textDirection: TextDirection.rtl,
         children: [
           Stack(
             clipBehavior: Clip.none,
@@ -379,13 +379,12 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
           Expanded(
             child: Text(
               friend.name,
-              textDirection: TextDirection.rtl,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800),
             ),
           ),
           if (!friend.online)
-            Text("לא מחובר", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11.5, fontWeight: FontWeight.w700))
+            Text(AppLocalizations.of(context)!.playVsPersonFriendOffline, style: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 11.5, fontWeight: FontWeight.w700))
           else ...[
             _quickInviteButton(icon: '⚔', color: const Color(0xFFF43F5E), onTap: () => _inviteFriend(friend, isDuel: true)),
             const SizedBox(width: 8),
@@ -442,7 +441,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
         Expanded(
           child: Column(
             children: [
-              const Text("בחר מוד", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+              Text(AppLocalizations.of(context)!.playVsPersonChooseModeTitle, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
               if (_duelPlayersNow != null || _racePlayersNow != null || _superdualPlayersNow != null) ...[
                 const SizedBox(height: 3),
                 Row(
@@ -451,7 +450,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                   children: [
                     Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF34D399))),
                     const SizedBox(width: 5),
-                    Text('$_totalConnected מחוברים', textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 10.5, fontWeight: FontWeight.w700)),
+                    Text(AppLocalizations.of(context)!.playVsPersonConnectedCount(_totalConnected), style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 10.5, fontWeight: FontWeight.w700)),
                   ],
                 ),
               ],
@@ -501,7 +500,6 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                textDirection: TextDirection.rtl,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (playersNow != null)
@@ -515,7 +513,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                           const SizedBox(width: 5),
                           Text('$playersNow', style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 12, fontWeight: FontWeight.w900)),
                           const SizedBox(width: 4),
-                          Text('משחקים', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 9.5, fontWeight: FontWeight.w900)),
+                          Text(AppLocalizations.of(context)!.playVsPersonPlayingLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 9.5, fontWeight: FontWeight.w900)),
                         ],
                       ),
                     ),
@@ -531,9 +529,8 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
               ),
               const SizedBox(height: 14),
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
-                  Text(title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
                   if (badge != null) ...[
                     const SizedBox(width: 8),
                     Container(
@@ -545,17 +542,16 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                 ],
               ),
               const SizedBox(height: 5),
-              Text(subtitle, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 12, fontWeight: FontWeight.w700)),
+              Text(subtitle, style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 12, fontWeight: FontWeight.w700)),
               const SizedBox(height: 18),
               Row(
-                textDirection: TextDirection.rtl,
                 children: [
                   Container(
                     width: 55,
                     height: 40,
                     decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), color: Colors.white),
                     alignment: Alignment.center,
-                    child: Text("בחר", style: TextStyle(color: buttonTextColor, fontSize: 14, fontWeight: FontWeight.w900)),
+                    child: Text(AppLocalizations.of(context)!.playVsPersonChooseButton, style: TextStyle(color: buttonTextColor, fontSize: 14, fontWeight: FontWeight.w900)),
                   ),
                   const Spacer(),
                   if (infoRight.isNotEmpty)
@@ -563,7 +559,7 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
                       margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.black.withValues(alpha: 0.28)),
-                      child: Text(infoRight, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w900)),
+                      child: Text(infoRight, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w900)),
                     ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -597,11 +593,10 @@ class _PlayVsPersonModeScreenState extends State<PlayVsPersonModeScreen> {
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: Colors.white.withValues(alpha: 0.07)),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            textDirection: TextDirection.rtl,
             children: [
               Text(icon, style: const TextStyle(fontSize: 15)),
               const SizedBox(width: 8),
-              Text(label, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800)),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800)),
             ],
           ),
         ),

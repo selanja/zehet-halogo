@@ -1,27 +1,27 @@
 // app_bottom_nav.dart
 //
-// 🆕 סרגל ניווט תחתון משותף - מופיע עכשיו בכל מסכי ה"טאב" הראשיים
-// (בית/חנות/מובילים/משימות/חברים), לא רק במסך הבית, לפי בקשה מפורשת:
-// "אני רוצה שבכל המסכים יופיע המניו למטה כדי שבמקום ללחוץ על הסימן של
-// הבית למעלה הם פשוט ילחצו למטה". הכפתור המרכזי נשאר "בית" (לא "שחק") -
-// לחיצה עליו תמיד מחזירה למסך הראשי (בדיוק כמו כפתור ה-Icons.home_rounded
-// שכבר היה בפינה של shop_screen.dart, רק עכשיו גם כפתור מרכזי בתחתית).
-// כל טאב "מסומן" (מודגש בזהב) כשנמצאים בו כרגע - לפי הפרמטר `current`.
+// סרגל ניווט תחתון משותף - מופיע בכל מסכי ה"טאב" הראשיים (חנות/מובילים/
+// משימות/הגדרות), לא רק במסך הבית.
 //
-// 🆕 עדכון לפי עיצוב מחדש (Claude Design): טאב "הגדרות" הוצא מהסרגל -
-// גישה להגדרות עברה לאייקון גלגל-שיניים בפינת מסך הבית (ראה
-// main_menu_screen.dart) - ובמקומו נכנס טאב "חברים" חדש, שמוביל למסך
-// "חברים" כללי (friends_screen.dart: הזמנה כללית למשחק + אתגר דו-קרב
-// כפעולה משנית) - לא רק דו-קרב כמו קודם, לפי בקשה מפורשת.
+// 🆕 עודכן לפי בקשה מפורשת: "בכל המסכים תשנה את המניו למטה למניו החדש
+// כי במסכים הישנים לא מופיע המניו החדש אלה הישן" - הסרגל הזה היה בעיצוב
+// ישן (פס מלא עד הקצוות, כפתור מרכזי גדול עם טבעת מסתובבת+הילה, וטאב
+// "חברים"). עכשיו הוא זהה בעיצובו לסרגל התחתון של מסך הבית עצמו
+// (_buildHomeBottomNavV7 ב-main_menu_screen.dart): פס צמוד לקצה התחתון
+// האמיתי של המסך (לא כרית צפה עם שוליים - ראו תיקון מתועד למטה), כפתור
+// מרכזי סטטי (לא מסתובב), וסט הטאבים: חנות · מובילים · [בית] · משימות ·
+// הגדרות. טאב "חברים" הוסר מכאן - "חברים" נגיש עכשיו מכרטיס התלתן במסך
+// הבית (ראה main_menu_screen.dart), לא כטאב קבוע.
+// 🩹 הכפתור המרכזי מוצג כ"🏠 בית" (לא "▶ שחק" כמו במסך הבית עצמו) - לפי
+// בקשה מפורשת, כי ההתנהגות שלו כאן היא תמיד "חזרה הביתה" בלבד (ראו
+// _buildHomeSlot למטה), לא פתיחת מוד כמו הכפתור האמיתי במסך הבית.
 //
-// עיצוב: ניווט "חכם" - מהמסך הראשי (current == home) לוחצים על טאב אחר
-// עושים Navigator.push רגיל (המסך הראשי נשאר למטה במחסנית). מתוך מסך
-// טאב אחר (חנות/מובילים/משימות/חברים) עוברים לטאב אחר עם pushReplacement
-// (כדי לא לערום עשרות מסכים זה על זה כשעוברים בין טאבים) - כך שהמסך
-// הראשי תמיד נשאר "קרקעית" יציבה של המחסנית, וכפתור "בית" תמיד יכול
-// לחזור אליו עם popUntil(isFirst).
-import 'dart:async';
-import 'dart:math';
+// עיצוב ניווט "חכם" (לא השתנה): מהמסך הראשי (current == home) לוחצים על
+// טאב אחר עושים Navigator.push רגיל (המסך הראשי נשאר למטה במחסנית). מתוך
+// מסך טאב אחר (חנות/מובילים/משימות/הגדרות) עוברים לטאב אחר עם
+// pushReplacement (כדי לא לערום עשרות מסכים זה על זה כשעוברים בין
+// טאבים) - כך שהמסך הראשי תמיד נשאר "קרקעית" יציבה של המחסנית, וכפתור
+// "בית" המרכזי תמיד יכול לחזור אליו עם popUntil(isFirst).
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,10 +29,19 @@ import 'shop_screen.dart';
 import 'leaderboard_screen.dart';
 import 'missions_screen.dart';
 import 'missions_service.dart';
-import 'friends_screen.dart'; // 🆕 טאב "חברים" בסרגל התחתון - מסך "חברים" כללי (לא רק דו-קרב)
-import 'friend_service.dart';
+import 'settings_screen.dart';
+import 'iap_manager.dart';
+import 'l10n/app_localizations.dart';
 
-enum AppTab { home, shop, leaderboard, missions, friends }
+// 🩹 none - לפי בקשה מפורשת ("הכפתור של הבית לא עובד"): גיליון "בחרו מוד"
+// (main_menu_screen.dart, _buildModesSheetV7) מציג את הסרגל הזה עם
+// current: AppTab.home כי הוא "הרחבה" של מסך הבית - אבל זה גרם לכפתור
+// "בית" להיות no-op, כי _goHome בודק "אם current כבר home, אל תעשה כלום"
+// (נכון למסכי הטאבים האמיתיים, אבל לא נכון כאן - הגיליון הזה נדחף
+// (push) מעל מסך הבית, לא מחליף אותו, אז "חזרה הביתה" עדיין צריכה
+// לסגור אותו). none מייצג מסך שהוא לא אף אחד מ-5 הטאבים עצמם (אז הכפתור
+// שלו תמיד פעיל), בלי לשנות התנהגות קיימת בשום מסך טאב אמיתי.
+enum AppTab { home, shop, leaderboard, missions, settings, none }
 
 class AppBottomNav extends StatefulWidget {
   final AppTab current;
@@ -42,24 +51,19 @@ class AppBottomNav extends StatefulWidget {
   State<AppBottomNav> createState() => _AppBottomNavState();
 }
 
-class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMixin {
-  late final AnimationController _ringController;
-  late final AnimationController _haloController;
+class _AppBottomNavState extends State<AppBottomNav> {
   int _missionsUnclaimed = 0;
-  bool _hasPendingFriendRequest = false;
-  StreamSubscription<int>? _friendRequestsSub;
+  // 🆕 "שיופיע להם בצד ימין לוגו צהוב של החנות עם סימן של הנחה ככה הם
+  // ידעו שעדיין יש להם את ההנחה" - אותו תג כמו בסרגל התחתון של מסך
+  // הבית (_navTabV7 ב-main_menu_screen.dart), כדי שיהיה עקבי גם במסכי
+  // הטאבים האחרים (חנות/מובילים/משימות/הגדרות) לא רק בבית.
+  bool _shopDiscountActive = false;
 
   @override
   void initState() {
     super.initState();
-    _ringController = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat();
-    _haloController = AnimationController(vsync: this, duration: const Duration(milliseconds: 3200))..repeat(reverse: true);
     _loadBadge();
-    // 🆕 נקודה ירוקה על טאב "חברים" כשיש בקשת חברות ממתינה - לפי בקשה
-    // מפורשת ("שיהיה נקודה ירוקה או משהו בסגנון על הכפתור חברים").
-    _friendRequestsSub = FriendService.watchPendingRequestsCount().listen((count) {
-      if (mounted) setState(() => _hasPendingFriendRequest = count > 0);
-    });
+    _loadShopDiscountBadge();
   }
 
   Future<void> _loadBadge() async {
@@ -67,26 +71,24 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
     if (mounted) setState(() => _missionsUnclaimed = count);
   }
 
-  @override
-  void dispose() {
-    _ringController.dispose();
-    _haloController.dispose();
-    _friendRequestsSub?.cancel();
-    super.dispose();
+  Future<void> _loadShopDiscountBadge() async {
+    final active = await IapManager.tournamentBonusActive();
+    if (mounted) setState(() => _shopDiscountActive = active);
   }
 
   // ניווט "חכם" בין טאבים - ראו הסבר בראש הקובץ.
-  // 🆕 המיקום של כל טאב בסרגל, משמאל לימין (ראו הסדר ב-build למטה):
-  // חברים, משימות, בית, מובילים, חנות.
+  // מיקום כל טאב בסרגל, משמאל לימין (ראו הסדר ב-build למטה):
+  // הגדרות, משימות, שחק, מובילים, חנות.
   static int _tabPosition(AppTab t) => switch (t) {
-        AppTab.friends => 0,
+        AppTab.settings => 0,
         AppTab.missions => 1,
         AppTab.home => 2,
+        AppTab.none => 2,
         AppTab.leaderboard => 3,
         AppTab.shop => 4,
       };
 
-  // 🆕 "כשעוברים לעמוד בצד ימין למטה הסלייד ימינה, ובצד שמאל - שמאלה":
+  // "כשעוברים לעמוד בצד ימין למטה הסלייד ימינה, ובצד שמאל - שמאלה":
   // המסך החדש נכנס מהצד שבו נמצא הטאב בסרגל התחתון (טאב מימין - נכנס
   // מימין, טאב משמאל - נכנס משמאל), יחסית לטאב שבו נמצאים עכשיו. חזרה
   // לבית (popUntil) מריצה את אותה אנימציה הפוך, אז זה עקבי אוטומטית.
@@ -106,19 +108,19 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
 
   void _go(BuildContext context, AppTab target, WidgetBuilder builder) {
     if (target == widget.current) return;
-    if (widget.current == AppTab.home) {
+    if (widget.current == AppTab.home || widget.current == AppTab.none) {
       Navigator.push(context, _tabRoute(target, builder));
     } else {
       Navigator.pushReplacement(context, _tabRoute(target, builder));
     }
   }
 
-  Future<void> _goFriends(BuildContext context) async {
-    if (widget.current == AppTab.friends) return;
+  Future<void> _goSettings(BuildContext context) async {
+    if (widget.current == AppTab.settings) return;
     final prefs = await SharedPreferences.getInstance();
     final username = prefs.getString('username') ?? '';
     if (!context.mounted) return;
-    _go(context, AppTab.friends, (_) => FriendsScreen(username: username));
+    _go(context, AppTab.settings, (_) => SettingsScreen(username: username));
   }
 
   void _goHome(BuildContext context) {
@@ -126,210 +128,130 @@ class _AppBottomNavState extends State<AppBottomNav> with TickerProviderStateMix
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
+  // 🩹 תוקן לפי בקשה מפורשת ("המניו למטה הוא לא הכי למטה ומופיעים מאחוריו
+  // דברים") - הסרגל היה "כרית" צפה עם שוליים מכל 4 הצדדים, שמשאירה פער
+  // שקוף בינה לבין קצה המסך האמיתי - בדיוק שם תוכן גלול יכול "להציץ"
+  // מתחתיו. תואם עכשיו את המוקאפ המקורי (Home v10.html, "bottom tab bar")
+  // ואת אותו תיקון שבוצע ב-_buildHomeBottomNavV7 (main_menu_screen.dart):
+  // צמוד לקצה התחתון האמיתי (left:0/right:0/bottom:0), בלי שום פער.
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
-      child: SizedBox(
-        height: 108 + MediaQuery.of(context).padding.bottom,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // רקע הסרגל
-            Positioned.fill(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: const Border(top: BorderSide(color: Colors.white24, width: 1)),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [const Color(0xFF1E1448).withValues(alpha: 0.94), const Color(0xFF120C2E).withValues(alpha: 0.98)],
-                      ),
-                    ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            padding: EdgeInsets.fromLTRB(8, 12, 8, MediaQuery.of(context).padding.bottom + 12),
+            decoration: BoxDecoration(
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+              border: const Border(top: BorderSide(color: Colors.white24, width: 1)),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [const Color(0xFF1E1448).withValues(alpha: 0.95), const Color(0xFF120C2E).withValues(alpha: 0.99)],
+              ),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 36, offset: const Offset(0, -14))],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // סדר תואם למוקאפ (מסך 01 · בית): משמאל לימין - הגדרות,
+                // משימות, [שחק], מובילים, חנות. ב-Row עם textDirection.rtl
+                // ה"ילד" הראשון ברשימה מוצג הכי מימין, אז חנות מגיע ראשון.
+                Expanded(
+                  child: _TabItem(
+                    icon: Icons.shopping_cart_rounded,
+                    color: const Color(0xFF6EE7B7),
+                    label: loc.appBottomNavShop,
+                    active: widget.current == AppTab.shop,
+                    discountBadge: _shopDiscountActive,
+                    onTap: () => _go(context, AppTab.shop, (_) => const ShopScreen()),
                   ),
                 ),
-              ),
+                Expanded(
+                  child: _TabItem(
+                    icon: Icons.bar_chart_rounded,
+                    color: const Color(0xFFFDA4AF),
+                    label: loc.appBottomNavLeaderboard,
+                    active: widget.current == AppTab.leaderboard,
+                    onTap: () => _go(context, AppTab.leaderboard, (_) => const LeaderboardScreen()),
+                  ),
+                ),
+                SizedBox(width: 88, child: _buildHomeSlot(context)),
+                Expanded(
+                  child: _TabItem(
+                    icon: Icons.track_changes_rounded,
+                    color: const Color(0xFF34D399),
+                    label: loc.appBottomNavMissions,
+                    active: widget.current == AppTab.missions,
+                    onTap: () => _go(context, AppTab.missions, (_) => const MissionsScreen()),
+                    badgeCount: _missionsUnclaimed > 0 ? _missionsUnclaimed : null,
+                  ),
+                ),
+                Expanded(
+                  child: _TabItem(
+                    icon: Icons.settings_rounded,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    label: loc.settingsScreenTitle,
+                    active: widget.current == AppTab.settings,
+                    onTap: () => _goSettings(context),
+                  ),
+                ),
+              ],
             ),
-            Positioned(
-              left: 6,
-              right: 6,
-              bottom: 14 + MediaQuery.of(context).padding.bottom,
-              child: Row(
-                textDirection: TextDirection.rtl,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // 🆕 סדר תואם למוקאפ (מסך 01 · בית): משמאל לימין - חברים,
-                  // משימות, [שחק], מובילים, חנות. ב-Row עם textDirection.rtl
-                  // ה"ילד" הראשון ברשימה מוצג הכי מימין, אז חנות מגיע ראשון.
-                  Expanded(
-                    child: _TabItem(
-                      icon: Icons.shopping_cart_rounded,
-                      color: const Color(0xFF60A5FA),
-                      label: "חנות",
-                      active: widget.current == AppTab.shop,
-                      onTap: () => _go(context, AppTab.shop, (_) => const ShopScreen()),
-                    ),
-                  ),
-                  Expanded(
-                    child: _TabItem(
-                      icon: Icons.emoji_events_rounded,
-                      color: const Color(0xFFFFC64B),
-                      label: "מובילים",
-                      active: widget.current == AppTab.leaderboard,
-                      onTap: () => _go(context, AppTab.leaderboard, (_) => const LeaderboardScreen()),
-                    ),
-                  ),
-                  SizedBox(width: 92, child: _buildHomeSlot(context)),
-                  Expanded(
-                    child: _TabItem(
-                      icon: Icons.track_changes_rounded,
-                      color: const Color(0xFFFB7185),
-                      label: "משימות",
-                      active: widget.current == AppTab.missions,
-                      onTap: () => _go(context, AppTab.missions, (_) => const MissionsScreen()),
-                      badgeCount: _missionsUnclaimed > 0 ? _missionsUnclaimed : null,
-                    ),
-                  ),
-                  Expanded(
-                    child: _TabItem(
-                      icon: Icons.groups_rounded,
-                      color: const Color(0xFF7DD3FC),
-                      label: "חברים",
-                      active: widget.current == AppTab.friends,
-                      onTap: () => _goFriends(context),
-                      showDot: _hasPendingFriendRequest,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  // כפתור "בית" מרכזי, מוגבה ומוגדל - עם טבעת מסתובבת + הילה פועמת.
-  // תמיד מחזיר למסך הראשי (בדיוק כמו כפתור ה-Icons.home_rounded שכבר
-  // קיים בפינת חלק מהמסכים) - ולכן לא צריך "אקטיבי" מיוחד: הבית מסומן
-  // ממילא כי הוא תמיד הכפתור הכי בולט בסרגל.
+  // כפתור מרכזי - חוזר תמיד למסך הראשי (popUntil(isFirst)). 🩹 תוקן לפי
+  // בקשה מפורשת ("במקום הכפתור של השחק כפתור של בית") - בעבר הוצג כאן
+  // "▶ שחק" (אותו עיצוב כמו כפתור השחק האמיתי במסך הבית, _navPlayButtonV7)
+  // למרות שההתנהגות שלו תמיד הייתה "חזרה הביתה" בלבד, לא "פתיחת מוד" -
+  // מטעה במסכים אחרים שבהם אין שום דבר "לשחק" בלחיצה. עכשיו האייקון/
+  // התווית תואמים את ההתנהגות האמיתית (🏠 בית), בלי לשנות שום דבר
+  // בניווט עצמו.
   Widget _buildHomeSlot(BuildContext context) {
     return Center(
-      child: SizedBox(
-        width: 108,
-        height: 108,
-        child: Stack(
-          alignment: Alignment.center,
-          clipBehavior: Clip.none,
-          children: [
-            AnimatedBuilder(
-              animation: _haloController,
-              builder: (context, child) {
-                final t = Curves.easeInOut.transform(_haloController.value);
-                return Transform.scale(
-                  scale: 1 + t * 0.12,
-                  child: Opacity(
-                    opacity: 0.45 + t * 0.45,
-                    child: Container(
-                      width: 108,
-                      height: 108,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(colors: [const Color(0xFFFFBE50).withValues(alpha: 0.30), const Color(0xFFFFBE50).withValues(alpha: 0.0)]),
-                      ),
-                    ),
-                  ),
-                );
-              },
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _goHome(context),
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 20, offset: const Offset(0, 10)),
+                BoxShadow(color: const Color(0xFFFFAA3C).withValues(alpha: 0.4), blurRadius: 26),
+              ],
             ),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => _goHome(context),
-                child: SizedBox(
-                  width: 84,
-                  height: 84,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned.fill(
-                        child: AnimatedBuilder(
-                          animation: _ringController,
-                          builder: (context, child) {
-                            return Transform.rotate(
-                              angle: _ringController.value * 2 * pi,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: SweepGradient(colors: [
-                                    const Color(0x00FFD86B),
-                                    const Color(0xFFFFD86B),
-                                    const Color(0xFFFF8A3C),
-                                    const Color(0x00FFD86B),
-                                  ], stops: const [0.0, 0.34, 0.54, 0.84]),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      Container(
-                        width: 78,
-                        height: 78,
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(colors: [Colors.white.withValues(alpha: 0.85), const Color(0xFFFF9A3C).withValues(alpha: 0.4)]),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 28, offset: const Offset(0, 12)),
-                            BoxShadow(color: const Color(0xFFFFAA3C).withValues(alpha: 0.35), blurRadius: 34),
-                          ],
-                        ),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFFB24D), Color(0xFFFF8A3C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                          ),
-                          // 🆕 עיצוב מחדש - הכפתור נראה עכשיו בדיוק כמו במוקאפ
-                          // ("▶ שחק" - לא "🏠 בית") - אבל ההתנהגות מתחתיו
-                          // (popUntil(isFirst), ראה _goHome) לא השתנתה בכוונה:
-                          // זה עדיין "תמיד חוזר למסך הראשי", התיקון לבאג ניווט
-                          // ישן שהיה כאן נשאר בתוקף, רק התווית/אייקון הוחלפו.
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.play_arrow_rounded, color: Color(0xFF2A1740), size: 26),
-                              Text("שחק", style: TextStyle(color: const Color(0xFF2A1740), fontSize: 13, fontWeight: FontWeight.w900)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.home_rounded, color: Color(0xFF2A1740), size: 24),
+                Text(AppLocalizations.of(context)!.appBottomNavHome, style: const TextStyle(color: Color(0xFF2A1740), fontSize: 12, fontWeight: FontWeight.w900)),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-// כרטיסיית ניווט בודדת בסרגל התחתון.
-// 🩹 תוקן: האייקונים היו אימוג'י (🛒🏆🎯👥) - בדיוק אותה בעיה תיעודית
-// שכבר הייתה עם אימוג'י המטבע/אנרגיה (ראו app_icons.dart): אימוג'י לא
-// אמין בין מכשירים, ואצלך בעבר פשוט לא הוצג בכלל. הוחלף לאייקון
-// Material וקטורי עם צבע מלא קבוע משלו (לא לבן/שקוף כמו קודם) - כדי
-// שהסרגל ייראה צבעוני בדיוק כמו במוקאפ, בלי תלות בפונט אימוג'י.
+// כרטיסיית ניווט בודדת בסרגל התחתון - אייקון Material וקטורי עם צבע
+// מלא קבוע משלו (תואם את _navTabV7 במסך הבית), + הדגשה בזהב כשהטאב הזה
+// הוא הטאב הנוכחי.
 class _TabItem extends StatelessWidget {
   final IconData icon;
   final Color color;
@@ -337,8 +259,8 @@ class _TabItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool active;
   final int? badgeCount;
-  final bool showDot;
-  const _TabItem({required this.icon, required this.color, required this.label, required this.onTap, this.active = false, this.badgeCount, this.showDot = false});
+  final bool discountBadge;
+  const _TabItem({required this.icon, required this.color, required this.label, required this.onTap, this.active = false, this.badgeCount, this.discountBadge = false});
 
   @override
   Widget build(BuildContext context) {
@@ -365,8 +287,20 @@ class _TabItem extends StatelessWidget {
                       color: active ? color.withValues(alpha: 0.22) : Colors.transparent,
                     ),
                     alignment: Alignment.center,
-                    child: Icon(icon, color: active ? color : color.withValues(alpha: 0.75), size: 24),
+                    child: Icon(icon, color: active ? color : color.withValues(alpha: 0.75), size: 23),
                   ),
+                  if (discountBadge)
+                    Positioned(
+                      top: -4,
+                      right: -6,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFFFD86B)),
+                        child: const Icon(Icons.percent_rounded, color: Color(0xFF2A1740), size: 10),
+                      ),
+                    ),
                   if (badgeCount != null)
                     Positioned(
                       top: -4,
@@ -383,26 +317,10 @@ class _TabItem extends StatelessWidget {
                         child: Text("$badgeCount", style: const TextStyle(color: Color(0xFF08281C), fontSize: 10, fontWeight: FontWeight.w900)),
                       ),
                     ),
-                  // 🆕 נקודה ירוקה (בלי מספר) - בקשת חברות ממתינה שמחכה
-                  // לתגובה, ראה FriendService.watchPendingRequestsCount.
-                  if (showDot)
-                    Positioned(
-                      top: 0,
-                      right: 2,
-                      child: Container(
-                        width: 11,
-                        height: 11,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF34D399),
-                          border: Border.all(color: const Color(0xFF1E1448), width: 1.5),
-                        ),
-                      ),
-                    ),
                 ],
               ),
               const SizedBox(height: 4),
-              Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: labelColor, fontSize: 11, fontWeight: active ? FontWeight.w900 : FontWeight.w700)),
+              Text(label, style: TextStyle(color: labelColor, fontSize: 11, fontWeight: active ? FontWeight.w900 : FontWeight.w700)),
             ],
           ),
         ),

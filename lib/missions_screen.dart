@@ -18,6 +18,7 @@ import 'battle_pass_screen.dart'; // 🆕 ניווט "שדרג לפרימיום"
 import 'main_menu_screen.dart'; // 🩹 MainMenuScreen.onReturnedHome - לרענון מיידי של המטבעות במסך הבית (ראו _claim)
 import 'app_notification.dart';
 import 'first_visit_explainer.dart'; // 🆕 הסבר חד-פעמי בכניסה הראשונה למסך
+import 'l10n/app_localizations.dart';
 
 class MissionsScreen extends StatefulWidget {
   const MissionsScreen({super.key});
@@ -74,7 +75,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = "שגיאה בטעינת המשימות: $e";
+        _error = AppLocalizations.of(context)!.missionsLoadError('$e');
         _loading = false;
       });
     }
@@ -83,7 +84,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
   Future<void> _claim(MissionProgress m, bool weekly) async {
     final reward = await MissionsService.claim(m.def.id, weekly: weekly);
     if (reward == null || !mounted) return;
-    AppNotification.show(context, 'קיבלת +$reward מטבעות!', type: AppNotificationType.success);
+    AppNotification.show(context, AppLocalizations.of(context)!.missionsClaimedCoinsMessage(reward), type: AppNotificationType.success);
     // 🩹 באג שתוקן: איסוף פרס משימה לא עדכן את המטבעות במסך הבית מיידית
     // (בדיוק אותו באג ואותו תיקון כמו ב-battle_pass_screen.dart._claim).
     MainMenuScreen.onReturnedHome?.call();
@@ -93,18 +94,19 @@ class _MissionsScreenState extends State<MissionsScreen> {
   // 🆕 צפייה בפרסומת כדי להחליף משימה שלא בא לך לעשות במשימה אחרת
   // מהמאגר. אפשר להחליף כל משימה שעדיין לא נאספה (גם כזו שכבר בהתקדמות).
   Future<void> _rerollMission(MissionProgress m, bool weekly) async {
+    final loc = AppLocalizations.of(context)!;
     if (!AdsManager.isRewardedReady) {
-      AppNotification.show(context, "אין פרסומת זמינה כרגע, נסה שוב עוד רגע", type: AppNotificationType.warning);
+      AppNotification.show(context, loc.logoLevelNoAdAvailable, type: AppNotificationType.warning);
       return;
     }
     AdsManager.showRewardedAd(onReward: () async {
       final newDef = await MissionsService.rerollMission(m.def.id, weekly: weekly);
       if (!mounted) return;
       if (newDef == null) {
-        AppNotification.show(context, "אי אפשר להחליף את המשימה הזו כרגע", type: AppNotificationType.error);
+        AppNotification.show(context, loc.missionsRerollUnavailable, type: AppNotificationType.error);
         return;
       }
-      AppNotification.show(context, 'המשימה הוחלפה: ${newDef.title}', type: AppNotificationType.success);
+      AppNotification.show(context, loc.missionsRerollSuccess(newDef.title), type: AppNotificationType.success);
       _load();
     });
   }
@@ -125,6 +127,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -142,7 +145,14 @@ class _MissionsScreenState extends State<MissionsScreen> {
                           onRefresh: _load,
                           child: SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 128),
+                            // 🩹 תוקן לפי בקשה מפורשת ("המניו למטה... מופיעים
+                            // מאחוריו דברים") - ריפוד 128 קבוע לא כלל את
+                            // MediaQuery.padding.bottom (אזור הבטוח התחתון),
+                            // בדיוק אותו באג שכבר תוקן ב-leaderboard_screen.dart
+                            // - במכשירים עם אזור בטוח תחתון גדול יותר, הסרגל
+                            // הצף (AppBottomNav) בפועל גבוה יותר מהריפוד שחושב
+                            // לו, כך שהשורה האחרונה ברשימה מציצה מתחתיו.
+                            padding: EdgeInsets.fromLTRB(16, 10, 16, 128 + MediaQuery.of(context).padding.bottom),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
@@ -169,11 +179,12 @@ class _MissionsScreenState extends State<MissionsScreen> {
             const AppBottomNav(current: AppTab.missions),
             if (_showExplainer)
               buildFirstVisitOverlay(
-                title: 'מסך המשימות',
-                points: const [
-                  ExplainerPoint('📅', 'משימות יומיות ושבועיות', 'כל משימה שמשלימים מזכה בפרס - מטבעות או נקודות XP.'),
-                  ExplainerPoint('🎯', 'אתגר יומי', 'מופיע למעלה כל יום - הזדמנות חד-פעמית לפרס גדול יותר.'),
-                  ExplainerPoint('🔄', 'מתאפסות אוטומטית', 'משימות חדשות מחכות בכל יום/שבוע - אין צורך לעשות כלום.'),
+                context: context,
+                title: loc.missionsExplainerTitle,
+                points: [
+                  ExplainerPoint('📅', loc.missionsExplainerDailyWeeklyTitle, loc.missionsExplainerDailyWeeklyBody),
+                  ExplainerPoint('🎯', loc.missionsExplainerChallengeTitle, loc.missionsExplainerChallengeBody),
+                  ExplainerPoint('🔄', loc.missionsExplainerResetTitle, loc.missionsExplainerResetBody),
                 ],
                 onDismiss: () {
                   FirstVisitExplainer.markSeen('missions');
@@ -187,6 +198,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
   }
 
   Widget _buildErrorState() {
+    final loc = AppLocalizations.of(context)!;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -198,11 +210,10 @@ class _MissionsScreenState extends State<MissionsScreen> {
             // בעיצוב מחדש) - הוחלפה כאן בכפתור חזרה פשוט, כי מסך השגיאה לא
             // צריך את כל הפאנל הירוק המלא (טאבים/סטטיסטיקות).
             Row(
-              textDirection: TextDirection.rtl,
               children: [
                 _GlassRoundIconButton(icon: Icons.arrow_forward_rounded, color: Colors.white, onTap: () => Navigator.pop(context)),
-                const Expanded(
-                  child: Text('משימות', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+                Expanded(
+                  child: Text(loc.missionsScreenTitle, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
                 ),
                 const SizedBox(width: 44),
               ],
@@ -210,7 +221,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
             const SizedBox(height: 40),
             Icon(Icons.error_outline_rounded, color: Colors.white.withValues(alpha: 0.4), size: 44),
             const SizedBox(height: 14),
-            Text(_error ?? "שגיאה לא ידועה", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+            Text(_error ?? loc.missionsUnknownError, textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
             const SizedBox(height: 18),
             ElevatedButton(
               onPressed: () {
@@ -218,7 +229,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
                 _load();
               },
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFD86B), foregroundColor: const Color(0xFF2A1740)),
-              child: const Text("נסה שוב", style: TextStyle(fontWeight: FontWeight.w900)),
+              child: Text(loc.logoLevelTryAgainButton, style: const TextStyle(fontWeight: FontWeight.w900)),
             ),
           ],
         ),
@@ -230,6 +241,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
   // שורת "מתאפס בעוד" יושבים כולם יחד בתוך פאנל ירוק-גרדיאנט אחד (לא
   // שורות נפרדות על הרקע הכללי).
   Widget _buildGreenHeaderPanel() {
+    final loc = AppLocalizations.of(context)!;
     final totalClaimed = _daily.where((m) => m.claimed).length + _weekly.where((m) => m.claimed).length;
     final totalCount = _daily.length + _weekly.length;
     return Container(
@@ -242,7 +254,6 @@ class _MissionsScreenState extends State<MissionsScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -256,8 +267,8 @@ class _MissionsScreenState extends State<MissionsScreen> {
                   ],
                 ),
               ),
-              const Expanded(
-                child: Text('משימות', textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+              Expanded(
+                child: Text(loc.missionsScreenTitle, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
               ),
               _GlassRoundIconButton(icon: Icons.arrow_forward_rounded, color: Colors.white, onTap: () => Navigator.pop(context)),
             ],
@@ -267,10 +278,9 @@ class _MissionsScreenState extends State<MissionsScreen> {
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.black.withValues(alpha: 0.18)),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
-                Expanded(child: _tabButton('שבועיות', selected: _showWeekly, onTap: () => setState(() => _showWeekly = true))),
-                Expanded(child: _tabButton('יומיות', selected: !_showWeekly, onTap: () => setState(() => _showWeekly = false))),
+                Expanded(child: _tabButton(loc.missionsWeeklyTab, selected: _showWeekly, onTap: () => setState(() => _showWeekly = true))),
+                Expanded(child: _tabButton(loc.missionsDailyTab, selected: !_showWeekly, onTap: () => setState(() => _showWeekly = false))),
               ],
             ),
           ),
@@ -279,7 +289,6 @@ class _MissionsScreenState extends State<MissionsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: Colors.white.withValues(alpha: 0.06)),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 Text(
                   '${(_showWeekly ? _weekly : _daily).where((m) => m.isComplete).length}/${(_showWeekly ? _weekly : _daily).length}',
@@ -287,8 +296,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  _showWeekly ? 'מתאפס בתחילת השבוע הבא' : 'מתאפס בעוד $_resetInTodayText שעות',
-                  textDirection: TextDirection.rtl,
+                  _showWeekly ? loc.missionsResetsNextWeek : loc.missionsResetsInHours(_resetInTodayText),
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(width: 6),
@@ -316,7 +324,6 @@ class _MissionsScreenState extends State<MissionsScreen> {
           alignment: Alignment.center,
           child: Text(
             label,
-            textDirection: TextDirection.rtl,
             style: TextStyle(color: selected ? const Color(0xFF08281C) : Colors.white.withValues(alpha: 0.55), fontSize: 13.5, fontWeight: FontWeight.w800),
           ),
         ),
@@ -341,6 +348,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
   // "לתבוע" פרס ישירות - כי זו משימה עם מיני-משחק אמיתי בפנים, לא ספירה
   // אוטומטית כמו שאר המשימות.
   Widget _challengeListItem(DailyChallenge challenge) {
+    final loc = AppLocalizations.of(context)!;
     final done = challenge.completed;
     final usedUp = !done && challenge.attempted;
     final complete = done;
@@ -359,7 +367,6 @@ class _MissionsScreenState extends State<MissionsScreen> {
               color: complete ? const Color(0xFF34D399).withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.04),
             ),
             child: Row(
-              textDirection: TextDirection.rtl,
               children: [
                 Container(
                   width: 40,
@@ -371,10 +378,9 @@ class _MissionsScreenState extends State<MissionsScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('השלם את האתגר היומי', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                      Text(loc.missionsCompleteDailyChallengeTitle, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 6),
                       // 🆕 שורת תגים: מטבעות + כוכבי באטל פאס (שני תגים
                       // נפרדים, כי בפועל אלה שני משאבים שונים - מטבעות
@@ -432,10 +438,17 @@ class _MissionsScreenState extends State<MissionsScreen> {
         return Icons.sports_esports_rounded;
       case MissionEvent.duelWon:
         return Icons.sports_mma_rounded;
+      case MissionEvent.tafzoretWorldCompleted:
+        return Icons.grid_view_rounded;
+      case MissionEvent.tournamentPlayed:
+        return Icons.emoji_events_rounded;
+      case MissionEvent.tournamentWon:
+        return Icons.military_tech_rounded;
     }
   }
 
   Widget _missionCard(MissionProgress m, {required bool weekly}) {
+    final loc = AppLocalizations.of(context)!;
     // 🆕 משימת premiumOnly נעולה כל עוד אין פרימיום פעיל - ההתקדמות
     // עדיין מוצגת (היא נצברת גם בלי פרימיום, ראו MissionsService), אבל
     // אי אפשר לתבוע אותה ואין אפשרות להחליף אותה בפרסומת.
@@ -464,7 +477,6 @@ class _MissionsScreenState extends State<MissionsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              textDirection: TextDirection.rtl,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
@@ -479,7 +491,6 @@ class _MissionsScreenState extends State<MissionsScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
-                    textDirection: TextDirection.rtl,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // 🆕 תג "⭐ פרימיום" מעל הכותרת - רק למשימות premiumOnly,
@@ -488,11 +499,11 @@ class _MissionsScreenState extends State<MissionsScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: const Color(0xFFFFD979).withValues(alpha: 0.22)),
-                          child: const Text('⭐ פרימיום', textDirection: TextDirection.rtl, style: TextStyle(color: Color(0xFFFFD979), fontSize: 9.5, fontWeight: FontWeight.w900)),
+                          child: Text(loc.missionsPremiumBadge, style: const TextStyle(color: Color(0xFFFFD979), fontSize: 9.5, fontWeight: FontWeight.w900)),
                         ),
                         const SizedBox(height: 5),
                       ],
-                      Text(m.def.title, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                      Text(m.def.title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 6),
                       // 🆕 נוסף תג "+X ⭐" ליד תג המטבעות - לפי בקשה מפורשת
                       // שבמסך המשימות יהיה כתוב כמה כוכבי-באטל-פאס כל
@@ -526,7 +537,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
                     ],
                   ),
                 ),
-                Text(m.claimed ? 'נאסף' : '${m.progress}/${m.def.target}', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(m.claimed ? loc.missionsClaimedLabel : '${m.progress}/${m.def.target}', style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 12, fontWeight: FontWeight.w700)),
               ],
             ),
             if (!m.claimed) ...[
@@ -560,7 +571,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
                     elevation: 0,
                   ),
                   onPressed: () => _claim(m, weekly),
-                  child: const Text('קבל פרס', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
+                  child: Text(loc.missionsClaimButton, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
                 ),
               ),
             ] else if (locked) ...[
@@ -579,13 +590,11 @@ class _MissionsScreenState extends State<MissionsScreen> {
                     decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFFFFD979).withValues(alpha: 0.14)),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      textDirection: TextDirection.rtl,
                       children: [
                         const Icon(Icons.lock_rounded, color: Color(0xFFFFD979), size: 14),
                         const SizedBox(width: 6),
                         Text(
-                          m.isComplete ? 'הפרס מוכן - דורש באטל פאס פרימיום לאיסוף' : 'דורש באטל פאס פרימיום',
-                          textDirection: TextDirection.rtl,
+                          m.isComplete ? loc.missionsPremiumRequiredReady : loc.missionsPremiumRequired,
                           style: const TextStyle(color: Color(0xFFFFD979), fontSize: 11.5, fontWeight: FontWeight.w900),
                         ),
                       ],
@@ -604,7 +613,7 @@ class _MissionsScreenState extends State<MissionsScreen> {
                 child: TextButton.icon(
                   onPressed: () => _rerollMission(m, weekly),
                   icon: const Icon(Icons.smart_display_rounded, size: 15, color: Color(0xFFA7F3D0)),
-                  label: const Text('פרסומת = החלף משימה', style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 11.5, fontWeight: FontWeight.w700)),
+                  label: Text(loc.missionsWatchAdRerollButton, style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 11.5, fontWeight: FontWeight.w700)),
                   style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4)),
                 ),
               ),

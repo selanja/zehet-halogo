@@ -25,6 +25,7 @@ import 'audio_manager.dart';
 import 'friend_service.dart'; // 🆕 הזמנה ישירה לחבר ספציפי מרשימת החברים + קפיצה אוטומטית לקוד
 import 'app_notification.dart';
 import 'out_of_resource.dart'; // 🆕 "נגמר משהו" - פרסומת/חנות
+import 'l10n/app_localizations.dart';
 
 enum _FCState {
   checking,
@@ -55,12 +56,12 @@ class _JoinOutcome {
 
 // 🆕 טיפים מתחלפים למסך "ממתין לחבר" - אותו רעיון בדיוק כמו הטיפים
 // במסך "מחפש יריב" של הלובי הרגיל (duel_lobby_screen.dart).
-const List<String> _waitingTips = [
-  "טיפ: שלח לחבר את הקוד בוואטסאפ - הוא יקליד אותו במסך \"יש לי קוד\"",
-  "טיפ: הקוד בתוקף ל-15 דקות - אם הוא פג, פשוט תיצור קוד חדש",
-  "טיפ: שני השחקנים מקבלים בדיוק אותם לוגואים - הראשון שמסיים מנצח",
-  "טיפ: אפשר לקנות רמז זול בתוך הדו-קרב אם נתקעים על לוגו",
-];
+List<String> _waitingTips(AppLocalizations loc) => [
+      loc.friendChallengeWaitingTip1,
+      loc.friendChallengeWaitingTip2,
+      loc.friendChallengeWaitingTip3,
+      loc.friendChallengeWaitingTip4,
+    ];
 
 class FriendChallengeScreen extends StatefulWidget {
   final String username;
@@ -95,7 +96,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // 🆕 עוזרי מוד - כל מקום שהיה קורא ל-DuelService ישירות עכשיו בודק
   // את אלה. שם/אימוג'י המוד לטקסטים, שאר הפונקציות בגוף הקובץ.
   bool get _isDuel => widget.isDuel;
-  String get _modeLabel => _isDuel ? 'דו-קרב' : 'מרוץ';
+  String get _modeLabel => _isDuel ? AppLocalizations.of(context)!.friendChallengeModeDuel : AppLocalizations.of(context)!.friendChallengeModeRace;
   List<int> get _stakeOptions => _isDuel ? DuelService.stakeOptions : LogoRaceService.stakeOptions;
   int _questionsForStake(int stake) => _isDuel ? DuelService.questionsForStake(stake) : LogoRaceService.stagesForStake(stake);
   Duration get _inviteExpiry => _isDuel ? DuelService.inviteExpiry : LogoRaceService.inviteExpiry;
@@ -326,7 +327,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       if (!mounted) return;
       setState(() {
         _state = _FCState.error;
-        _errorText = "לא הצלחנו ליצור קוד הזמנה - נסה שוב";
+        _errorText = AppLocalizations.of(context)!.friendChallengeCreateInviteFailed;
       });
     } finally {
       _creatingInvite = false;
@@ -337,7 +338,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     _tipTimer?.cancel();
     _tipTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (!mounted) return;
-      setState(() => _tipIndex = (_tipIndex + 1) % _waitingTips.length);
+      setState(() => _tipIndex = (_tipIndex + 1) % _waitingTips(AppLocalizations.of(context)!).length);
     });
   }
 
@@ -419,7 +420,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     if (code == null) return;
     Clipboard.setData(ClipboardData(text: code));
     HapticFeedback.lightImpact();
-    AppNotification.show(context, "הקוד הועתק! שלח אותו לחבר", type: AppNotificationType.success);
+    AppNotification.show(context, AppLocalizations.of(context)!.friendChallengeCodeCopied, type: AppNotificationType.success);
   }
 
   // 🆕 "שתף קוד" - פותח את תפריט השיתוף של המכשיר (וואטסאפ וכו'), בדיוק
@@ -429,15 +430,16 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     final code = _myCode;
     if (code == null) return;
     HapticFeedback.lightImpact();
-    final text = "בוא נשחק $_modeLabel ב\"זהה את הלוגו!\" 🔗 הקוד שלי: $code";
+    final loc = AppLocalizations.of(context)!;
+    final text = loc.friendChallengeShareText(_modeLabel, code);
     try {
       // 🐛 תוקן: "באייפון שיתוף כותב שאי אפשר לשתף" - חסר sharePositionOrigin
       // (ראו share_helper.dart להסבר המלא). גם הוספה הודעת גיבוי - קודם
       // כשל נכשל בשקט לגמרי, בלי שום משוב למשתמש.
       final box = context.findRenderObject() as RenderBox?;
-      await Share.share(text, subject: "אתגר $_modeLabel", sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
+      await Share.share(text, subject: loc.friendChallengeShareSubject(_modeLabel), sharePositionOrigin: box != null ? (box.localToGlobal(Offset.zero) & box.size) : null);
     } catch (_) {
-      if (mounted) AppNotification.show(context, "לא נמצאה אפליקציית שיתוף. אפשר להעתיק ולשלוח ידנית:\n$text", duration: const Duration(seconds: 5));
+      if (mounted) AppNotification.show(context, loc.friendChallengeNoShareAppFallback(text), duration: const Duration(seconds: 5));
     }
   }
 
@@ -445,10 +447,11 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // הצטרפות עם קוד
   // ================================================================
   Future<void> _checkCode() async {
+    final loc = AppLocalizations.of(context)!;
     final code = _codeController.text.trim().toUpperCase();
     setState(() => _joinCodeError = null);
     if (code.length != _inviteCodeLength) {
-      setState(() => _joinCodeError = "קוד חייב להיות בן $_inviteCodeLength תווים");
+      setState(() => _joinCodeError = loc.friendChallengeCodeLengthError(_inviteCodeLength));
       return;
     }
     final myId = _myDeviceId;
@@ -459,21 +462,21 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     if (invite == null) {
       setState(() {
         _state = _FCState.enterCode;
-        _joinCodeError = "לא נמצא קוד כזה - ודא שהקלדת נכון";
+        _joinCodeError = loc.friendChallengeCodeNotFoundDetailed;
       });
       return;
     }
     if (invite['creatorId'] == myId) {
       setState(() {
         _state = _FCState.enterCode;
-        _joinCodeError = "זה הקוד שלך - שלח אותו לחבר, לא להזין אותו כאן";
+        _joinCodeError = loc.friendChallengeOwnCodeDetailed;
       });
       return;
     }
     if (invite['status'] != 'waiting') {
       setState(() {
         _state = _FCState.enterCode;
-        _joinCodeError = "מישהו כבר הצטרף לקוד הזה";
+        _joinCodeError = loc.friendChallengeCodeAlreadyUsed;
       });
       return;
     }
@@ -485,7 +488,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
     if (createdDate != null && DateTime.now().difference(createdDate) > _inviteExpiry) {
       setState(() {
         _state = _FCState.enterCode;
-        _joinCodeError = "הקוד הזה כבר פג תוקף";
+        _joinCodeError = loc.friendChallengeCodeExpired;
       });
       return;
     }
@@ -494,7 +497,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       setState(() {
         _state = _FCState.enterCode;
         // 🩹 הוסרה האמוג'י 🪙 - בחלק מהמכשירים/פונטים היא מוצגת כריבוע ריק
-        _joinCodeError = "אין לך מספיק מטבעות להימור הזה ($stake)";
+        _joinCodeError = loc.friendChallengeNotEnoughCoinsForStake(stake);
       });
       return;
     }
@@ -541,25 +544,26 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   }
 
   void _finishJoinWithError(_JoinCode status) {
+    final loc = AppLocalizations.of(context)!;
     setState(() {
       _state = _FCState.enterCode;
       _previewInvite = null;
       _previewCode = null;
       switch (status) {
         case _JoinCode.notFound:
-          _joinCodeError = "לא נמצא קוד כזה";
+          _joinCodeError = loc.friendChallengeCodeNotFound;
           break;
         case _JoinCode.expired:
-          _joinCodeError = "הקוד הזה כבר פג תוקף";
+          _joinCodeError = loc.friendChallengeCodeExpired;
           break;
         case _JoinCode.ownCode:
-          _joinCodeError = "זה הקוד שלך";
+          _joinCodeError = loc.friendChallengeOwnCode;
           break;
         case _JoinCode.alreadyUsed:
-          _joinCodeError = "מישהו כבר הצטרף לקוד הזה";
+          _joinCodeError = loc.friendChallengeCodeAlreadyUsed;
           break;
         default:
-          _joinCodeError = "משהו השתבש - נסה שוב";
+          _joinCodeError = loc.friendChallengeGenericError;
       }
     });
   }
@@ -626,14 +630,15 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   }
 
   String get _topBarTitle {
+    final loc = AppLocalizations.of(context)!;
     switch (_state) {
       case _FCState.waitingForFriend:
-        return 'ממתין לחבר';
+        return loc.friendChallengeWaitingTitle;
       case _FCState.previewInvite:
       case _FCState.joining:
-        return 'הצטרפות עם קוד';
+        return loc.friendChallengeJoinWithCodeTitle;
       default:
-        return 'אתגר חבר';
+        return loc.friendChallengeDefaultTitle;
     }
   }
 
@@ -647,7 +652,6 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
             child: Text(
               _topBarTitle,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
             ),
           ),
@@ -677,70 +681,72 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   }
 
   Widget _buildBanned() {
+    final loc = AppLocalizations.of(context)!;
     final until = _banUntil;
     final remaining = until != null ? until.difference(DateTime.now()) : Duration.zero;
     final h = remaining.inHours;
     final m = remaining.inMinutes % 60;
-    final remainingText = remaining.isNegative ? "כמה רגעים" : (h > 0 ? "$h שעות ו-$m דקות" : "$m דקות");
+    final remainingText = remaining.isNegative
+        ? loc.duelLobbyBannedTimeFewMoments
+        : (h > 0 ? loc.duelLobbyBannedTimeHoursMinutes(h, m) : loc.duelLobbyBannedTimeMinutes(m));
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.block_rounded, color: Color(0xFFFF6B6B), size: 60),
         const SizedBox(height: 18),
-        const Text("חסום זמנית מדו-קרב", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(loc.duelLobbyBannedTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "עזבת דו-קרב באמצע המשחק יותר מפעם אחת. תוכל לשחק דו-קרב שוב בעוד $remainingText.",
+          loc.friendChallengeBannedMessage(remainingText),
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
-        _textButton("חזרה", onTap: () => Navigator.pop(context)),
+        _textButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
   Widget _buildNotEnoughEnergy() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const EnergyIcon(size: 56),
         const SizedBox(height: 18),
-        const Text("אין מספיק אנרגיה", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(loc.logoRaceNotEnoughEnergyTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "כל $_modeLabel עולה ${EnergyService.duelCost} אנרגיות. אנרגיה מתמלאת אוטומטית כל ${EnergyService.regenMinutes} דקות.",
+          loc.friendChallengeNotEnoughEnergyMessage(_modeLabel, EnergyService.duelCost, EnergyService.regenMinutes),
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
         ...OutOfResource.offerButtons(context, coins: false, onGranted: _loadRequirements),
         const SizedBox(height: 12),
-        _textButton("חזרה", onTap: () => Navigator.pop(context)),
+        _textButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
   Widget _buildNotEnoughCoins() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const CoinIcon(size: 56),
         const SizedBox(height: 18),
-        const Text("אין מספיק מטבעות", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+        Text(loc.duelLobbyNotEnoughCoinsTitle, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "צריך לפחות ${_stakeOptions.first} מטבעות כדי להתחיל $_modeLabel.",
+          loc.friendChallengeNotEnoughCoinsMessage(_stakeOptions.first, _modeLabel),
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13.5),
         ),
         const SizedBox(height: 26),
-        ...OutOfResource.offerButtons(context, coins: true, onGranted: _loadRequirements),
+        ...OutOfResource.offerButtons(context, coins: true, neededCoins: _stakeOptions.first, onGranted: _loadRequirements),
         const SizedBox(height: 12),
-        _textButton("חזרה", onTap: () => Navigator.pop(context)),
+        _textButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
@@ -751,6 +757,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // מטבעות מסתכנים וכמה שאלות יהיו בדו-קרב) - רק הפכה לצ'יפים קומפקטיים
   // בתוך אותו מסך, עם ברירת מחדל נבחרת מראש (_selectedStake).
   Widget _buildMenu() {
+    final loc = AppLocalizations.of(context)!;
     final stakeOptions = _stakeOptions;
     if (!stakeOptions.contains(_selectedStake)) _selectedStake = stakeOptions.first;
     final canAffordSelected = _coins >= _selectedStake;
@@ -768,17 +775,15 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           const Text('🔗', style: TextStyle(fontSize: 46)),
           const SizedBox(height: 14),
           Text(
-            isDirectInvite ? "הזמנת ${friendName ?? 'חבר'} ל$_modeLabel" : "אתגר חבר ל$_modeLabel",
-            textDirection: TextDirection.rtl,
+            isDirectInvite ? loc.friendChallengeDirectInviteTitle(friendName ?? loc.friendChallengeFriendFallback, _modeLabel) : loc.friendChallengeGenericInviteTitle(_modeLabel),
             style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
           Text(
             isDirectInvite
-                ? "בחר על מה משחקים - ${friendName ?? 'החבר'} יקבל הזמנה מיידית."
-                : "בחר על מה משחקים, ואז צור קוד לשלוח לחבר - או הזן קוד שכבר קיבלת.",
+                ? loc.friendChallengeDirectInviteSubtitle(friendName ?? loc.friendChallengeTheFriendFallback)
+                : loc.friendChallengeGenericInviteSubtitle,
             textAlign: TextAlign.center,
-            textDirection: TextDirection.rtl,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
           ),
           const SizedBox(height: 22),
@@ -790,7 +795,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           ),
           const SizedBox(height: 16),
           _bigActionButton(
-            isDirectInvite ? "שלח הזמנה 🎟️" : "צור קוד לחבר 🎟️",
+            isDirectInvite ? loc.friendChallengeSendInviteButton : loc.friendChallengeCreateCodeButton,
             onTap: canAffordSelected ? () => _onCreateStakeSelected(_selectedStake) : null,
           ),
           if (!isDirectInvite) ...[
@@ -800,13 +805,13 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
                 Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.12))),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Text("או", style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5, fontWeight: FontWeight.w700)),
+                  child: Text(loc.friendChallengeOrDivider, style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12.5, fontWeight: FontWeight.w700)),
                 ),
                 Expanded(child: Container(height: 1, color: Colors.white.withValues(alpha: 0.12))),
               ],
             ),
             const SizedBox(height: 16),
-            Text("יש לך קוד מחבר?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13.5, fontWeight: FontWeight.w700)),
+            Text(loc.friendChallengeHaveCodeQuestion, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13.5, fontWeight: FontWeight.w700)),
             const SizedBox(height: 10),
             SizedBox(
               width: 220,
@@ -829,13 +834,13 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
             ),
             if (_joinCodeError != null) ...[
               const SizedBox(height: 10),
-              Text(_joinCodeError!, textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 12.5, fontWeight: FontWeight.w700)),
+              Text(_joinCodeError!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 12.5, fontWeight: FontWeight.w700)),
             ],
             const SizedBox(height: 12),
-            _bigActionButton("הצטרף עם קוד ⌨️", filled: false, onTap: _checkCode),
+            _bigActionButton(loc.friendChallengeJoinWithCodeButton, filled: false, onTap: _checkCode),
           ],
           const SizedBox(height: 14),
-          _textButton("חזרה", onTap: () => Navigator.pop(context)),
+          _textButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
         ],
       ),
     );
@@ -863,7 +868,6 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            textDirection: TextDirection.rtl,
             children: [
               const CoinIcon(size: 15),
               const SizedBox(width: 5),
@@ -883,6 +887,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // כרטיסים (אני מול "?" של החבר) עם VS, טבעת מסתובבת, טיפים מתחלפים
   // ותזכורת תנאי הדו-קרב - רק שבמקום פס טעינה זוחל, הקוד עצמו במרכז.
   Widget _buildWaiting() {
+    final loc = AppLocalizations.of(context)!;
     final code = _myCode;
     if (code == null) {
       return const CircularProgressIndicator(color: Color(0xFFFFD86B));
@@ -922,12 +927,11 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           // 🆕 עיצוב מחדש - כרטיס "הקוד שלך" + כפתור "שתף קוד" נפרד לצד
           // כפתור העתקה קטן, בדיוק כמו במוקאפ (מסך 06 · קריאה לחבר) -
           // במקום קופסה יחידה שגם מציגה וגם מעתיקה בלחיצה עליה.
-          Text("הקוד שלך", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w700)),
+          Text(loc.friendChallengeYourCodeLabel, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(code, style: const TextStyle(color: Color(0xFF7DD3FC), fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: 8)),
           const SizedBox(height: 14),
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               Material(
                 color: Colors.white.withValues(alpha: 0.08),
@@ -953,7 +957,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
                       borderRadius: BorderRadius.circular(14),
                       gradient: const LinearGradient(colors: [Color(0xFF7DD3FC), Color(0xFF38BDF8)]),
                     ),
-                    child: const Text("שתף קוד", style: TextStyle(color: Color(0xFF0C2A3D), fontSize: 15, fontWeight: FontWeight.w900)),
+                    child: Text(loc.friendChallengeShareCodeButton, style: const TextStyle(color: Color(0xFF0C2A3D), fontSize: 15, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
@@ -963,8 +967,10 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           Text(
             // 🆕 אם ידוע שם החבר שהוזמן ישירות (targetFriendName) - מציגים
             // אותו במקום "החבר" הגנרי.
-            "ממתין ש${widget.targetFriendName ?? 'החבר'} יזין את הקוד… ${min.toString().padLeft(1, '0')}:${sec.toString().padLeft(2, '0')}",
-            textDirection: TextDirection.rtl,
+            loc.friendChallengeWaitingForFriendToEnter(
+              widget.targetFriendName ?? loc.friendChallengeTheFriendFallback,
+              '${min.toString().padLeft(1, '0')}:${sec.toString().padLeft(2, '0')}',
+            ),
             style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 16),
@@ -976,9 +982,8 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
                 key: ValueKey(_tipIndex),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
-                  _waitingTips[_tipIndex],
+                  _waitingTips(loc)[_tipIndex % _waitingTips(loc).length],
                   textAlign: TextAlign.center,
-                  textDirection: TextDirection.rtl,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12.5, fontWeight: FontWeight.w500),
                 ),
               ),
@@ -987,7 +992,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           const SizedBox(height: 18),
           if (stake != null) _duelConditionsGrid(stake),
           const SizedBox(height: 22),
-          _textButton("ביטול", onTap: _cancelMyInvite),
+          _textButton(loc.duelLobbyCancelButton, onTap: _cancelMyInvite),
         ],
       ),
     );
@@ -995,6 +1000,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
 
   // כרטיס צד (אני / החבר) - זהה בסגנון לכרטיסי "אני מול יריב" בלובי הרגיל.
   Widget _sideCard({required String? name, required bool ready}) {
+    final loc = AppLocalizations.of(context)!;
     if (ready && name != null) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -1007,12 +1013,12 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           children: [
             _letterAvatar(name, size: 66, gold: true),
             const SizedBox(height: 10),
-            Text(name, textDirection: TextDirection.rtl, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
+            Text(name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
             const SizedBox(height: 9),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: const Color(0xFF34D399).withValues(alpha: 0.18), border: Border.all(color: const Color(0xFF6EE7B7).withValues(alpha: 0.45))),
-              child: const Text('מוכן ✓', style: TextStyle(color: Color(0xFFA7F3D0), fontSize: 10.5, fontWeight: FontWeight.w900)),
+              child: Text(loc.duelLobbyReadyLabel, style: const TextStyle(color: Color(0xFFA7F3D0), fontSize: 10.5, fontWeight: FontWeight.w900)),
             ),
           ],
         ),
@@ -1030,8 +1036,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           _spinningFriendAvatar(),
           const SizedBox(height: 10),
           Text(
-            widget.targetFriendName ?? 'החבר',
-            textDirection: TextDirection.rtl,
+            widget.targetFriendName ?? loc.friendChallengeTheFriendFallback,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 15, fontWeight: FontWeight.w900),
           ),
@@ -1039,7 +1044,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.white.withValues(alpha: 0.07), border: Border.all(color: Colors.white.withValues(alpha: 0.14))),
-            child: Text('ממתין…', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w900)),
+            child: Text(loc.friendChallengeWaitingEllipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10.5, fontWeight: FontWeight.w900)),
           ),
         ],
       ),
@@ -1110,6 +1115,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   // תזכורת "תנאי הדו-קרב" - זהה בעיקרון ל-_buildDuelConditionsGrid בלובי
   // הרגיל, משוכפלת כאן כי היא פרטית לשם.
   Widget _duelConditionsGrid(int stake) {
+    final loc = AppLocalizations.of(context)!;
     final questions = _questionsForStake(stake);
     final prize = stake * 2;
     Widget stat(String value, String label, Color color, Color bg) => Expanded(
@@ -1120,7 +1126,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
               children: [
                 Text(value, style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
-                Text(label, textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
+                Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 10, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -1135,21 +1141,20 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       child: Column(
         children: [
           Row(
-            textDirection: TextDirection.rtl,
             children: [
               Text(_isDuel ? '⚔️' : '🏁', style: const TextStyle(fontSize: 13)),
               const SizedBox(width: 8),
-              Text('תנאי ה$_modeLabel', textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
+              Text(loc.friendChallengeConditionsTitle(_modeLabel), style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              stat('$stake', 'הימור', const Color(0xFFFFE7A8), const Color(0xFFFFD86B)),
+              stat('$stake', loc.duelLobbyStatStake, const Color(0xFFFFE7A8), const Color(0xFFFFD86B)),
               const SizedBox(width: 9),
-              stat('$questions', 'לוגואים', const Color(0xFFBFDBFE), const Color(0xFF60A5FA)),
+              stat('$questions', loc.duelLobbyStatLogos, const Color(0xFFBFDBFE), const Color(0xFF60A5FA)),
               const SizedBox(width: 9),
-              stat('$prize', 'למנצח', const Color(0xFFA7F3D0), const Color(0xFF34D399)),
+              stat('$prize', loc.duelLobbyStatWinner, const Color(0xFFA7F3D0), const Color(0xFF34D399)),
             ],
           ),
         ],
@@ -1158,6 +1163,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
   }
 
   Widget _buildPreview() {
+    final loc = AppLocalizations.of(context)!;
     final invite = _previewInvite;
     if (invite == null) return const SizedBox.shrink();
     final stake = (invite['stake'] ?? _stakeOptions.first) as int;
@@ -1167,7 +1173,7 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
       children: [
         Text(_isDuel ? '⚔️' : '🏁', style: const TextStyle(fontSize: 44)),
         const SizedBox(height: 12),
-        Text("אתגר מ-$creatorName", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+        Text(loc.friendChallengeInviteFromName(creatorName), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -1177,20 +1183,19 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            textDirection: TextDirection.rtl,
             children: [
               const CoinIcon(size: 20),
               const SizedBox(width: 6),
-              Text('$stake מטבעות', style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
+              Text(loc.duelLobbyStakeCoinsLabel(stake), style: const TextStyle(color: Color(0xFFFFD86B), fontSize: 15, fontWeight: FontWeight.w900)),
               const SizedBox(width: 14),
-              Text('${_questionsForStake(stake)} לוגואים', textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5)),
+              Text(loc.playVsPersonLogosRangeSingle(_questionsForStake(stake)), style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 12.5)),
             ],
           ),
         ),
         const SizedBox(height: 22),
-        _bigActionButton("הצטרף ל$_modeLabel ${_isDuel ? "⚔️" : "🏁"}", onTap: _confirmJoin),
+        _bigActionButton(loc.friendChallengeJoinModeButton(_modeLabel, _isDuel ? "⚔️" : "🏁"), onTap: _confirmJoin),
         const SizedBox(height: 12),
-        _textButton("ביטול", onTap: () => setState(() {
+        _textButton(loc.duelLobbyCancelButton, onTap: () => setState(() {
               _state = _FCState.enterCode;
               _previewInvite = null;
               _previewCode = null;
@@ -1201,62 +1206,63 @@ class _FriendChallengeScreenState extends State<FriendChallengeScreen> with Tick
 
   // 🆕 החבר לחץ "דחה" על ההזמנה - ראו _listenToMyInvite.
   Widget _buildDeclined() {
-    final name = widget.targetFriendName ?? 'החבר';
+    final loc = AppLocalizations.of(context)!;
+    final name = widget.targetFriendName ?? loc.friendChallengeTheFriendFallback;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.close_rounded, color: Color(0xFFFF6B6B), size: 54),
         const SizedBox(height: 16),
-        Text("$name דחה את ההזמנה", textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+        Text(loc.friendChallengeDeclinedTitle(name), style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "אפשר לנסות שוב מאוחר יותר, או להזמין חבר אחר.",
+          loc.friendChallengeDeclinedMessage,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
         ),
         const SizedBox(height: 22),
-        _bigActionButton("חזרה", onTap: () => Navigator.pop(context)),
+        _bigActionButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
   Widget _buildExpired() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.hourglass_bottom_rounded, color: Color(0xFFFFD86B), size: 54),
         const SizedBox(height: 16),
-        const Text("הקוד פג תוקף", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+        Text(loc.friendChallengeExpiredTitle, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         Text(
-          "החבר לא הספיק להצטרף בזמן. אפשר ליצור קוד חדש.",
+          loc.friendChallengeExpiredMessage,
           textAlign: TextAlign.center,
-          textDirection: TextDirection.rtl,
           style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
         ),
         const SizedBox(height: 22),
-        _bigActionButton("צור קוד חדש", onTap: () {
+        _bigActionButton(loc.friendChallengeNewCodeButton, onTap: () {
           _myCode = null;
           setState(() => _state = _FCState.menu);
         }),
         const SizedBox(height: 12),
-        _textButton("חזרה", onTap: () => Navigator.pop(context)),
+        _textButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }
 
   Widget _buildError() {
+    final loc = AppLocalizations.of(context)!;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const Icon(Icons.error_outline_rounded, color: Color(0xFFFF6B6B), size: 54),
         const SizedBox(height: 16),
-        Text(_errorText ?? "משהו השתבש", textAlign: TextAlign.center, textDirection: TextDirection.rtl, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+        Text(_errorText ?? loc.duelLobbyErrorTitle, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
         const SizedBox(height: 22),
-        _bigActionButton("נסה שוב", onTap: _loadRequirements),
+        _bigActionButton(loc.duelLobbyRetryButton, onTap: _loadRequirements),
         const SizedBox(height: 12),
-        _textButton("חזרה", onTap: () => Navigator.pop(context)),
+        _textButton(loc.duelLobbyBackButton, onTap: () => Navigator.pop(context)),
       ],
     );
   }

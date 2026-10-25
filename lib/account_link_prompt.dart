@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'account_service.dart';
 import 'account_conflict_dialog.dart';
 import 'app_notification.dart';
+import 'l10n/app_localizations.dart';
 
 class AccountLinkPrompt {
   /// מציג את הדיאלוג רק אם: (א) המכשיר עדיין לא מקושר, ו-(ב) השחקן לא
@@ -71,22 +72,25 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
       final linked = await showAccountConflictDialog(context);
       if (!mounted) return;
       setState(() => _loading = false);
+      final loc = AppLocalizations.of(context)!;
       if (linked) {
         Navigator.of(context).pop();
-        AppNotification.show(context, "החשבון קושר בהצלחה! ההתקדמות שלך שמורה", type: AppNotificationType.success);
+        AppNotification.show(context, loc.accountLinkSuccessMessage, type: AppNotificationType.success);
       } else if (AccountService.lastAuthFailed) {
         AccountService.lastAuthFailed = false;
-        AppNotification.show(context, "החיבור נכשל, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+        AppNotification.show(context, loc.accountLinkFailedMessage, type: AppNotificationType.error);
       }
       return;
     }
     setState(() => _loading = false);
+    if (!mounted) return;
+    final loc = AppLocalizations.of(context)!;
     if (result == LinkResult.success) {
       Navigator.of(context).pop();
-      AppNotification.show(context, "החשבון קושר בהצלחה! ההתקדמות שלך שמורה", type: AppNotificationType.success);
+      AppNotification.show(context, loc.accountLinkSuccessMessage, type: AppNotificationType.success);
     } else if (result == LinkResult.error) {
       AccountService.lastAuthFailed = false;
-      AppNotification.show(context, "החיבור נכשל, נסה שוב מאוחר יותר", type: AppNotificationType.error);
+      AppNotification.show(context, loc.accountLinkFailedMessage, type: AppNotificationType.error);
     }
   }
 
@@ -98,6 +102,7 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -121,17 +126,15 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
               child: const Icon(Icons.cloud_done_rounded, color: Color(0xFF0C2A3D), size: 32),
             ),
             const SizedBox(height: 14),
-            const Text(
-              "שמור את ההתקדמות שלך",
+            Text(
+              loc.accountLinkTitle,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
-              style: TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
+              style: const TextStyle(color: Colors.white, fontSize: 18.5, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             Text(
-              "חבר חשבון Google או Apple - כך אם תחליף טלפון, כל המטבעות וההתקדמות שלך יישמרו ויחכו לך.",
+              loc.accountLinkMessage,
               textAlign: TextAlign.center,
-              textDirection: TextDirection.rtl,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 13),
             ),
             const SizedBox(height: 20),
@@ -144,11 +147,11 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
               // "סמויה" של הדיאלוג עם לחיצה מחוץ לו. עכשיו יש כפתור מפורש.
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text("ביטול", style: TextStyle(color: Colors.white54, fontSize: 12.5)),
+                child: Text(loc.accountLinkCancelButton, style: const TextStyle(color: Colors.white54, fontSize: 12.5)),
               ),
             ] else ...[
               _providerButton(
-                label: "המשך עם Google",
+                label: loc.accountLinkContinueWithGoogle,
                 icon: Icons.g_mobiledata_rounded,
                 colors: const [Color(0xFFFFFFFF), Color(0xFFE8E8E8)],
                 textColor: const Color(0xFF2A1740),
@@ -157,7 +160,7 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
               if (AccountService.appleAvailable) ...[
                 const SizedBox(height: 10),
                 _providerButton(
-                  label: "המשך עם Apple",
+                  label: loc.accountLinkContinueWithApple,
                   icon: Icons.apple_rounded,
                   colors: const [Color(0xFF2A2A2A), Color(0xFF000000)],
                   textColor: Colors.white,
@@ -168,11 +171,11 @@ class _AccountLinkDialogState extends State<_AccountLinkDialog> {
             const SizedBox(height: 8),
             TextButton(
               onPressed: _loading ? null : () => Navigator.of(context).pop(),
-              child: const Text("אחר כך", style: TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
+              child: Text(loc.accountLinkLaterButton, style: const TextStyle(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w700)),
             ),
             TextButton(
               onPressed: _loading ? null : _dontShowAgain,
-              child: Text("אל תזכיר לי שוב", style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12)),
+              child: Text(loc.accountLinkDontShowAgain, style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 12)),
             ),
           ],
         ),

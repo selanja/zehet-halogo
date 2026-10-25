@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'audio_manager.dart';
+import 'l10n/app_localizations.dart';
 
 class ReviewManager {
   static const String _askedKey = 'firstTimeRatingPromptShown';
@@ -71,6 +72,7 @@ class ReviewManager {
   }
 
   static Future<void> _showFirstTimeRatingPopup(BuildContext context) async {
+    final loc = AppLocalizations.of(context)!;
     await showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.6),
@@ -108,11 +110,10 @@ class ReviewManager {
                   child: const Icon(Icons.emoji_emotions_rounded, color: Color(0xFF2A1740), size: 34),
                 ),
                 const SizedBox(height: 18),
-                const Text("נהנים מהמשחק?", textDirection: TextDirection.rtl, style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+                Text(loc.reviewPromptTitle, style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 Text(
-                  "דירוג 5 כוכבים ⭐ עוזר לנו המון ולוקח רק כמה שניות",
-                  textDirection: TextDirection.rtl,
+                  loc.reviewPromptBody,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.72), fontSize: 13.5, fontWeight: FontWeight.w500),
                 ),
@@ -144,11 +145,10 @@ class ReviewManager {
                         borderRadius: BorderRadius.circular(18),
                         gradient: const LinearGradient(colors: [Color(0xFFFFE08A), Color(0xFFFF8A3C)]),
                       ),
-                      child: const Text(
-                        "דרגו אותנו 5 כוכבים",
+                      child: Text(
+                        loc.reviewPromptRateButton,
                         textAlign: TextAlign.center,
-                        textDirection: TextDirection.rtl,
-                        style: TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900),
+                        style: const TextStyle(color: Color(0xFF2A1740), fontSize: 15.5, fontWeight: FontWeight.w900),
                       ),
                     ),
                   ),
@@ -159,7 +159,7 @@ class ReviewManager {
                     AudioManager.playClick();
                     Navigator.pop(context);
                   },
-                  child: Text("אולי מאוחר יותר", style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13)),
+                  child: Text(loc.reviewPromptMaybeLaterButton, style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13)),
                 ),
               ],
             ),
